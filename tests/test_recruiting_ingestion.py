@@ -1,0 +1,164 @@
+from __future__ import annotations
+
+from wiki_mcp.adapters.sources.worknet import WorknetRecruitingExternalAdapter
+from wiki_mcp.domains.recruiting import RecruitingSourceIngestionPlugin
+
+
+class StubWorknetRecruitingProvider:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def get_recruiting_source(self, params: dict[str, object]) -> dict[str, object]:
+        self.calls.append(params)
+        return {
+            "payloadVersion": "recruiting-source-payload/v1",
+            "source": {
+                "provider": "worknet",
+                "kind": "open_recruitment",
+                "sourceId": "EMP-1",
+                "companySourceId": "COMP-1",
+                "sourceUrl": "https://example.com/jobs/EMP-1",
+                "mobileSourceUrl": "https://m.example.com/jobs/EMP-1",
+                "fetchedAt": "2026-04-15T00:00:00.000Z",
+                "contentHash": "hash-emp-1",
+            },
+            "posting": {
+                "title": "백엔드 개발자",
+                "companyName": "잡스위키",
+                "companyType": "중견기업",
+                "employmentType": "정규직",
+                "startsAt": "2026-04-01",
+                "closesAt": "2026-04-30",
+                "summary": "플랫폼 API 개발",
+                "applicationMethod": "홈페이지 접수",
+                "requiredDocuments": "이력서, 포트폴리오",
+                "acceptanceAnnouncement": "개별 안내",
+                "inquiry": "recruit@example.com",
+                "notes": "원격 근무 가능",
+            },
+            "company": {
+                "sourceCompanyId": "COMP-1",
+                "name": "잡스위키",
+                "companyType": "중견기업",
+                "homepageUrl": "https://jobswiki.example.com",
+                "businessNumber": "123-45-67890",
+                "summary": "채용 정보 플랫폼",
+                "description": "개발자 중심의 채용 데이터 서비스를 운영합니다.",
+                "mainBusiness": "채용 데이터 플랫폼",
+                "logoUrl": "https://example.com/logo.png",
+                "coordinates": {
+                    "latitude": "37.0",
+                    "longitude": "127.0",
+                },
+            },
+            "jobs": [
+                {
+                    "sourceCode": "DEV-001",
+                    "name": "백엔드 개발",
+                }
+            ],
+            "recruitmentSections": [
+                {
+                    "title": "플랫폼팀",
+                    "roleDescription": "API 설계 및 개발",
+                    "selectionDescription": "코딩 테스트",
+                    "location": "서울",
+                    "careerRequirement": "3년 이상",
+                    "educationRequirement": "대졸",
+                    "otherRequirement": "Node.js 경험",
+                    "openings": "2",
+                    "note": "우대사항 있음",
+                }
+            ],
+            "selectionSteps": [
+                {
+                    "name": "서류전형",
+                    "schedule": "4월 2주",
+                    "description": "서류 검토",
+                    "note": "합격자 개별 통보",
+                }
+            ],
+            "attachments": [
+                {
+                    "fileName": "guide.pdf",
+                }
+            ],
+            "raw": {
+                "openRecruitmentDetail": {"empSeqno": "EMP-1"},
+            },
+        }
+
+
+def test_adapter_builds_source_record_from_external_payload() -> None:
+    provider = StubWorknetRecruitingProvider()
+    adapter = WorknetRecruitingExternalAdapter()
+
+    source = adapter.fetch_source_record(
+        provider,
+        "EMP-1",
+        auth_key="secret",
+        include_raw=True,
+    )
+
+    assert len(provider.calls) == 1
+    assert provider.calls[0]["sourceId"] == "EMP-1"
+    assert provider.calls[0]["authKey"] == "secret"
+    assert provider.calls[0]["includeRaw"] is True
+
+    assert source["source_id"] == "EMP-1"
+    assert source["connector"] == "worknet"
+    assert source["domain"] == "recruiting"
+    assert source["title"] == "백엔드 개발자"
+    assert source["fetched_at"] == "2026-04-15T00:00:00.000Z"
+    assert source["content_hash"] == "hash-emp-1"
+    assert source["status"] == "active"
+    assert "## Posting" in source["body_markdown"]
+    assert "## Company" in source["body_markdown"]
+    assert "## Selection Steps" in source["body_markdown"]
+    assert source["metadata"]["payload_version"] == "recruiting-source-payload/v1"
+    assert source["metadata"]["provider"] == "worknet"
+    assert source["metadata"]["kind"] == "open_recruitment"
+    assert source["metadata"]["company_source_id"] == "COMP-1"
+    assert source["metadata"]["raw_included"] is True
+    assert source["metadata"]["posting"]["company_name"] == "잡스위키"
+    assert source["metadata"]["jobs"][0]["source_code"] == "DEV-001"
+    assert source["metadata"]["attachments"][0]["file_name"] == "guide.pdf"
+
+
+def test_plugin_extracts_minimal_fact_records_and_relations() -> None:
+    provider = StubWorknetRecruitingProvider()
+    adapter = WorknetRecruitingExternalAdapter()
+    plugin = RecruitingSourceIngestionPlugin()
+
+    source = adapter.fetch_source_record(provider, "EMP-1")
+    normalized = plugin.normalize_source(source)
+    records = plugin.extract_fact_records(normalized)
+    relations = plugin.extract_fact_relations(normalized, records)
+    validation = plugin.validate_batch(normalized, records, relations)
+
+    assert plugin.accepts(normalized) is True
+    assert validation["ok"] is True
+    assert validation["errors"] == []
+
+    entity_types = {record["entity_type"] for record in records}
+    assert entity_types == {"job_posting", "company", "job", "recruitment_section"}
+
+    record_by_type = {record["entity_type"]: record for record in records}
+    posting = record_by_type["job_posting"]
+    company = record_by_type["company"]
+    job = record_by_type["job"]
+    section = record_by_type["recruitment_section"]
+
+    assert posting["canonical_key"] == "job_posting:EMP-1"
+    assert posting["attributes"]["employment_type"] == "정규직"
+    assert company["canonical_key"] == "company:COMP-1"
+    assert company["attributes"]["homepage_url"] == "https://jobswiki.example.com"
+    assert job["canonical_key"] == "job:DEV-001"
+    assert job["attributes"]["name"] == "백엔드 개발"
+    assert "recruitment_section:EMP-1" in section["canonical_key"]
+    assert section["attributes"]["location"] == "서울"
+
+    relation_types = {relation["relation_type"] for relation in relations}
+    assert relation_types == {"posted_by", "classified_as", "has_section"}
+    for relation in relations:
+        assert relation["from_canonical_key"] == "job_posting:EMP-1"
