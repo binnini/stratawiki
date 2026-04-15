@@ -1,6 +1,17 @@
 """Shared schema definitions."""
 
 from wiki_mcp.schemas.dependency_impact import DependencyImpact
+from wiki_mcp.schemas.external_recruiting_payload import (
+    RecruitingAttachmentPayload,
+    RecruitingCompanyCoordinates,
+    RecruitingCompanyPayload,
+    RecruitingJobPayload,
+    RecruitingJobPostingPayload,
+    RecruitingRecruitmentSectionPayload,
+    RecruitingSelectionStepPayload,
+    RecruitingSourcePayload,
+    RecruitingSourceProvenance,
+)
 from wiki_mcp.schemas.fact_record import FactRecord
 from wiki_mcp.schemas.fact_relation import FactRelation
 from wiki_mcp.schemas.fact_write_result import FactWriteResult
@@ -28,6 +39,15 @@ __all__ = [
     "OutboxEvent",
     "PersonalRecord",
     "ProfileContext",
+    "RecruitingAttachmentPayload",
+    "RecruitingCompanyCoordinates",
+    "RecruitingCompanyPayload",
+    "RecruitingJobPayload",
+    "RecruitingJobPostingPayload",
+    "RecruitingRecruitmentSectionPayload",
+    "RecruitingSelectionStepPayload",
+    "RecruitingSourcePayload",
+    "RecruitingSourceProvenance",
     "RenderedArtifact",
     "RetrievalResult",
     "ScopeRef",
