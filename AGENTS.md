@@ -21,10 +21,13 @@ When working on substantial tasks, the agent should:
 
 1. Read relevant official docs in `docs/` first
 2. Read relevant working notes in `dev-wiki/` if they exist
-3. Add short working notes to `dev-wiki/` during analysis or implementation when useful
-4. Summarize stable conclusions back into `docs/` only when they are mature enough to be shared
+3. Add or update a working note in `dev-wiki/` during analysis or implementation
+4. Before closing the task, ensure the current task's reasoning, implementation decisions, open questions, and next actions are recorded in `dev-wiki/`
+5. Summarize stable conclusions back into `docs/` only when they are mature enough to be shared
 
 The agent should treat `dev-wiki/` as internal working memory for the repository.
+
+For substantial tasks, writing the relevant `dev-wiki/` note is part of the default completion criteria, not an optional extra.
 
 ## When to Write to dev-wiki
 
@@ -38,6 +41,8 @@ Write or update `dev-wiki/` when:
 - planning multi-step implementation work
 
 Do not write to `dev-wiki/` for trivial one-file edits unless the reasoning is likely to matter later.
+
+For any substantial implementation, review, refactor, or multi-step debugging task, the agent should assume a `dev-wiki/` update is required unless there is a clear reason it would add no future value.
 
 ## dev-wiki Structure
 
@@ -97,6 +102,18 @@ Promotion criteria:
 
 Do not simply move working notes verbatim into `docs/`.
 Rewrite them into cleaner project documentation.
+
+## Default Workflow Rule
+
+For substantial work, the default workflow is:
+
+1. read relevant `docs/`
+2. read relevant `dev-wiki/`
+3. do the implementation or investigation
+4. record the result in `dev-wiki/`
+5. promote only stable conclusions into `docs/` when appropriate
+
+Do not skip step 4 for substantial tasks.
 
 ## Relationship to Official Docs
 
