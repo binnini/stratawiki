@@ -10,6 +10,9 @@ class FactRelation(TypedDict):
     relation_type: str
     from_canonical_key: str
     to_canonical_key: str
+    scope: str
+    tenant_id: NotRequired[str]
+    user_id: NotRequired[str]
     schema_version: str
     provenance: dict[str, Any]
     attributes: NotRequired[dict[str, Any]]

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 
 class FactRecord(TypedDict):
@@ -12,5 +12,7 @@ class FactRecord(TypedDict):
     canonical_key: str
     attributes: dict[str, Any]
     scope: str
+    tenant_id: NotRequired[str]
+    user_id: NotRequired[str]
     schema_version: str
     provenance: dict[str, Any]

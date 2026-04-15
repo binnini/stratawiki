@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: stratawiki-postgres
+    environment:
+      POSTGRES_DB: stratawiki
+      POSTGRES_USER: stratawiki
+      POSTGRES_PASSWORD: stratawiki
+    ports:
+      - "5432:5432"
+    volumes:
+      - stratawiki-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stratawiki -d stratawiki"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  stratawiki-postgres-data:

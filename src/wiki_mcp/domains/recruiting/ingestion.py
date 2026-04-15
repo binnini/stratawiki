@@ -39,6 +39,15 @@ def _build_fact_record(
     }
 
 
+def _relation_scope_fields(record: FactRecord) -> dict[str, str]:
+    scope_fields: dict[str, str] = {"scope": record["scope"]}
+    if "tenant_id" in record:
+        scope_fields["tenant_id"] = record["tenant_id"]
+    if "user_id" in record:
+        scope_fields["user_id"] = record["user_id"]
+    return scope_fields
+
+
 class RecruitingSourceIngestionPlugin:
     """Initial recruiting ingestion plugin.
 
@@ -217,6 +226,7 @@ class RecruitingSourceIngestionPlugin:
                     "relation_type": relation_type,
                     "from_canonical_key": posting_key,
                     "to_canonical_key": record["canonical_key"],
+                    **_relation_scope_fields(posting_record),
                     "schema_version": self.schema_version,
                     "provenance": provenance,
                 }

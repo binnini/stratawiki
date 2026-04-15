@@ -162,3 +162,30 @@ def test_plugin_extracts_minimal_fact_records_and_relations() -> None:
     assert relation_types == {"posted_by", "classified_as", "has_section"}
     for relation in relations:
         assert relation["from_canonical_key"] == "job_posting:EMP-1"
+        assert relation["scope"] == "shared"
+
+
+def test_plugin_relations_inherit_scope_fields_from_posting_record() -> None:
+    provider = StubWorknetRecruitingProvider()
+    adapter = WorknetRecruitingExternalAdapter()
+    plugin = RecruitingSourceIngestionPlugin()
+
+    source = adapter.fetch_source_record(provider, "EMP-1")
+    normalized = plugin.normalize_source(source)
+    records = plugin.extract_fact_records(normalized)
+
+    scoped_records = []
+    for record in records:
+        scoped_record = dict(record)
+        scoped_record["scope"] = "user"
+        scoped_record["tenant_id"] = "tenant-1"
+        scoped_record["user_id"] = "user-1"
+        scoped_records.append(scoped_record)
+
+    relations = plugin.extract_fact_relations(normalized, scoped_records)
+
+    assert relations
+    for relation in relations:
+        assert relation["scope"] == "user"
+        assert relation["tenant_id"] == "tenant-1"
+        assert relation["user_id"] == "user-1"

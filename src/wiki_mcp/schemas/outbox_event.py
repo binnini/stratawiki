@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 
 class OutboxEvent(TypedDict):
@@ -10,3 +10,4 @@ class OutboxEvent(TypedDict):
     aggregate_layer: str
     aggregate_id: str
     payload: dict[str, Any]
+    idempotency_key: NotRequired[str]

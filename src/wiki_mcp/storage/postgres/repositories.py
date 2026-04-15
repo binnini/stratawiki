@@ -39,16 +39,21 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         entity_type,
                         canonical_key,
                         scope,
+                        tenant_id,
+                        user_id,
                         schema_version,
                         attributes_json,
                         provenance_json
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
                     )
                     ON CONFLICT (id) DO UPDATE SET
+                        domain = EXCLUDED.domain,
                         entity_type = EXCLUDED.entity_type,
                         canonical_key = EXCLUDED.canonical_key,
                         scope = EXCLUDED.scope,
+                        tenant_id = EXCLUDED.tenant_id,
+                        user_id = EXCLUDED.user_id,
                         schema_version = EXCLUDED.schema_version,
                         attributes_json = EXCLUDED.attributes_json,
                         provenance_json = EXCLUDED.provenance_json,
@@ -61,6 +66,8 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         record["entity_type"],
                         record["canonical_key"],
                         record["scope"],
+                        record.get("tenant_id"),
+                        record.get("user_id"),
                         record["schema_version"],
                         self._json(record["attributes"]),
                         self._json(record["provenance"]),
@@ -80,11 +87,14 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         relation_type,
                         from_canonical_key,
                         to_canonical_key,
+                        scope,
+                        tenant_id,
+                        user_id,
                         schema_version,
                         provenance_json,
                         attributes_json
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
                     )
                     ON CONFLICT DO NOTHING
                     """,
@@ -93,6 +103,9 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         relation["relation_type"],
                         relation["from_canonical_key"],
                         relation["to_canonical_key"],
+                        relation["scope"],
+                        relation.get("tenant_id"),
+                        relation.get("user_id"),
                         relation["schema_version"],
                         self._json(relation["provenance"]),
                         self._json(relation.get("attributes", {})),
@@ -472,6 +485,29 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
                     snapshot_ref.get("profile_version"),
                 ),
             )
+            cursor.execute(
+                """
+                INSERT INTO ops.snapshot_publication (
+                    snapshot_id,
+                    layer,
+                    domain,
+                    fact_snapshot_id,
+                    interpretation_snapshot_id,
+                    profile_version,
+                    metadata_json
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+                ON CONFLICT (snapshot_id, layer, domain) DO NOTHING
+                """,
+                (
+                    snapshot_id,
+                    layer,
+                    domain,
+                    snapshot_ref["fact_snapshot_id"],
+                    snapshot_ref.get("interpretation_snapshot_id"),
+                    snapshot_ref.get("profile_version"),
+                    self._json({}),
+                ),
+            )
         return snapshot_id
 
 
@@ -479,33 +515,60 @@ class PostgresOutboxRepository(PostgresRepositoryBase):
     def append_events(self, events: list[OutboxEvent]) -> list[str]:
         stored_ids: list[str] = []
         with managed_cursor(self.connection) as cursor:
-            for index, event in enumerate(events, start=1):
-                event_id = f"{event['aggregate_layer']}:{event['aggregate_id']}:{event['event_type']}:{index}"
-                cursor.execute(
-                    """
-                    INSERT INTO ops.outbox_event (
-                        id,
-                        event_type,
-                        aggregate_layer,
-                        aggregate_id,
-                        payload_json,
-                        status,
-                        attempt_count
-                    ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s)
-                    ON CONFLICT (id) DO NOTHING
-                    """,
-                    (
-                        event_id,
-                        event["event_type"],
-                        event["aggregate_layer"],
-                        event["aggregate_id"],
-                        self._json(event["payload"]),
-                        "pending",
-                        0,
-                    ),
-                )
-                if cursor.rowcount:
-                    stored_ids.append(event_id)
+            for event in events:
+                idempotency_key = event.get("idempotency_key")
+                if idempotency_key:
+                    cursor.execute(
+                        """
+                        INSERT INTO ops.outbox_event (
+                            idempotency_key,
+                            event_type,
+                            aggregate_layer,
+                            aggregate_id,
+                            payload_json,
+                            status,
+                            attempt_count,
+                            available_at
+                        ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, NOW())
+                        ON CONFLICT (idempotency_key) DO UPDATE SET
+                            idempotency_key = EXCLUDED.idempotency_key
+                        RETURNING id
+                        """,
+                        (
+                            idempotency_key,
+                            event["event_type"],
+                            event["aggregate_layer"],
+                            event["aggregate_id"],
+                            self._json(event["payload"]),
+                            "pending",
+                            0,
+                        ),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        INSERT INTO ops.outbox_event (
+                            event_type,
+                            aggregate_layer,
+                            aggregate_id,
+                            payload_json,
+                            status,
+                            attempt_count,
+                            available_at
+                        ) VALUES (%s, %s, %s, %s::jsonb, %s, %s, NOW())
+                        RETURNING id
+                        """,
+                        (
+                            event["event_type"],
+                            event["aggregate_layer"],
+                            event["aggregate_id"],
+                            self._json(event["payload"]),
+                            "pending",
+                            0,
+                        ),
+                    )
+                row = cursor.fetchone()
+                stored_ids.append(str(self._row_to_dict(row)["id"]))
         return stored_ids
 
 
@@ -526,6 +589,9 @@ class PostgresDependencyRepository(PostgresRepositoryBase):
                 LEFT JOIN graph.rendered_page rp
                   ON rp.layer = d.to_layer
                  AND rp.record_id = d.to_id
+                 AND rp.scope = d.scope
+                 AND COALESCE(rp.tenant_id, '') = COALESCE(d.tenant_id, '')
+                 AND COALESCE(rp.user_id, '') = COALESCE(d.user_id, '')
                 WHERE d.domain = %s
                   AND d.from_layer = %s
                   AND d.from_id = %s
