@@ -75,6 +75,21 @@ That means:
 - migration ownership remains inside StrataWiki
 - canonical interpretation of stored data remains inside StrataWiki
 
+## Current Implementation Note
+
+This ownership boundary is now reflected in the repository itself.
+
+Current repo-owned database assets include:
+
+- Alembic migration setup
+- initial PostgreSQL migration
+- local bootstrap scripts
+- local Docker Compose definition for PostgreSQL
+- repository implementations aligned to the Postgres storage contracts
+
+The database process can still be run outside the application repository in real environments.
+The important boundary is that schema shape, migration history, and storage semantics remain owned by StrataWiki.
+
 ## Recommended Deployment Shape
 
 - product WAS

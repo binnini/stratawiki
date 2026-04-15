@@ -30,7 +30,6 @@ Therefore, technology choices should follow these principles:
 - choose technologies that preserve migration options
 - keep canonical storage separate from rendered views
 
-
 ## Service and Database Position
 
 StrataWiki should be treated as a separate knowledge backend service.
@@ -240,6 +239,25 @@ The following choices are now confirmed for version one.
 - Retrieval indexing: structured filtering plus lexical retrieval
 - ACL enforcement: application-level scope enforcement
 - Ingestion structure: core pipeline plus domain ingestion interface
+- Migration tooling: Alembic
+- Postgres driver baseline: psycopg
+- Local DB bootstrap baseline: `docker compose` + `alembic upgrade head`
+
+## Current Implementation Note
+
+The current repository now contains the first concrete PostgreSQL baseline.
+
+Implemented pieces include:
+
+- Alembic configuration and initial migration
+- logical schemas for `fact`, `interp`, `personal`, `ops`, and `graph`
+- initial envelope-first tables for v1
+- snapshot pointer plus snapshot publication history
+- worker-friendly outbox table
+- local PostgreSQL bootstrap via `docker-compose.yml` and scripts
+
+This does not mean all storage policy is finalized.
+It means the structural storage baseline is now implemented and can be validated against real repository behavior.
 
 ## Deferred or Revisit-Later Decisions
 
@@ -251,6 +269,8 @@ These remain intentionally open for later phases.
 - dedicated graph database
 - storage-level RLS hardening
 - heavyweight event bus adoption
+- normalized domain-specific canonical tables beyond the current envelope-first baseline
+- final status taxonomy for interpretation, personal, and outbox flows
 
 ## Revisit Triggers
 
@@ -292,6 +312,7 @@ The initial technology decision sequence has been completed for version one:
 5. graph and dependency storage: decided
 6. retrieval indexing strategy: decided
 7. ACL enforcement boundaries: decided
+8. migration and bootstrap baseline: decided
 
 ## First Slice Constraint
 

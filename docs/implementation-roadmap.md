@@ -24,6 +24,24 @@ This roadmap focuses on implementation order rather than repository migration me
 - design for explainability and invalidation from the beginning
 - avoid premature infrastructure complexity
 
+## Current Status Snapshot
+
+A concrete PostgreSQL storage baseline now exists in the repository.
+
+Completed baseline items:
+
+- Alembic migration setup
+- initial PostgreSQL logical schemas
+- envelope-first Fact storage tables
+- Interpretation canonical table baseline
+- Personal metadata table baseline
+- snapshot pointer and publication tables
+- worker-friendly outbox table
+- dependency edge and rendered page metadata tables
+- local PostgreSQL bootstrap via Docker Compose and scripts
+
+This means Phase 1 and the storage-heavy portion of Phase 2 now have an executable baseline rather than only design documents.
+
 ## Phase 1: Core Contracts
 
 Objective:
@@ -45,6 +63,11 @@ Implementation tasks:
 - define provenance model
 - define graph node and edge metadata
 - define structured error model
+
+Status:
+
+- largely complete at the contract level
+- Postgres repository contracts are now wired to an initial DB baseline
 
 Exit criteria:
 
@@ -83,6 +106,12 @@ Recommended first fact entities:
 - skill
 - location
 
+Status:
+
+- envelope-first Fact persistence baseline now exists
+- fact snapshot publication storage baseline now exists
+- source-specific canonicalization and write orchestration remain to be implemented
+
 Exit criteria:
 
 - facts can be ingested, deduped, queried, and versioned
@@ -112,6 +141,11 @@ Recommended initial interpretation families:
 - skill_gap_pattern
 - regional_opportunity_summary
 
+Status:
+
+- interpretation canonical storage baseline now exists
+- family-level generation and refresh logic remain to be implemented
+
 Exit criteria:
 
 - shared interpretations can be generated and refreshed independently of Personal
@@ -135,6 +169,11 @@ Implementation tasks:
 - attach render provenance
 - generate page paths by family and segment
 - support read access through MCP
+
+Status:
+
+- rendered page metadata storage baseline now exists in PostgreSQL
+- rendering pipeline itself remains to be implemented
 
 Exit criteria:
 
@@ -167,6 +206,11 @@ Recommended first personal record families:
 - profile_gap_analysis
 - weekly_action_plan
 
+Status:
+
+- profile context and personal metadata storage baseline now exist
+- personal generation and stale-state behavior remain to be implemented
+
 Exit criteria:
 
 - user-scoped strategy generation works with clear upstream references
@@ -190,6 +234,11 @@ Implementation tasks:
 - implement `get_dependency_impact`
 - implement graph neighbor inspection
 - ensure scope-aware filtering
+
+Status:
+
+- dependency edge and impact lookup storage baseline now exist
+- graph builders and richer routing semantics remain to be implemented
 
 Exit criteria:
 
@@ -216,6 +265,11 @@ Implementation tasks:
 - implement rendered page cache
 - implement `get_cache_status`
 - implement `get_snapshot_status`
+
+Status:
+
+- snapshot pointer/publication storage and outbox storage now exist
+- worker flow, cache policies, and inspection tools remain to be implemented
 
 Exit criteria:
 
@@ -315,8 +369,7 @@ The roadmap is functionally successful when:
 
 ## Recommended Immediate Next Build Steps
 
-1. scaffold the repository around the current docs
-2. implement the recruiting Fact slice
-3. implement one interpretation family and its rendered page
-4. implement one personal query flow with anchors
-5. implement one dependency impact tool
+1. run and verify `alembic upgrade head` against local PostgreSQL
+2. add repository-level smoke tests for Postgres persistence paths
+3. implement the recruiting Fact slice on top of the envelope-first schema
+4. implement one interpretation family and its rendered page

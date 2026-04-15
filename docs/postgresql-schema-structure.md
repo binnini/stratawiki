@@ -2,23 +2,39 @@
 
 ## Purpose
 
-This document defines the recommended PostgreSQL schema structure for StrataWiki version one.
+This document defines the PostgreSQL schema structure currently implemented for StrataWiki version one.
 
-The goal is not to finalize domain-specific tables yet.
+The goal is still not to finalize domain-specific normalized tables.
 
-Instead, this document fixes the structural database approach for the confirmed version-one stack:
+The implemented baseline focuses on:
 
-- Fact in PostgreSQL
-- Interpretation canonical in PostgreSQL JSONB
+- generic Fact envelopes in PostgreSQL
+- Interpretation canonical records in PostgreSQL JSONB
 - Personal metadata in PostgreSQL
 - outbox and snapshot operations in PostgreSQL
-- graph dependency indexes in PostgreSQL
+- graph dependency indexes and rendered page metadata in PostgreSQL
 
-Detailed domain-level table design should be added later after the domain ingestion interface is implemented and real data is inspected.
+Detailed domain-level normalized tables remain deferred until the domain ingestion interface is exercised with real source data.
+
+## Current Implementation Status
+
+A repository-owned PostgreSQL baseline now exists in the StrataWiki repo.
+
+Current implementation assets:
+
+- `alembic/`
+- `alembic.ini`
+- initial migration under `alembic/versions/`
+- `docker-compose.yml` for local PostgreSQL
+- `scripts/bootstrap_db.sh`
+- `scripts/db_upgrade.sh`
+- `db/README.md`
+
+This means the structural schema approach is no longer only conceptual. A concrete initial migration now defines the version-one storage baseline.
 
 ## Guiding Principle
 
-StrataWiki should use:
+StrataWiki uses:
 
 - one PostgreSQL database
 - multiple logical PostgreSQL schemas
@@ -47,9 +63,9 @@ These should not be mixed arbitrarily.
 
 Logical PostgreSQL schemas provide a clean separation without requiring multiple databases.
 
-## Recommended Logical Schemas
+## Implemented Logical Schemas
 
-The recommended version-one structure is:
+The implemented version-one structure is:
 
 - `fact`
 - `interp`
@@ -67,31 +83,50 @@ The `fact` schema stores canonical observed data.
 
 This is the strongest source-of-truth layer in StrataWiki.
 
-### Responsibilities
+### Implemented Tables
 
-- canonical entities
-- observed attributes
-- explicit fact relations
-- source snapshots
-- deduplication support
-- canonical identity resolution
-- merge and supersession history
+- `fact.record_envelopes`
+- `fact.relation_envelopes`
 
-### Design Style
+### Current Design
 
-This schema should be relational and normalized where it matters.
+The implemented baseline is envelope-first.
 
-Recommended characteristics:
+`fact.record_envelopes` currently stores:
 
-- typed tables
-- foreign keys where appropriate
-- unique or canonical keys where needed
-- explicit relation tables for many-to-many links
-- version and status fields
+- canonical fact identity
+- `domain`
+- `entity_type`
+- `canonical_key`
+- explicit scope metadata
+- `schema_version`
+- `attributes_json`
+- `provenance_json`
+- timestamps
+
+`fact.relation_envelopes` currently stores:
+
+- domain-neutral relation envelopes
+- relation natural key components
+- explicit scope metadata
+- `schema_version`
+- `attributes_json`
+- `provenance_json`
+- timestamps
+
+### Scope Rule
+
+Both implemented `fact` tables now support:
+
+- `scope`
+- `tenant_id`
+- `user_id`
+
+Initial data may still be mostly `shared`, but the schema is now multiscoped from day one.
 
 ### Notes
 
-The exact domain entities are intentionally deferred until the domain ingestion interface is in place and real source data has been reviewed.
+The exact domain entities remain intentionally deferred until the domain ingestion interface is in place and real source data has been reviewed.
 
 ## `interp` Schema
 
@@ -101,32 +136,33 @@ The `interp` schema stores canonical shared Interpretation records.
 
 This layer represents derived meaning from Facts.
 
-### Responsibilities
+### Implemented Tables
 
-- interpretation records
-- interpretation-to-interpretation relations
-- evidence references
-- family or segment snapshot publication
-- interpretation status and freshness
-- render hints and provenance
+- `interp.record`
 
-### Design Style
+### Current Design
 
-This schema should use a hybrid structure:
+The current implementation uses a hybrid structure:
 
 - stable filterable fields as relational columns
 - flexible interpretation content in JSONB
 
-Recommended characteristics:
+`interp.record` currently includes:
 
-- envelope columns for high-value indexed fields
-- JSONB body for interpretation payloads
-- explicit relation tables where reverse lookup matters
-- snapshot tables for publishable interpretation partitions
+- envelope fields such as `domain`, `kind`, `subject_type`, `subject_id`
+- explicit scope metadata
+- `schema_version`, `status`, `confidence`
+- `computed_at`, `expires_at`
+- `body_json`
+- `provenance_json`
+- `render_hints_json`
+- `fact_snapshot_id`
+- timestamps
 
 ### Notes
 
-This schema is intentionally designed so that Interpretation could later migrate to a NoSQL document store without changing the higher-level contracts.
+Row-level `interpretation_snapshot_id` is intentionally not required in `interp.record`.
+Publication lineage is handled in `ops`.
 
 ## `personal` Schema
 
@@ -136,29 +172,36 @@ The `personal` schema stores user-scoped metadata and profile state.
 
 This is not the same as rendered markdown output.
 
-### Responsibilities
+### Implemented Tables
 
-- user profiles
-- profile versions
-- personal record metadata
-- anchor references into upper layers
-- stale and invalid states
-- rendered body paths
-- provenance and snapshot references
+- `personal.record`
+- `personal.profile_context`
 
-### Design Style
+### Current Design
 
-This schema should be relational first.
+`personal.record` currently stores:
 
-The readable body of a Personal artifact should not be treated as the primary operational record.
-
-Recommended characteristics:
-
-- one record for personal metadata
-- one or more anchor tables for upstream references
-- explicit scope, tenant, and user fields
+- one personal metadata record per id
+- explicit scope metadata
 - snapshot tuple references
-- rendered file path fields rather than storing all content inline by default
+- `body_path`
+- `status`
+- `schema_version`
+- `provenance_json`
+- timestamps
+
+`personal.profile_context` currently stores:
+
+- `domain`
+- `tenant_id`
+- `user_id`
+- `profile_version`
+- `goals_json`
+- `preferences_json`
+- `attributes_json`
+- timestamps
+
+A unique key on `(domain, tenant_id, user_id)` is part of the implemented baseline.
 
 ### Notes
 
@@ -170,30 +213,31 @@ Personal markdown remains valuable, but it is treated as a readable artifact rat
 
 The `ops` schema stores operational state required for asynchronous projection and system coordination.
 
-### Responsibilities
+### Implemented Tables
 
-- outbox events
-- worker coordination
-- snapshot pointers
-- rebuild jobs
-- cache metadata
-- projection state
+- `ops.snapshot_pointer`
+- `ops.snapshot_publication`
+- `ops.outbox_event`
 
-### Design Style
+### Current Design
 
-This schema should be small, explicit, and operationally oriented.
+`ops.snapshot_pointer` stores the current published snapshot pointer.
 
-Recommended characteristics:
+`ops.snapshot_publication` stores minimal publication history and reproducibility lineage.
 
-- append-friendly event tables
-- retry and processing status fields
-- job lifecycle fields
-- current snapshot pointer tables
-- lightweight cache bookkeeping where needed
+`ops.outbox_event` is implemented as a worker-friendly outbox table with:
+
+- UUID primary key
+- optional `idempotency_key`
+- event metadata
+- `status`
+- `attempt_count`
+- scheduling and processing timestamps
+- `last_error`
 
 ### Notes
 
-This schema is critical to the outbox-plus-worker model and should not be treated as an afterthought.
+The `ops` schema is now part of the concrete baseline and should not be treated as an afterthought.
 
 ## `graph` Schema
 
@@ -206,31 +250,34 @@ This does not make PostgreSQL the canonical semantic graph store.
 Instead, this schema exists to support:
 
 - dependency reverse indexes
-- semantic edge projections
-- rendered page source tracking
 - impact analysis
+- rendered page metadata lookup
 
-### Responsibilities
+### Implemented Tables
 
-- dependency edges
-- semantic edges
-- rendered page metadata
-- rendered page source mappings
+- `graph.dependency_edge`
+- `graph.rendered_page`
 
-### Design Style
+### Current Design
 
-This schema should prioritize reverse lookup and impact routing over graph-theory elegance.
+`graph.dependency_edge` prioritizes reverse lookup and downstream impact routing.
 
-Recommended characteristics:
+`graph.rendered_page` is currently implemented as a single-table design for both shared and personal rendered artifacts, distinguished by `layer`.
 
-- explicit edge tables
-- layer and scope metadata on edges
-- tables optimized for downstream impact lookup
-- no requirement for a dedicated graph database in version one
+The rendered page table includes:
+
+- `domain`
+- `layer`
+- `record_id`
+- `path`
+- explicit scope metadata
+- snapshot metadata
+- optional `metadata_json`
+- timestamps
 
 ## Cross-Schema Design Rules
 
-These rules apply across all schemas.
+These rules now apply to the implemented baseline.
 
 ### 1. Scope Must Be Explicit
 
@@ -240,111 +287,24 @@ Any record that participates in retrieval, rendering, or graph traversal should 
 - `tenant`
 - `user`
 
-This means scope metadata must be available where needed, not inferred indirectly.
+The implemented baseline uses `text + check constraint`, not PostgreSQL enum.
 
 ### 2. Snapshot References Must Be First-Class
 
 Snapshot lineage should not live only in logs or derived explanations.
 
-Relevant records should reference:
+The current baseline uses:
 
-- fact snapshot
-- interpretation snapshot
-- profile version
-
-where applicable.
+- record-level snapshot references where appropriate
+- `ops.snapshot_pointer` for current pointers
+- `ops.snapshot_publication` for minimal publication history
 
 ### 3. Schema Versions Must Be Stored
 
-Because the system is expected to evolve, records or record families should retain a `schema_version` where appropriate.
+Because the system is expected to evolve, record families retain a `schema_version` where appropriate.
 
-This is especially important for:
+### 4. Domain Normalization Remains Deferred
 
-- Interpretation
-- Personal metadata
-- render pipelines
-- migration logic
+The current migration intentionally does not create recruiting-final or source-specific normalized tables.
 
-### 4. Filterable Fields Should Not Hide Inside JSONB
-
-JSONB is useful, but the most important filter keys should remain as regular relational columns.
-
-Typical examples:
-
-- domain
-- kind
-- status
-- scope
-- tenant_id
-- user_id
-- subject_type
-- subject_id
-- snapshot references
-- freshness timestamps
-
-### 5. Reverse Lookup Matters More Than Perfect Normalization
-
-StrataWiki depends heavily on:
-
-- stale marking
-- invalidation routing
-- impact analysis
-- provenance inspection
-
-Therefore, relation and dependency tables should be designed for efficient reverse lookup, not only forward modeling purity.
-
-## Recommended V1 Philosophy per Schema
-
-### `fact`
-
-- strongly structured
-- relational first
-- canonical and conservative
-
-### `interp`
-
-- hybrid structured plus document style
-- JSONB-friendly
-- optimized for flexible derived knowledge
-
-### `personal`
-
-- relational metadata
-- markdown body stored separately on filesystem
-- optimized for user scope and refreshability
-
-### `ops`
-
-- explicit operational state
-- small but critical
-
-### `graph`
-
-- dependency routing first
-- semantic projection second
-
-## What Is Deliberately Deferred
-
-This document does not yet fix:
-
-- exact domain entity tables
-- exact domain-specific relation tables
-- exact indexes by table
-- exact partitioning strategy
-- exact migration tooling
-
-These should be added later when:
-
-- the domain ingestion interface is defined
-- real source payloads are inspected
-- the first domain slice is implemented
-
-## Recommended Next Step
-
-The next database-oriented design task should be one of these:
-
-1. define the domain ingestion interface
-2. inspect real domain source payloads
-3. draft minimum viable DDL for the first domain slice
-
-The schema structure above should be treated as fixed scaffolding for those later steps.
+The initial schema is deliberately envelope-first.
