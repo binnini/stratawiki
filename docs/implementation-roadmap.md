@@ -59,7 +59,7 @@ Objective:
 Deliverables:
 
 - source normalization pipeline
-- Fact persistence
+- PostgreSQL-backed Fact persistence
 - dedupe logic
 - fact snapshot publishing
 
@@ -95,7 +95,7 @@ Objective:
 
 Deliverables:
 
-- interpretation record store
+- PostgreSQL JSONB-backed interpretation record store
 - interpretation family partitions
 - interpretation snapshot publishing
 
@@ -127,6 +127,7 @@ Deliverables:
 - shared markdown rendering pipeline
 - rendered page metadata
 - snapshot-aware page output
+- filesystem-backed rendered output
 
 Implementation tasks:
 
@@ -147,10 +148,10 @@ Objective:
 
 Deliverables:
 
-- profile storage
-- personal record storage
+- PostgreSQL-backed profile storage
+- PostgreSQL-backed personal metadata storage
 - anchor model
-- personal markdown rendering
+- filesystem markdown rendering for personal outputs
 
 Implementation tasks:
 
@@ -178,8 +179,8 @@ Objective:
 
 Deliverables:
 
-- semantic graph
-- dependency reverse index
+- semantic graph artifacts
+- PostgreSQL-backed dependency reverse index
 - impact analysis tools
 
 Implementation tasks:
@@ -206,6 +207,7 @@ Deliverables:
 - stale versus invalid states
 - cache inspection tools
 - snapshot status inspection
+- outbox plus worker projection flow
 
 Implementation tasks:
 
@@ -227,7 +229,7 @@ Objective:
 
 Deliverables:
 
-- shared, tenant, and user scope enforcement
+- shared, tenant, and user scope enforcement at the application layer
 - retrieval filtering
 - graph traversal filtering
 - provenance filtering

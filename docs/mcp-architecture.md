@@ -22,6 +22,7 @@ This architecture should be understood as:
 - tiered storage rather than one universal storage system
 - snapshot-aware rather than globally ACID across all derived layers
 - graph-assisted rather than graph-native for canonical truth
+- a separate knowledge backend service rather than a database-bound application module
 
 ## Design Goals
 
@@ -187,9 +188,12 @@ Responsibilities:
 
 Recommended direction:
 
-- Fact in RDBMS or similarly structured store
-- Interpretation canonical in NoSQL or document-oriented store
-- Profile state in structured operational storage
+- Fact in PostgreSQL
+- Interpretation canonical in PostgreSQL JSONB for version one
+- Profile and Personal metadata in PostgreSQL
+- Personal rendered markdown on the filesystem
+
+PostgreSQL should be treated as a separate infrastructure dependency owned by StrataWiki, not as an in-process storage detail.
 
 ### 6. Rendered View Layer
 
@@ -326,6 +330,18 @@ Important distinction:
 
 The design should optimize for consistent contracts, not identical model output.
 
+## Internal Layering Requirement
+
+StrataWiki should become more internally layered before it becomes more physically distributed.
+
+Important internal boundaries include:
+
+- core vs domain plugins
+- canonical vs rendered
+- retrieval vs dependency routing
+- synchronous request paths vs asynchronous projection paths
+- MCP interface vs internal service interface
+
 ## Multi-User and ACL Requirements
 
 Access control must apply consistently to:
@@ -341,11 +357,13 @@ Shared, tenant-scoped, and user-scoped records should be explicitly distinguisha
 ## Operational Considerations
 
 - use asynchronous projection rather than cross-store synchronous mutation
-- prefer outbox or job-queue patterns before introducing heavyweight brokers
+- use outbox plus worker as the version-one projection model
 - partition interpretation snapshots by family or segment where possible
-- keep dependency reverse indexes explicit to limit invalidation blast radius
+- keep reverse dependency indexes in PostgreSQL to limit invalidation blast radius
 - attach schema versions and prompt/template versions to derived records
 - keep markdown as a rendered view, not the only operational storage layer
+- enforce shared, tenant, and user scope in the application layer
+- start retrieval with structured filtering plus lexical search
 
 ## Recommended Repository Shape
 
