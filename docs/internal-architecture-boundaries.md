@@ -42,6 +42,8 @@ Domain plugins should own:
 - domain schema interpretation
 - domain-specific validation
 - interpretation family rules
+- interpretation family builders and registries that encapsulate
+  family-specific projection and rendering logic
 - domain-specific rendering conventions where necessary
 
 This boundary prevents the first domain from contaminating the platform core.
@@ -145,6 +147,13 @@ This includes:
 - graph artifact rendering
 
 Rendering should consume canonical state rather than redefine it.
+
+For shared interpretation projection, the practical version-one split is:
+
+- the projection service owns event/batch orchestration
+- family builders own family-specific record construction and markdown layout
+- a registry owns which builders are enabled and how kind-based rendering
+  dispatch resolves
 
 ## Recommended Code-Level Shape
 
