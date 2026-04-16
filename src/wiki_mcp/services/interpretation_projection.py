@@ -17,7 +17,7 @@ from wiki_mcp.schemas.outbox_event import (
 )
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
-from wiki_mcp.services.interpretation_family_builders import (
+from wiki_mcp.services.interpretation_families import (
     InterpretationBuildContext,
     InterpretationFamilyRegistry,
     build_default_interpretation_family_registry,

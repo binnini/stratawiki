@@ -61,12 +61,15 @@ Separation rule:
 
 ## Open Questions
 
-- Whether future recruiting families should stay in the same local registry
-  module or move behind domain-specific packages once recruiting adds more
-  family count and subject types.
-- Whether rendered markdown concerns should later split again so builders own
-  canonical record construction while a separate renderer registry owns page
-  formatting.
+- The immediate registry growth risk is now reduced by moving to
+  `services/interpretation_families/` with one file per family plus separate
+  `base.py`, `common.py`, and `registry.py`.
+- Rendered markdown remains colocated with each builder for now because the
+  current families still have a simple 1:1 relationship between canonical
+  record shape and markdown shape.
+- A separate renderer registry should be reconsidered only when multiple
+  families start sharing one canonical subject shape with different page
+  layouts, or when one family needs multiple render targets.
 - Whether family enablement should eventually become configuration-driven per
   domain rather than code-registered.
 
@@ -75,7 +78,10 @@ Separation rule:
 - Keep new shared interpretation families out of
   `DefaultInterpretationProjectionService`; add them through the registry
   instead.
-- If a third or fourth family lands, consider a recruiting-specific builder
-  package so the registry module does not become the next accumulation point.
+- Keep each new family in its own module under
+  `services/interpretation_families/` so extension remains additive instead of
+  requiring edits to one large shared file.
+- Revisit renderer splitting only if page-format variance starts growing faster
+  than canonical interpretation-family count.
 - Re-run the Postgres-backed suite when a reachable DB is available to confirm
   the refactor preserved rendered-page writes and snapshot publication.

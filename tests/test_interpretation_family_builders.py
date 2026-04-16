@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from wiki_mcp.services.interpretation_family_builders import (
+from wiki_mcp.services.interpretation_families import (
     InterpretationBuildContext,
     InterpretationFamilyRegistry,
 )
