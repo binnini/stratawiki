@@ -69,7 +69,13 @@ class StubFactRepository:
                 "domain": "recruiting",
                 "entity_type": "recruitment_section",
                 "canonical_key": "recruitment_section:EMP-1:requirements:1",
-                "attributes": {"title": "Requirements"},
+                "attributes": {
+                    "title": "Requirements",
+                    "career_requirement": "3+ years backend development",
+                    "education_requirement": "BS in Computer Science or equivalent",
+                    "other_requirement": "Distributed systems experience",
+                    "openings": "2",
+                },
                 "scope": "shared",
                 "schema_version": "v1",
                 "provenance": {"source_id": "EMP-1"},
@@ -195,25 +201,47 @@ def test_project_fact_event_persists_interpretation_snapshot_and_dependencies() 
             {"scope": "shared"},
         )
     ]
-    saved_record = interpretation_repository.calls[0][0][0]
-    assert saved_record["kind"] == "company_hiring_pattern"
-    assert saved_record["subject_id"] == "company-name:jobswiki"
-    assert "actively hiring" in saved_record["body"]["summary"]
+    saved_records = interpretation_repository.calls[0][0]
+    saved_record_ids = [record["id"] for record in saved_records]
+    hiring_record = next(
+        record for record in saved_records if record["kind"] == "company_hiring_pattern"
+    )
+    candidate_profile_record = next(
+        record
+        for record in saved_records
+        if record["kind"] == "company_candidate_profile_pattern"
+    )
+    assert hiring_record["subject_id"] == "company-name:jobswiki"
+    assert "actively hiring" in hiring_record["body"]["summary"]
+    assert candidate_profile_record["subject_id"] == "company-name:jobswiki"
+    assert "candidate profile" in candidate_profile_record["body"]["summary"]
+    assert candidate_profile_record["body"]["career_requirement_count"] == 1
     assert snapshot_repository.calls[0][0] == "interpretation"
     assert snapshot_repository.calls[0][2]["fact_snapshot_id"] == "fact_snap:recruiting:EMP-1:123"
-    assert result["interpretation_ids"] == [saved_record["id"]]
+    assert result["interpretation_ids"] == saved_record_ids
     assert result["emitted_outbox_event_ids"] == ["evt-2"]
+    assert len(dependency_repository.calls) == 2
     assert dependency_repository.calls[0]["to_layer"] == "interpretation"
     assert len(dependency_repository.calls[0]["edges"]) == 4
+    assert len(rendering_repository.artifacts) == 2
     assert rendering_repository.artifacts[0]["layer"] == "interpretation"
-    assert rendering_repository.artifacts[0]["record_id"] == saved_record["id"]
-    assert (
-        rendering_repository.artifacts[0]["path"]
-        == "wiki/shared/recruiting/company_hiring_pattern/company-name__jobswiki.md"
+    artifact_paths = {artifact["path"] for artifact in rendering_repository.artifacts}
+    assert artifact_paths == {
+        "wiki/shared/recruiting/company_hiring_pattern/company-name__jobswiki.md",
+        "wiki/shared/recruiting/company_candidate_profile_pattern/company-name__jobswiki.md",
+    }
+    candidate_profile_artifact = next(
+        artifact
+        for artifact in rendering_repository.artifacts
+        if artifact["record_id"] == candidate_profile_record["id"]
     )
-    assert "## Evidence Facts" in rendering_repository.artifacts[0]["body_markdown"]
+    assert "## Section Signals" in candidate_profile_artifact["body_markdown"]
+    assert len(outbox_repository.calls[0]) == 2
     assert outbox_repository.calls[0][0]["event_type"] == "interpretation_snapshot_published"
     assert outbox_repository.calls[0][0]["payload"]["scope"] == "shared"
+    assert {
+        event["payload"]["interpretation_kind"] for event in outbox_repository.calls[0]
+    } == {"company_hiring_pattern", "company_candidate_profile_pattern"}
 
 
 def test_project_fact_event_rejects_incomplete_payload() -> None:
@@ -247,6 +275,100 @@ def test_project_fact_event_rejects_incomplete_payload() -> None:
         assert "missing required fields" in str(exc)
     else:
         raise AssertionError("Expected ValueError for incomplete fact_ingested payload")
+
+
+def test_project_fact_event_skips_candidate_profile_family_without_requirement_signals() -> None:
+    fact_repository = StubFactRepository()
+    interpretation_repository = StubInterpretationRepository()
+    snapshot_repository = StubSnapshotRepository()
+    dependency_repository = StubDependencyRepository()
+    rendering_repository = StubRenderingRepository()
+    outbox_repository = StubOutboxRepository()
+    service = DefaultInterpretationProjectionService(
+        fact_repository=fact_repository,
+        interpretation_repository=interpretation_repository,
+        snapshot_repository=snapshot_repository,
+        dependency_repository=dependency_repository,
+        rendering_repository=rendering_repository,
+        outbox_repository=outbox_repository,
+    )
+
+    fact_repository.get_by_ids = lambda ids, scope_ref: [  # type: ignore[method-assign]
+        {
+            "id": "fact:job_posting:emp-1",
+            "domain": "recruiting",
+            "entity_type": "job_posting",
+            "canonical_key": "job_posting:emp-1",
+            "attributes": {
+                "title": "Backend Engineer",
+                "company_name": "JobsWiki",
+                "employment_type": "full_time",
+            },
+            "scope": "shared",
+            "schema_version": "v1",
+            "provenance": {"source_id": "EMP-1"},
+        },
+        {
+            "id": "fact:company:jobswiki",
+            "domain": "recruiting",
+            "entity_type": "company",
+            "canonical_key": "company-name:jobswiki",
+            "attributes": {"name": "JobsWiki"},
+            "scope": "shared",
+            "schema_version": "v1",
+            "provenance": {"source_id": "EMP-1"},
+        },
+        {
+            "id": "fact:section:1",
+            "domain": "recruiting",
+            "entity_type": "recruitment_section",
+            "canonical_key": "recruitment_section:EMP-1:requirements:1",
+            "attributes": {"title": "Requirements"},
+            "scope": "shared",
+            "schema_version": "v1",
+            "provenance": {"source_id": "EMP-1"},
+        },
+    ]
+
+    result = service.project_fact_event(
+        {
+            "id": "evt-1",
+            "event_type": "fact_ingested",
+            "aggregate_layer": "fact",
+            "aggregate_id": "fact_snap:recruiting:EMP-1:123",
+            "payload": {
+                "domain": "recruiting",
+                "source_id": "EMP-1",
+                "connector": "worknet",
+                "fact_snapshot_id": "fact_snap:recruiting:EMP-1:123",
+                "affected_fact_ids": [
+                    "fact:job_posting:emp-1",
+                    "fact:company:jobswiki",
+                    "fact:section:1",
+                ],
+                "affected_entity_types": [
+                    "job_posting",
+                    "company",
+                    "recruitment_section",
+                ],
+                "scope": "shared",
+                "facts_created": 3,
+                "facts_updated": 0,
+                "relations_created": 0,
+            },
+            "status": "claimed",
+            "attempt_count": 1,
+            "available_at": "2026-04-16T00:00:00Z",
+            "claimed_at": "2026-04-16T00:01:00Z",
+            "processed_at": None,
+            "last_error": None,
+            "idempotency_key": "fact_ingested:fact_snap:recruiting:EMP-1:123",
+        }
+    )
+
+    assert result["interpretation_ids"] == ["interp:company_hiring_pattern:company-name:jobswiki"]
+    assert len(rendering_repository.artifacts) == 1
+    assert len(outbox_repository.calls[0]) == 1
 
 
 def test_project_fact_event_writes_shared_rendered_page_to_postgres_and_filesystem(
@@ -299,6 +421,22 @@ def test_project_fact_event_writes_shared_rendered_page_to_postgres_and_filesyst
                 "schema_version": "v1",
                 "provenance": {"source_id": "EMP-1"},
             },
+            {
+                "id": "fact:section:1",
+                "domain": "recruiting",
+                "entity_type": "recruitment_section",
+                "canonical_key": "recruitment_section:EMP-1:requirements:1",
+                "attributes": {
+                    "title": "Requirements",
+                    "career_requirement": "3+ years backend development",
+                    "education_requirement": "BS in Computer Science or equivalent",
+                    "other_requirement": "Distributed systems experience",
+                    "openings": "2",
+                },
+                "scope": "shared",
+                "schema_version": "v1",
+                "provenance": {"source_id": "EMP-1"},
+            },
         ],
         [],
     )
@@ -327,14 +465,16 @@ def test_project_fact_event_writes_shared_rendered_page_to_postgres_and_filesyst
                     "fact:job_posting:emp-1",
                     "fact:company:jobswiki",
                     "fact:job:backend",
+                    "fact:section:1",
                 ],
                 "affected_entity_types": [
                     "job_posting",
                     "company",
                     "job",
+                    "recruitment_section",
                 ],
                 "scope": "shared",
-                "facts_created": 3,
+                "facts_created": 4,
                 "facts_updated": 0,
                 "relations_created": 0,
             },
@@ -354,15 +494,33 @@ def test_project_fact_event_writes_shared_rendered_page_to_postgres_and_filesyst
             SELECT layer, record_id, path, fact_snapshot_id, interpretation_snapshot_id, metadata_json
             FROM graph.rendered_page
             WHERE layer = %s
+            ORDER BY path
             """,
             ("interpretation",),
         )
-        row = cursor.fetchone()
-    stored_path = tmp_path / row["path"]
+        rows = cursor.fetchall()
 
-    assert row["record_id"] == result["interpretation_ids"][0]
-    assert row["path"] == "wiki/shared/recruiting/company_hiring_pattern/company-name__jobswiki.md"
-    assert row["fact_snapshot_id"] == "fact_snap:recruiting:EMP-1:123"
-    assert row["interpretation_snapshot_id"] == result["interpretation_snapshot_id"]
-    assert row["metadata_json"]["title"] == "JobsWiki hiring pattern"
-    assert stored_path.read_text(encoding="utf-8").startswith("# JobsWiki hiring pattern\n")
+    assert len(rows) == 2
+    row_by_path = {row["path"]: row for row in rows}
+    hiring_row = row_by_path[
+        "wiki/shared/recruiting/company_hiring_pattern/company-name__jobswiki.md"
+    ]
+    candidate_profile_row = row_by_path[
+        "wiki/shared/recruiting/company_candidate_profile_pattern/company-name__jobswiki.md"
+    ]
+
+    assert hiring_row["record_id"] in result["interpretation_ids"]
+    assert hiring_row["fact_snapshot_id"] == "fact_snap:recruiting:EMP-1:123"
+    assert hiring_row["interpretation_snapshot_id"] == result["interpretation_snapshot_id"]
+    assert hiring_row["metadata_json"]["title"] == "JobsWiki hiring pattern"
+    assert (
+        (tmp_path / hiring_row["path"]).read_text(encoding="utf-8").startswith(
+            "# JobsWiki hiring pattern\n"
+        )
+    )
+    assert candidate_profile_row["record_id"] in result["interpretation_ids"]
+    assert candidate_profile_row["interpretation_snapshot_id"] == result["interpretation_snapshot_id"]
+    assert candidate_profile_row["metadata_json"]["title"] == "JobsWiki candidate profile pattern"
+    assert "## Section Signals" in (
+        tmp_path / candidate_profile_row["path"]
+    ).read_text(encoding="utf-8")
