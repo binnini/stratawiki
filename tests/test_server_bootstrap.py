@@ -85,10 +85,12 @@ class StubPersonalQueryEntrypoint:
             "answer": {
                 "answer_type": "personal_query_answer",
                 "generation_strategy": "deterministic_summary_bundle_v1",
+                "personal_family": "career_transition_plan",
                 "question": kwargs["question"],
-                "answer_summary": "Best current personal context: Backend transition plan.",
+                "answer_summary": "Current career transition plan focus: Backend transition plan.",
                 "answer_rationale": "Selected personal context first because the current layer order is personal -> interpretation -> fact.",
-                "answer_markdown": "# Personal Knowledge Answer\n",
+                "answer_markdown": "# Career Transition Plan\n",
+                "recommended_actions": ["Prioritize the transition direction captured in backend transition plan."],
                 "citations": [],
                 "input_bundle": {
                     "question": kwargs["question"],
@@ -441,7 +443,7 @@ def test_build_server_wires_postgres_entrypoints_and_tools(
             (
                 "personal:plan-1",
                 "recruiting",
-                "career_plan",
+                "career_transition_plan",
                 "Backend transition plan",
                 "Personal strategy summary",
                 "user",
@@ -534,13 +536,15 @@ def test_build_server_wires_postgres_entrypoints_and_tools(
         assert retrieval_result["ok"] is True
         assert retrieval_result["retrieval"]["personal_ids"] == ["personal:plan-1"]
         assert personal_query_result["ok"] is True
+        assert personal_query_result["answer"]["personal_family"] == "career_transition_plan"
+        assert "## Recommended Actions" in personal_query_result["answer"]["answer_markdown"]
         assert personal_query_result["answer"]["input_bundle"]["personal_context"][0]["record_id"] == (
             "personal:plan-1"
         )
         assert retrieval_result["retrieval"]["personal_records"][0] == {
             "id": "personal:plan-1",
             "domain": "recruiting",
-            "kind": "career_plan",
+            "kind": "career_transition_plan",
             "title": "Backend transition plan",
             "summary": "Personal strategy summary",
             "snapshot_ref": {

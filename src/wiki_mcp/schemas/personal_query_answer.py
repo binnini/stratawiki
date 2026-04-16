@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 from wiki_mcp.schemas.personal_query_bundle import PersonalQueryBundle
 
@@ -19,9 +19,11 @@ class PersonalQueryAnswer(TypedDict):
 
     answer_type: Literal["personal_query_answer"]
     generation_strategy: Literal["deterministic_summary_bundle_v1"]
+    personal_family: NotRequired[str]
     question: str
     answer_summary: str
     answer_rationale: str
     answer_markdown: str
+    recommended_actions: NotRequired[list[str]]
     citations: list[PersonalQueryCitation]
     input_bundle: PersonalQueryBundle

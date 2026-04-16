@@ -103,6 +103,7 @@ class DefaultPersonalQueryService:
                     "record_id": record["id"],
                     "title": self._record_title(layer, record, page),
                     "summary": self._record_summary(layer, record, page),
+                    **({"kind": record["kind"]} if "kind" in record else {}),
                     **self._item_match_metadata(explanation),
                     **({"path": page["path"]} if page is not None else {}),
                 }
@@ -185,14 +186,37 @@ class DefaultPersonalQueryService:
             answer_summary = "No matching personal, interpretation, or fact context was found."
             answer_rationale = "No retrieval candidate cleared the current matching threshold."
             citations: list[PersonalQueryCitation] = []
-        else:
-            layer_label = lead_item["layer"]
-            answer_summary = (
-                f"Best current {layer_label} context: {lead_item['title']}. "
-                f"{lead_item['summary']}"
+            answer_markdown = self._render_answer_markdown(
+                question=question,
+                answer_summary=answer_summary,
+                answer_rationale=answer_rationale,
+                input_bundle=input_bundle,
             )
-            answer_rationale = self._build_answer_rationale(input_bundle, lead_item)
-            citations = self._build_citations(input_bundle)
+            return {
+                "answer_type": "personal_query_answer",
+                "generation_strategy": "deterministic_summary_bundle_v1",
+                "question": question,
+                "answer_summary": answer_summary,
+                "answer_rationale": answer_rationale,
+                "answer_markdown": answer_markdown,
+                "citations": citations,
+                "input_bundle": input_bundle,
+            }
+
+        if lead_item.get("kind") == "career_transition_plan":
+            return self._build_career_transition_plan_answer(
+                question=question,
+                input_bundle=input_bundle,
+                lead_item=lead_item,
+            )
+
+        layer_label = lead_item["layer"]
+        answer_summary = (
+            f"Best current {layer_label} context: {lead_item['title']}. "
+            f"{lead_item['summary']}"
+        )
+        answer_rationale = self._build_answer_rationale(input_bundle, lead_item)
+        citations = self._build_citations(input_bundle)
 
         answer_markdown = self._render_answer_markdown(
             question=question,
@@ -208,6 +232,39 @@ class DefaultPersonalQueryService:
             "answer_rationale": answer_rationale,
             "answer_markdown": answer_markdown,
             "citations": citations,
+            "input_bundle": input_bundle,
+        }
+
+    def _build_career_transition_plan_answer(
+        self,
+        *,
+        question: str,
+        input_bundle: PersonalQueryBundle,
+        lead_item: PersonalQueryBundleItem,
+    ) -> PersonalQueryAnswer:
+        answer_summary = (
+            f"Current career transition plan focus: {lead_item['title']}. "
+            f"{lead_item['summary']}"
+        )
+        answer_rationale = self._build_answer_rationale(input_bundle, lead_item)
+        recommended_actions = self._build_career_transition_actions(input_bundle, lead_item)
+        answer_markdown = self._render_career_transition_plan_markdown(
+            question=question,
+            answer_summary=answer_summary,
+            answer_rationale=answer_rationale,
+            input_bundle=input_bundle,
+            recommended_actions=recommended_actions,
+        )
+        return {
+            "answer_type": "personal_query_answer",
+            "generation_strategy": "deterministic_summary_bundle_v1",
+            "personal_family": "career_transition_plan",
+            "question": question,
+            "answer_summary": answer_summary,
+            "answer_rationale": answer_rationale,
+            "answer_markdown": answer_markdown,
+            "recommended_actions": recommended_actions,
+            "citations": self._build_citations(input_bundle),
             "input_bundle": input_bundle,
         }
 
@@ -238,6 +295,27 @@ class DefaultPersonalQueryService:
             + " matches after layer-aware ranking."
         )
         return " ".join(lines)
+
+    def _build_career_transition_actions(
+        self,
+        input_bundle: PersonalQueryBundle,
+        lead_item: PersonalQueryBundleItem,
+    ) -> list[str]:
+        actions = [
+            f"Prioritize the transition direction captured in {lead_item['title'].lower()}.",
+        ]
+        if input_bundle["interpretation_context"]:
+            top_interpretation = input_bundle["interpretation_context"][0]
+            actions.append(
+                "Use the strongest shared market signal as a weekly checkpoint: "
+                f"{top_interpretation['summary']}"
+            )
+        if input_bundle["fact_context"]:
+            top_fact = input_bundle["fact_context"][0]
+            actions.append(
+                f"Turn the top supporting fact into a concrete next step: {top_fact['title']}."
+            )
+        return actions[:3]
 
     def _select_lead_item(
         self,
@@ -288,6 +366,56 @@ class DefaultPersonalQueryService:
             ("personal_context", "Personal Context"),
             ("interpretation_context", "Shared Interpretation Context"),
             ("fact_context", "Fact Context"),
+        ):
+            items = input_bundle[key]
+            if not items:
+                continue
+            lines.extend(["", f"## {heading}"])
+            for item in items:
+                detail = f"- {item['title']}: {item['summary']}"
+                if "match_reason" in item:
+                    detail += f" ({item['match_reason']}"
+                    if "retrieval_score" in item:
+                        detail += f", score={item['retrieval_score']}"
+                    detail += ")"
+                lines.append(detail)
+        return "\n".join(lines)
+
+    def _render_career_transition_plan_markdown(
+        self,
+        *,
+        question: str,
+        answer_summary: str,
+        answer_rationale: str,
+        input_bundle: PersonalQueryBundle,
+        recommended_actions: list[str],
+    ) -> str:
+        goals = []
+        profile_context = input_bundle.get("profile_context")
+        if isinstance(profile_context, dict):
+            goals = [str(goal) for goal in profile_context.get("goals", [])[:3]]
+
+        lines = [
+            "# Career Transition Plan",
+            "",
+            f"Question: {question}",
+            "",
+            "## Direction",
+            answer_summary,
+            "",
+            "## Why This Plan",
+            answer_rationale,
+        ]
+        if goals:
+            lines.extend(["", "## Active Goals"])
+            lines.extend(f"- {goal}" for goal in goals)
+        if recommended_actions:
+            lines.extend(["", "## Recommended Actions"])
+            lines.extend(f"- {action}" for action in recommended_actions)
+        for key, heading in (
+            ("personal_context", "Plan Context"),
+            ("interpretation_context", "Market Signals"),
+            ("fact_context", "Supporting Evidence"),
         ):
             items = input_bundle[key]
             if not items:

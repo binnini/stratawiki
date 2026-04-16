@@ -13,6 +13,7 @@ class PersonalQueryBundleItem(TypedDict):
     record_id: str
     title: str
     summary: str
+    kind: NotRequired[str]
     retrieval_score: NotRequired[int]
     match_reason: NotRequired[str]
     matched_fields: NotRequired[list[str]]

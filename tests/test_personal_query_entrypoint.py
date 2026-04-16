@@ -31,10 +31,12 @@ class StubPersonalQueryService:
             {
                 "answer_type": "personal_query_answer",
                 "generation_strategy": "deterministic_summary_bundle_v1",
+                "personal_family": "career_transition_plan",
                 "question": kwargs["question"],
-                "answer_summary": "Best current personal context: Backend transition plan.",
+                "answer_summary": "Current career transition plan focus: Backend transition plan.",
                 "answer_rationale": "Selected personal context first because the current layer order is personal -> interpretation -> fact.",
-                "answer_markdown": "# Personal Knowledge Answer\n",
+                "answer_markdown": "# Career Transition Plan\n",
+                "recommended_actions": ["Prioritize the transition direction captured in backend transition plan."],
                 "citations": [],
                 "input_bundle": {
                     "question": kwargs["question"],
@@ -73,6 +75,7 @@ def test_personal_query_entrypoint_returns_authoritative_answer_envelope() -> No
         "layers": ["personal", "interpretation", "fact"],
     }
     assert result["answer"]["answer_type"] == "personal_query_answer"
+    assert result["answer"]["personal_family"] == "career_transition_plan"
     assert result["answer"]["answer_rationale"].startswith("Selected personal context first")
     assert result["answer"]["question"] == "How should I focus?"
     assert result["retrieval"]["personal_ids"] == ["personal:plan-1"]
@@ -106,7 +109,7 @@ def test_default_personal_query_entrypoint_loads_answer_from_postgres(
             (
                 "personal:plan-1",
                 "recruiting",
-                "career_plan",
+                "career_transition_plan",
                 "Backend transition plan",
                 "Personal strategy summary",
                 "user",
@@ -168,7 +171,9 @@ def test_default_personal_query_entrypoint_loads_answer_from_postgres(
     assert result["ok"] is True
     assert result["projection"]["family"] == "answer"
     assert result["projection"]["kind"] == "personal_query"
-    assert result["answer"]["answer_summary"].startswith("Best current personal context:")
+    assert result["answer"]["personal_family"] == "career_transition_plan"
+    assert result["answer"]["answer_summary"].startswith("Current career transition plan focus:")
+    assert "## Recommended Actions" in result["answer"]["answer_markdown"]
     assert "Top match reason:" in result["answer"]["answer_rationale"]
     assert result["answer"]["input_bundle"]["personal_context"][0]["record_id"] == "personal:plan-1"
     assert result["retrieval"]["personal_ids"] == ["personal:plan-1"]

@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | Overall phase | In progress | Early implementation, no longer design-only |
 | Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus first personal answer slice |
-| Weakest | Early | Real Personal families, retrieval quality, domain breadth, runtime/ops |
-| Next build | Now | Add the first real Personal family on the richer answer bundle |
+| Weakest | Early | Broader Personal family coverage, retrieval quality, domain breadth, runtime/ops |
+| Next build | Now | Add the next Personal family after `career_transition_plan` |
 
 ## Operating Metadata
 
@@ -31,12 +31,13 @@
 - [x] `query_personal_knowledge` now returns a first deterministic answer payload
 - [x] Personal answer reads now use distinct answer projection metadata
 - [x] Personal answer bundle now carries retrieval scores and match reasons
+- [x] `career_transition_plan` now has a first family-aware answer rendering path
 - [x] Bootstrap/server/tool registry wiring exists
 - [x] Local and DB-backed validation are both passing on the current baseline
 
 ## Next
 
-- [ ] Add 1-2 truly user-facing Personal families
+- [ ] Add `profile_gap_analysis` or `weekly_action_plan` as the next Personal family
 - [ ] Improve retrieval explanation/ranking
 - [ ] Decide whether answer rationale should become structured instead of plain text
 
@@ -49,14 +50,16 @@
 
 ## One-Line Read
 
-StrataWiki now has a richer explainable personal answer bundle on top of
-retrieval, but real Personal families and stronger ranking still remain early.
+StrataWiki now has a first family-aware personal answer path for
+`career_transition_plan`, but broader Personal family coverage and stronger
+ranking still remain early.
 
 ## Open Questions
 
 - Should retrieval remain page-summary centric, or should canonical
   read/search become the next stronger dependency?
-- Which Personal family is the best first real consumer of answer generation?
+- Should `profile_gap_analysis` or `weekly_action_plan` be the second
+  family-aware answer mode?
 - When should answer quality move beyond deterministic summary assembly?
 - Should answer rationale stay plain text or become structured evidence blocks?
 

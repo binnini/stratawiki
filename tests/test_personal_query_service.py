@@ -27,7 +27,7 @@ class StubRetrievalService:
                 {
                     "id": "personal:plan-1",
                     "domain": "recruiting",
-                    "kind": "career_plan",
+                    "kind": "career_transition_plan",
                     "title": "Backend transition plan",
                     "summary": "Prioritize backend-focused applications this week.",
                     "snapshot_ref": {
@@ -145,17 +145,19 @@ def test_personal_query_service_builds_answer_bundle_on_retrieval_output() -> No
     assert retrieval["personal_ids"] == ["personal:plan-1"]
     assert answer["answer_type"] == "personal_query_answer"
     assert answer["generation_strategy"] == "deterministic_summary_bundle_v1"
+    assert answer["personal_family"] == "career_transition_plan"
     assert answer["question"] == "How should I focus my backend transition?"
-    assert answer["answer_summary"].startswith("Best current personal context:")
+    assert answer["answer_summary"].startswith("Current career transition plan focus:")
     assert "profile-version preference" in answer["answer_rationale"]
-    assert "Rationale:" in answer["answer_markdown"]
-    assert "## Personal Context" in answer["answer_markdown"]
-    assert "## Shared Interpretation Context" in answer["answer_markdown"]
+    assert "## Recommended Actions" in answer["answer_markdown"]
+    assert "## Market Signals" in answer["answer_markdown"]
+    assert answer["recommended_actions"][0].startswith("Prioritize the transition direction")
     assert answer["input_bundle"]["personal_context"][0] == {
         "layer": "personal",
         "record_id": "personal:plan-1",
         "title": "Backend transition plan",
         "summary": "Prioritize backend-focused applications this week.",
+        "kind": "career_transition_plan",
         "retrieval_score": 100,
         "match_reason": "exact match on title with profile-version preference",
         "matched_fields": ["title"],
@@ -192,6 +194,7 @@ def test_personal_query_service_returns_no_match_answer_when_retrieval_is_empty(
         "No matching personal, interpretation, or fact context was found."
     )
     assert answer["generation_strategy"] == "deterministic_summary_bundle_v1"
+    assert "personal_family" not in answer
     assert answer["answer_rationale"] == (
         "No retrieval candidate cleared the current matching threshold."
     )

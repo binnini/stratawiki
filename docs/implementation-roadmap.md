@@ -264,6 +264,8 @@ Status:
   bundle:
   per-layer retrieval match metadata -> personal answer bundle
   `retrieval_score`/`match_reason` -> answer rationale text
+- the first truly family-aware personal answer path now exists for
+  `career_transition_plan`
 - richer personal generation, stronger answer quality, and more domain-shaped
   personal families still remain to be implemented
 
