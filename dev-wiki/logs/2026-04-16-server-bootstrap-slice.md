@@ -99,3 +99,28 @@ The current public schema export is now versioned as `bootstrap.v1`.
 - Decide whether tool metadata should expose richer schemas once external callers depend on it.
 - Fold additional internal entrypoints into the same bootstrap context as new vertical slices land.
 - When the MCP adapter is introduced, reuse the grouped tool definitions and metadata, but keep request validation and transport concerns outside the internal entrypoint layer.
+
+## Verification
+
+- `pytest -q tests/test_server_bootstrap.py`
+  - final follow-up state: `11 passed, 1 skipped`
+- `pytest -q`
+  - final follow-up state: `46 passed, 14 skipped`
+- `DATABASE_URL=postgresql+psycopg://stratawiki:stratawiki@localhost:5432/stratawiki pytest -q`
+  - final follow-up state: `46 passed, 14 skipped`
+
+## Session Checkpoint
+
+- bootstrap/tool layer was kept transport-free on purpose
+- local registry now behaves like a thin pre-MCP contract layer rather than only a name-to-handler table
+- the remaining material risk is no longer basic tool-shape drift inside bootstrap
+- the remaining material risk is mostly at later boundaries:
+  - transport adaptation
+  - auth and ACL enforcement
+  - authoritative read-model-state semantics for richer projections
+
+## Commits
+
+- `e80c5c766fb0b02745b705a0305e292e7553d275` `Refine bootstrap tool contracts`
+- `5a864a9827d3cc4c8f3aa1ba4d7e72369fea4095` `Add thin tool schema validation`
+- `a4677263b3517f6c5115b9dc5d6cdbfe656b3af2` `Enforce nested tool contracts`
