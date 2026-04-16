@@ -17,16 +17,16 @@ from wiki_mcp.schemas.retrieval_personal_summary import RetrievalPersonalSummary
 from wiki_mcp.schemas.retrieval_result import RetrievalResult
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
+from wiki_mcp.services.interfaces.page_reads import PageReadService
 from wiki_mcp.services.interfaces.repositories import (
     FactRepository,
     InterpretationRepository,
     PersonalRepository,
 )
-from wiki_mcp.services.interfaces.page_reads import PageReadService
 
 
 class DefaultRetrievalService:
-    """Minimal structured retrieval across rendered Personal, Interpretation, and Fact pages."""
+    """Minimal structured retrieval across rendered and canonical layer candidates."""
 
     layer_order = ("personal", "interpretation", "fact")
 
@@ -70,9 +70,10 @@ class DefaultRetrievalService:
 
         query_tokens = self._tokenize(question)
         structured_lookup = self._looks_structured(question)
-        matches_by_layer: dict[str, list[RenderedPageSummary]] = {}
+        matched_ids_by_layer: dict[str, list[str]] = {}
+        matched_pages_by_layer: dict[str, list[RenderedPageSummary]] = {}
         explanations_by_layer: dict[str, list[RetrievalMatchExplanation]] = {}
-        prefetched_records_by_layer: dict[str, list[dict[str, Any]]] = {}
+        prefetched_records_by_layer: dict[str, dict[str, dict[str, Any]]] = {}
 
         for layer in self.layer_order:
             pages = self.page_read_service.list_pages(
@@ -81,26 +82,34 @@ class DefaultRetrievalService:
                 layer=layer,
                 limit=self.page_scan_limit,
             )
-            prefetched_records = self._prefetch_records(
+            records_by_id = self._collect_records_for_layer(
                 layer=layer,
+                domain=domain,
                 pages=pages,
                 requested_scope=scope_ref,
             )
-            prefetched_records_by_layer[layer] = prefetched_records
+            prefetched_records_by_layer[layer] = records_by_id
             record_summaries = self._record_summaries_for_layer(
                 layer=layer,
-                records=prefetched_records,
+                records=list(records_by_id.values()),
             )
-            matched_candidates = self._match_pages(
-                pages,
+            matched_candidates = self._match_candidates(
+                self._build_layer_candidates(pages=pages, records_by_id=records_by_id),
                 layer=layer,
                 normalized_question=normalized_question,
                 query_tokens=query_tokens,
                 structured_lookup=structured_lookup,
-                profile_context=profile_context,
+                profile_context=profile_context if layer == "personal" else None,
                 record_summaries=record_summaries,
             )[: self.layer_result_limit]
-            matches_by_layer[layer] = [page for page, _ in matched_candidates]
+            matched_ids_by_layer[layer] = [
+                str(candidate["record_id"]) for candidate, _ in matched_candidates
+            ]
+            matched_pages_by_layer[layer] = [
+                cast(RenderedPageSummary, candidate["page"])
+                for candidate, _ in matched_candidates
+                if candidate["page"] is not None
+            ]
             explanations_by_layer[layer] = [
                 {
                     **explanation,
@@ -110,86 +119,134 @@ class DefaultRetrievalService:
             ]
 
         result: RetrievalResult = {
-            "personal_ids": [page["record_id"] for page in matches_by_layer["personal"]],
-            "interpretation_ids": [
-                page["record_id"] for page in matches_by_layer["interpretation"]
-            ],
-            "fact_ids": [page["record_id"] for page in matches_by_layer["fact"]],
-            "personal_pages": matches_by_layer["personal"],
-            "interpretation_pages": matches_by_layer["interpretation"],
-            "fact_pages": matches_by_layer["fact"],
+            "personal_ids": matched_ids_by_layer["personal"],
+            "interpretation_ids": matched_ids_by_layer["interpretation"],
+            "fact_ids": matched_ids_by_layer["fact"],
+            "personal_pages": matched_pages_by_layer["personal"],
+            "interpretation_pages": matched_pages_by_layer["interpretation"],
+            "fact_pages": matched_pages_by_layer["fact"],
             "personal_explanations": explanations_by_layer["personal"],
             "interpretation_explanations": explanations_by_layer["interpretation"],
             "fact_explanations": explanations_by_layer["fact"],
         }
-        hydrated_records = self._hydrate_records(
-            matches_by_layer,
-            requested_scope=scope_ref,
+        result.update(
+            self._hydrate_records(
+                matched_ids_by_layer,
+                requested_scope=scope_ref,
+                prefetched_records_by_layer=prefetched_records_by_layer,
+            )
+        )
+
+        snapshot_ref = self._merge_snapshot_ref(
+            matched_pages_by_layer=matched_pages_by_layer,
+            matched_ids_by_layer=matched_ids_by_layer,
             prefetched_records_by_layer=prefetched_records_by_layer,
         )
-        result.update(hydrated_records)
-
-        snapshot_ref = self._merge_snapshot_ref(matches_by_layer)
         if snapshot_ref is not None:
             result["snapshot_ref"] = snapshot_ref
 
         return result
 
+    def _collect_records_for_layer(
+        self,
+        *,
+        layer: str,
+        domain: str,
+        pages: list[RenderedPageSummary],
+        requested_scope: ScopeRef,
+    ) -> dict[str, dict[str, Any]]:
+        records_by_id = {
+            record["id"]: record
+            for record in self._prefetch_records(
+                layer=layer,
+                pages=pages,
+                requested_scope=requested_scope,
+            )
+        }
+        for record in self._list_records_for_retrieval(
+            layer=layer,
+            domain=domain,
+            requested_scope=requested_scope,
+        ):
+            records_by_id.setdefault(record["id"], record)
+        return records_by_id
+
     def _hydrate_records(
         self,
-        matches_by_layer: dict[str, list[RenderedPageSummary]],
+        matched_ids_by_layer: dict[str, list[str]],
         *,
         requested_scope: ScopeRef,
-        prefetched_records_by_layer: dict[str, list[dict[str, Any]]] | None = None,
+        prefetched_records_by_layer: dict[str, dict[str, dict[str, Any]]] | None = None,
     ) -> RetrievalResult:
         hydrated: dict[str, Any] = {}
         prefetched_records_by_layer = prefetched_records_by_layer or {}
 
-        personal_ids = [page["record_id"] for page in matches_by_layer["personal"]]
+        personal_ids = matched_ids_by_layer["personal"]
         if personal_ids and self.personal_repository is not None:
             personal_records = cast(
-                list[PersonalRecord] | None,
+                dict[str, PersonalRecord] | None,
                 prefetched_records_by_layer.get("personal"),
             )
             if personal_records is None:
-                personal_records = self.personal_repository.get_by_ids(personal_ids, requested_scope)
+                personal_records = {
+                    record["id"]: record
+                    for record in self.personal_repository.get_by_ids(personal_ids, requested_scope)
+                }
             hydrated["personal_records"] = self._ordered_records(
                 personal_ids,
-                self._map_personal_records(personal_records),
+                self._map_personal_records(
+                    [
+                        personal_records[record_id]
+                        for record_id in personal_ids
+                        if record_id in personal_records
+                    ]
+                ),
             )
 
-        interpretation_ids = [
-            page["record_id"] for page in matches_by_layer["interpretation"]
-        ]
+        interpretation_ids = matched_ids_by_layer["interpretation"]
         if interpretation_ids and self.interpretation_repository is not None:
             interpretation_records = cast(
-                list[InterpretationRecord] | None,
+                dict[str, InterpretationRecord] | None,
                 prefetched_records_by_layer.get("interpretation"),
             )
             if interpretation_records is None:
-                interpretation_records = self.interpretation_repository.get_by_ids(
-                    interpretation_ids,
-                    self._scope_for_layer("interpretation", requested_scope),
-                )
+                interpretation_records = {
+                    record["id"]: record
+                    for record in self.interpretation_repository.get_by_ids(
+                        interpretation_ids,
+                        self._scope_for_layer("interpretation", requested_scope),
+                    )
+                }
             hydrated["interpretation_records"] = self._ordered_records(
                 interpretation_ids,
-                self._map_interpretation_records(interpretation_records),
+                self._map_interpretation_records(
+                    [
+                        interpretation_records[record_id]
+                        for record_id in interpretation_ids
+                        if record_id in interpretation_records
+                    ]
+                ),
             )
 
-        fact_ids = [page["record_id"] for page in matches_by_layer["fact"]]
+        fact_ids = matched_ids_by_layer["fact"]
         if fact_ids and self.fact_repository is not None:
             fact_records = cast(
-                list[FactRecord] | None,
+                dict[str, FactRecord] | None,
                 prefetched_records_by_layer.get("fact"),
             )
             if fact_records is None:
-                fact_records = self.fact_repository.get_by_ids(
-                    fact_ids,
-                    self._scope_for_layer("fact", requested_scope),
-                )
+                fact_records = {
+                    record["id"]: record
+                    for record in self.fact_repository.get_by_ids(
+                        fact_ids,
+                        self._scope_for_layer("fact", requested_scope),
+                    )
+                }
             hydrated["fact_records"] = self._ordered_records(
                 fact_ids,
-                self._map_fact_records(fact_records),
+                self._map_fact_records(
+                    [fact_records[record_id] for record_id in fact_ids if record_id in fact_records]
+                ),
             )
 
         return cast(RetrievalResult, hydrated)
@@ -284,9 +341,39 @@ class DefaultRetrievalService:
             return requested_scope
         return {"scope": "shared"}
 
-    def _match_pages(
+    def _build_layer_candidates(
         self,
+        *,
         pages: list[RenderedPageSummary],
+        records_by_id: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        candidates: list[dict[str, Any]] = []
+        page_ids = set()
+        for page in pages:
+            record_id = page["record_id"]
+            page_ids.add(record_id)
+            candidates.append(
+                {
+                    "record_id": record_id,
+                    "page": page,
+                    "record": records_by_id.get(record_id),
+                }
+            )
+        for record_id, record in records_by_id.items():
+            if record_id in page_ids:
+                continue
+            candidates.append(
+                {
+                    "record_id": record_id,
+                    "page": None,
+                    "record": record,
+                }
+            )
+        return candidates
+
+    def _match_candidates(
+        self,
+        candidates: list[dict[str, Any]],
         *,
         layer: str,
         normalized_question: str,
@@ -294,49 +381,53 @@ class DefaultRetrievalService:
         structured_lookup: bool,
         profile_context: ProfileContext | None,
         record_summaries: dict[str, dict[str, str]],
-    ) -> list[tuple[RenderedPageSummary, RetrievalMatchExplanation]]:
-        exact_matches: list[tuple[RenderedPageSummary, RetrievalMatchExplanation]] = []
-        scored_pages: list[
-            tuple[int, int, int, RenderedPageSummary, RetrievalMatchExplanation]
-        ] = []
+    ) -> list[tuple[dict[str, Any], RetrievalMatchExplanation]]:
+        exact_matches: list[tuple[dict[str, Any], RetrievalMatchExplanation]] = []
+        scored_candidates: list[tuple[int, int, int, dict[str, Any], RetrievalMatchExplanation]] = []
 
-        for index, page in enumerate(pages):
-            match_result = self._score_page(
-                page,
+        for index, candidate in enumerate(candidates):
+            record_id = str(candidate["record_id"])
+            page = cast(RenderedPageSummary | None, candidate["page"])
+            match_result = self._score_candidate(
+                page=page,
+                record_id=record_id,
                 normalized_question=normalized_question,
                 query_tokens=query_tokens,
                 structured_lookup=structured_lookup,
-                record_summary=record_summaries.get(page["record_id"]),
+                record_summary=record_summaries.get(record_id),
             )
-            score = match_result["score"]
+            score = int(match_result["score"])
             if score <= 0:
                 continue
+
             profile_boost_applied = False
             if score == 100:
                 explanation = self._build_match_explanation(
                     layer=layer,
-                    page=page,
+                    record_id=record_id,
                     match_result=match_result,
                     profile_boost_applied=False,
                 )
-                exact_matches.append((page, explanation))
+                exact_matches.append((candidate, explanation))
+
             profile_bonus = 0
             if (
                 profile_context is not None
-                and page["snapshot_ref"].get("profile_version")
-                == profile_context["profile_version"]
+                and page is not None
+                and page["snapshot_ref"].get("profile_version") == profile_context["profile_version"]
             ):
                 profile_bonus = 1
                 profile_boost_applied = True
+
             explanation = self._build_match_explanation(
                 layer=layer,
-                page=page,
+                record_id=record_id,
                 match_result=match_result,
                 profile_boost_applied=profile_boost_applied,
             )
-            scored_pages.append((score, profile_bonus, -index, page, explanation))
+            scored_candidates.append((score, profile_bonus, -index, candidate, explanation))
 
-        scored_pages.sort(
+        scored_candidates.sort(
             key=lambda item: (
                 item[0],
                 item[1],
@@ -346,18 +437,23 @@ class DefaultRetrievalService:
         )
         if exact_matches:
             return exact_matches
-        return [(page, explanation) for _, _, _, page, explanation in scored_pages]
+        return [(candidate, explanation) for _, _, _, candidate, explanation in scored_candidates]
 
-    def _score_page(
+    def _score_candidate(
         self,
-        page: RenderedPageSummary,
         *,
+        page: RenderedPageSummary | None,
+        record_id: str,
         normalized_question: str,
         query_tokens: list[str],
         structured_lookup: bool,
         record_summary: dict[str, str] | None,
     ) -> dict[str, Any]:
-        normalized_fields = self._normalized_search_fields(page, record_summary)
+        normalized_fields = self._normalized_search_fields(
+            page=page,
+            record_id=record_id,
+            record_summary=record_summary,
+        )
 
         exact_matches = [
             field_name
@@ -424,17 +520,20 @@ class DefaultRetrievalService:
 
     def _normalized_search_fields(
         self,
-        page: RenderedPageSummary,
+        *,
+        page: RenderedPageSummary | None,
+        record_id: str,
         record_summary: dict[str, str] | None,
     ) -> dict[str, str]:
         fields = {
-            "record_id": self._normalize(page["record_id"]),
-            "title": self._normalize(page["title"]),
-            "path": self._normalize(page["path"]),
+            "record_id": self._normalize(record_id),
         }
-        page_summary = self._page_summary(page)
-        if page_summary:
-            fields["page_summary"] = self._normalize(page_summary)
+        if page is not None:
+            fields["title"] = self._normalize(page["title"])
+            fields["path"] = self._normalize(page["path"])
+            page_summary = self._page_summary(page)
+            if page_summary:
+                fields["page_summary"] = self._normalize(page_summary)
         if record_summary is not None:
             for field_name, field_value in record_summary.items():
                 normalized_value = self._normalize(field_value)
@@ -462,15 +561,58 @@ class DefaultRetrievalService:
         if layer == "personal" and self.personal_repository is not None:
             return cast(list[dict[str, Any]], self.personal_repository.get_by_ids(page_ids, requested_scope))
         if layer == "interpretation" and self.interpretation_repository is not None:
-            return cast(list[dict[str, Any]], self.interpretation_repository.get_by_ids(
-                page_ids,
-                self._scope_for_layer(layer, requested_scope),
-            ))
+            return cast(
+                list[dict[str, Any]],
+                self.interpretation_repository.get_by_ids(
+                    page_ids,
+                    self._scope_for_layer(layer, requested_scope),
+                ),
+            )
         if layer == "fact" and self.fact_repository is not None:
-            return cast(list[dict[str, Any]], self.fact_repository.get_by_ids(
-                page_ids,
-                self._scope_for_layer(layer, requested_scope),
-            ))
+            return cast(
+                list[dict[str, Any]],
+                self.fact_repository.get_by_ids(
+                    page_ids,
+                    self._scope_for_layer(layer, requested_scope),
+                ),
+            )
+        return []
+
+    def _list_records_for_retrieval(
+        self,
+        *,
+        layer: str,
+        domain: str,
+        requested_scope: ScopeRef,
+    ) -> list[dict[str, Any]]:
+        if layer == "personal" and self.personal_repository is not None:
+            return cast(
+                list[dict[str, Any]],
+                self.personal_repository.list_for_retrieval(
+                    domain=domain,
+                    scope_ref=requested_scope,
+                    limit=self.page_scan_limit,
+                ),
+            )
+        shared_scope = self._scope_for_layer(layer, requested_scope)
+        if layer == "interpretation" and self.interpretation_repository is not None:
+            return cast(
+                list[dict[str, Any]],
+                self.interpretation_repository.list_for_retrieval(
+                    domain=domain,
+                    scope_ref=shared_scope,
+                    limit=self.page_scan_limit,
+                ),
+            )
+        if layer == "fact" and self.fact_repository is not None:
+            return cast(
+                list[dict[str, Any]],
+                self.fact_repository.list_for_retrieval(
+                    domain=domain,
+                    scope_ref=shared_scope,
+                    limit=self.page_scan_limit,
+                ),
+            )
         return []
 
     def _record_summaries_for_layer(
@@ -540,13 +682,13 @@ class DefaultRetrievalService:
         self,
         *,
         layer: str,
-        page: RenderedPageSummary,
+        record_id: str,
         match_result: dict[str, Any],
         profile_boost_applied: bool,
     ) -> RetrievalMatchExplanation:
         return {
             "layer": cast(Any, layer),
-            "record_id": page["record_id"],
+            "record_id": record_id,
             "rank": 0,
             "score": int(match_result["score"]),
             "match_type": str(match_result["match_type"]),
@@ -574,15 +716,28 @@ class DefaultRetrievalService:
 
     def _merge_snapshot_ref(
         self,
-        matches_by_layer: dict[str, list[RenderedPageSummary]],
+        *,
+        matched_pages_by_layer: dict[str, list[RenderedPageSummary]],
+        matched_ids_by_layer: dict[str, list[str]],
+        prefetched_records_by_layer: dict[str, dict[str, dict[str, Any]]],
     ) -> SnapshotRef | None:
         merged: dict[str, str] = {}
 
         for layer in self.layer_order:
-            pages = matches_by_layer[layer]
-            if not pages:
+            pages = matched_pages_by_layer[layer]
+            snapshot_ref: SnapshotRef | None
+            if pages:
+                snapshot_ref = pages[0]["snapshot_ref"]
+            else:
+                record_ids = matched_ids_by_layer[layer]
+                if not record_ids:
+                    continue
+                snapshot_ref = self._snapshot_ref_from_record(
+                    layer=layer,
+                    record=prefetched_records_by_layer.get(layer, {}).get(record_ids[0]),
+                )
+            if snapshot_ref is None:
                 continue
-            snapshot_ref = pages[0]["snapshot_ref"]
             if "fact_snapshot_id" in snapshot_ref and "fact_snapshot_id" not in merged:
                 merged["fact_snapshot_id"] = snapshot_ref["fact_snapshot_id"]
             if (
@@ -599,6 +754,18 @@ class DefaultRetrievalService:
             return None
 
         return cast(SnapshotRef, merged)
+
+    def _snapshot_ref_from_record(
+        self,
+        *,
+        layer: str,
+        record: dict[str, Any] | None,
+    ) -> SnapshotRef | None:
+        if record is None:
+            return None
+        if layer == "personal":
+            return cast(PersonalRecord, record)["snapshot_ref"]
+        return None
 
     def _normalize(self, value: str) -> str:
         return " ".join(self._tokenize(value))

@@ -528,6 +528,15 @@ def test_personal_query_service_selection_reflects_canonical_retrieval_ranking()
                 },
             ]
 
+        def list_for_retrieval(
+            self,
+            *,
+            domain: str,
+            scope_ref: dict[str, str],
+            limit: int,
+        ) -> list[dict[str, object]]:
+            return []
+
     retrieval_service = DefaultRetrievalService(
         page_read_service=CanonicalSummaryPageReadService(),
         personal_repository=CanonicalSummaryPersonalRepository(),
@@ -551,6 +560,67 @@ def test_personal_query_service_selection_reflects_canonical_retrieval_ranking()
 
     assert answer["personal_family"] == "profile_gap_analysis"
     assert answer["input_bundle"]["personal_context"][0]["record_id"] == "personal:gap-1"
+    assert answer["input_bundle"]["personal_context"][0]["matched_fields"] == [
+        "canonical_summary"
+    ]
+    assert answer["answer_summary"].startswith("Current profile gap focus:")
+
+
+def test_personal_query_service_uses_canonical_only_personal_candidate_for_family_selection() -> None:
+    class EmptyPageReadService:
+        def get_page(self, **kwargs: object) -> dict[str, object] | None:
+            raise AssertionError("get_page should not be called in personal query tests")
+
+        def list_pages(self, **kwargs: object) -> list[dict[str, object]]:
+            return []
+
+    class CanonicalOnlyPersonalRepository:
+        def get_by_ids(self, ids: list[str], scope_ref: dict[str, str]) -> list[dict[str, object]]:
+            return []
+
+        def list_for_retrieval(
+            self,
+            *,
+            domain: str,
+            scope_ref: dict[str, str],
+            limit: int,
+        ) -> list[dict[str, object]]:
+            return [
+                {
+                    "id": "personal:gap-1",
+                    "domain": "recruiting",
+                    "kind": "profile_gap_analysis",
+                    "title": "Backend gap analysis",
+                    "summary": "Your strongest gaps are backend Python depth and production debugging evidence.",
+                    "scope_ref": scope_ref,
+                    "snapshot_ref": {
+                        "fact_snapshot_id": "fact_snap:new",
+                        "interpretation_snapshot_id": "interp_snap:new",
+                        "profile_version": "profile-v2",
+                    },
+                    "profile_version": "profile-v2",
+                    "body_path": "wiki/personal/tenant-1/user-1/gap-1.md",
+                    "status": "active",
+                    "schema_version": "v1",
+                    "provenance": {},
+                }
+            ]
+
+    retrieval_service = DefaultRetrievalService(
+        page_read_service=EmptyPageReadService(),
+        personal_repository=CanonicalOnlyPersonalRepository(),
+    )
+    service = DefaultPersonalQueryService(retrieval_service=retrieval_service)
+
+    _, answer = service.query_personal_knowledge(
+        domain="recruiting",
+        question="backend python depth",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+    )
+
+    assert answer["personal_family"] == "profile_gap_analysis"
+    assert answer["input_bundle"]["personal_context"][0]["record_id"] == "personal:gap-1"
+    assert "path" not in answer["input_bundle"]["personal_context"][0]
     assert answer["input_bundle"]["personal_context"][0]["matched_fields"] == [
         "canonical_summary"
     ]

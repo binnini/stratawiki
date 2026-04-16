@@ -404,3 +404,87 @@ def test_default_retrieval_read_entrypoint_loads_candidates_from_postgres(
     assert result["retrieval"]["personal_pages"][0]["record_id"] == "personal:plan-1"
     assert result["retrieval"]["interpretation_pages"][0]["record_id"] == "interp:market-1"
     assert result["retrieval"]["snapshot_ref"]["fact_snapshot_id"] == "fact_snap:new"
+
+
+def test_default_retrieval_read_entrypoint_discovers_canonical_only_personal_record(
+    postgres_connection: Connection[dict],
+    tmp_path: Path,
+) -> None:
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO personal.record (
+                id,
+                domain,
+                kind,
+                title,
+                summary,
+                scope,
+                tenant_id,
+                user_id,
+                fact_snapshot_id,
+                interpretation_snapshot_id,
+                profile_version,
+                body_path,
+                status,
+                schema_version,
+                provenance_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            """,
+            (
+                "personal:gap-1",
+                "recruiting",
+                "profile_gap_analysis",
+                "Backend gap analysis",
+                "Your strongest gaps are backend Python depth and production debugging evidence.",
+                "user",
+                "tenant-1",
+                "user-1",
+                "fact_snap:gap",
+                "interp_snap:gap",
+                "profile-v3",
+                "wiki/personal/tenant-1/user-1/gap-1.md",
+                "active",
+                "v1",
+                '{"source": "test"}',
+            ),
+        )
+    postgres_connection.commit()
+
+    entrypoint = build_default_retrieval_read_entrypoint(
+        postgres_connection,
+        render_root=tmp_path,
+    )
+
+    result = entrypoint.retrieve_personal_context(
+        domain="recruiting",
+        tenant_id="tenant-1",
+        user_id="user-1",
+        question="backend python depth",
+    )
+
+    assert result["ok"] is True
+    assert result["retrieval"]["personal_ids"] == ["personal:gap-1"]
+    assert result["retrieval"]["personal_pages"] == []
+    assert result["retrieval"]["personal_records"] == [
+        {
+            "id": "personal:gap-1",
+            "domain": "recruiting",
+            "kind": "profile_gap_analysis",
+            "title": "Backend gap analysis",
+            "summary": "Your strongest gaps are backend Python depth and production debugging evidence.",
+            "snapshot_ref": {
+                "fact_snapshot_id": "fact_snap:gap",
+                "interpretation_snapshot_id": "interp_snap:gap",
+                "profile_version": "profile-v3",
+            },
+        }
+    ]
+    assert result["retrieval"]["personal_explanations"][0]["matched_fields"] == [
+        "canonical_summary"
+    ]
+    assert result["retrieval"]["snapshot_ref"] == {
+        "fact_snapshot_id": "fact_snap:gap",
+        "interpretation_snapshot_id": "interp_snap:gap",
+        "profile_version": "profile-v3",
+    }

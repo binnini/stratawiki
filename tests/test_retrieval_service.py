@@ -115,6 +115,23 @@ class StubPersonalRepository:
             }
         ]
 
+    def list_for_retrieval(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, str],
+        limit: int,
+    ) -> list[dict[str, object]]:
+        self.calls.append(
+            {
+                "domain": domain,
+                "scope_ref": scope_ref,
+                "limit": limit,
+                "method": "list_for_retrieval",
+            }
+        )
+        return []
+
 
 class StubInterpretationRepository:
     def __init__(self) -> None:
@@ -141,6 +158,23 @@ class StubInterpretationRepository:
             }
         ]
 
+    def list_for_retrieval(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, str],
+        limit: int,
+    ) -> list[dict[str, object]]:
+        self.calls.append(
+            {
+                "domain": domain,
+                "scope_ref": scope_ref,
+                "limit": limit,
+                "method": "list_for_retrieval",
+            }
+        )
+        return []
+
 
 class StubFactRepository:
     def __init__(self) -> None:
@@ -160,6 +194,23 @@ class StubFactRepository:
                 "provenance": {"source": "test"},
             }
         ]
+
+    def list_for_retrieval(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, str],
+        limit: int,
+    ) -> list[dict[str, object]]:
+        self.calls.append(
+            {
+                "domain": domain,
+                "scope_ref": scope_ref,
+                "limit": limit,
+                "method": "list_for_retrieval",
+            }
+        )
+        return []
 
 
 def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal() -> None:
@@ -265,19 +316,37 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
         {
             "ids": ["personal:plan-1", "personal:notes-1"],
             "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
-        }
+        },
+        {
+            "domain": "recruiting",
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "limit": 50,
+            "method": "list_for_retrieval",
+        },
     ]
     assert interpretation_repository.calls == [
         {
             "ids": ["interp:backend-transition-market"],
             "scope_ref": {"scope": "shared"},
-        }
+        },
+        {
+            "domain": "recruiting",
+            "scope_ref": {"scope": "shared"},
+            "limit": 50,
+            "method": "list_for_retrieval",
+        },
     ]
     assert fact_repository.calls == [
         {
             "ids": ["fact:job-posting-1"],
             "scope_ref": {"scope": "shared"},
-        }
+        },
+        {
+            "domain": "recruiting",
+            "scope_ref": {"scope": "shared"},
+            "limit": 50,
+            "method": "list_for_retrieval",
+        },
     ]
 
 
@@ -367,6 +436,15 @@ def test_retrieval_service_orders_hydrated_records_by_matched_ids() -> None:
                     "provenance": {},
                 },
             ]
+
+        def list_for_retrieval(
+            self,
+            *,
+            domain: str,
+            scope_ref: dict[str, str],
+            limit: int,
+        ) -> list[dict[str, object]]:
+            return []
 
     service = DefaultRetrievalService(
         page_read_service=OrderedPageReadService(),
@@ -460,6 +538,23 @@ def test_retrieval_service_uses_canonical_summary_for_candidate_matching() -> No
                 },
             ]
 
+        def list_for_retrieval(
+            self,
+            *,
+            domain: str,
+            scope_ref: dict[str, str],
+            limit: int,
+        ) -> list[dict[str, object]]:
+            self.calls.append(
+                {
+                    "domain": domain,
+                    "scope_ref": scope_ref,
+                    "limit": limit,
+                    "method": "list_for_retrieval",
+                }
+            )
+            return []
+
     personal_repository = CanonicalSummaryPersonalRepository()
     service = DefaultRetrievalService(
         page_read_service=CanonicalSummaryPageReadService(),
@@ -481,6 +576,119 @@ def test_retrieval_service_uses_canonical_summary_for_candidate_matching() -> No
         {
             "ids": ["personal:notes-1", "personal:gap-1"],
             "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+        },
+        {
+            "domain": "recruiting",
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "limit": 50,
+            "method": "list_for_retrieval",
+        },
+    ]
+
+
+def test_retrieval_service_discovers_canonical_only_personal_candidate() -> None:
+    class CanonicalOnlyPageReadService:
+        def get_page(self, **kwargs: object) -> dict[str, object] | None:
+            raise AssertionError("get_page should not be called in retrieval tests")
+
+        def list_pages(self, **kwargs: object) -> list[dict[str, object]]:
+            return []
+
+    class CanonicalOnlyPersonalRepository:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def get_by_ids(self, ids: list[str], scope_ref: dict[str, str]) -> list[dict[str, object]]:
+            self.calls.append({"ids": ids, "scope_ref": scope_ref, "method": "get_by_ids"})
+            return []
+
+        def list_for_retrieval(
+            self,
+            *,
+            domain: str,
+            scope_ref: dict[str, str],
+            limit: int,
+        ) -> list[dict[str, object]]:
+            self.calls.append(
+                {
+                    "domain": domain,
+                    "scope_ref": scope_ref,
+                    "limit": limit,
+                    "method": "list_for_retrieval",
+                }
+            )
+            return [
+                {
+                    "id": "personal:gap-1",
+                    "domain": "recruiting",
+                    "kind": "profile_gap_analysis",
+                    "title": "Backend gap analysis",
+                    "summary": "Your strongest gaps are backend Python depth and production debugging evidence.",
+                    "scope_ref": scope_ref,
+                    "snapshot_ref": {
+                        "fact_snapshot_id": "fact_snap:new",
+                        "interpretation_snapshot_id": "interp_snap:new",
+                        "profile_version": "profile-v3",
+                    },
+                    "profile_version": "profile-v3",
+                    "body_path": "wiki/personal/tenant-1/user-1/gap-1.md",
+                    "status": "active",
+                    "schema_version": "v1",
+                    "provenance": {},
+                }
+            ]
+
+    personal_repository = CanonicalOnlyPersonalRepository()
+    service = DefaultRetrievalService(
+        page_read_service=CanonicalOnlyPageReadService(),
+        personal_repository=personal_repository,
+    )
+
+    result = service.retrieve_for_query(
+        domain="recruiting",
+        question="backend python depth",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+    )
+
+    assert result["personal_ids"] == ["personal:gap-1"]
+    assert result["personal_pages"] == []
+    assert result["personal_explanations"] == [
+        {
+            "layer": "personal",
+            "record_id": "personal:gap-1",
+            "rank": 1,
+            "score": 80,
+            "match_type": "contains",
+            "matched_fields": ["canonical_summary"],
+            "matched_token_count": 3,
+            "profile_boost_applied": False,
+        }
+    ]
+    assert result["personal_records"] == [
+        {
+            "id": "personal:gap-1",
+            "domain": "recruiting",
+            "kind": "profile_gap_analysis",
+            "title": "Backend gap analysis",
+            "summary": "Your strongest gaps are backend Python depth and production debugging evidence.",
+            "snapshot_ref": {
+                "fact_snapshot_id": "fact_snap:new",
+                "interpretation_snapshot_id": "interp_snap:new",
+                "profile_version": "profile-v3",
+            },
+        }
+    ]
+    assert result["snapshot_ref"] == {
+        "fact_snapshot_id": "fact_snap:new",
+        "interpretation_snapshot_id": "interp_snap:new",
+        "profile_version": "profile-v3",
+    }
+    assert personal_repository.calls == [
+        {
+            "domain": "recruiting",
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "limit": 50,
+            "method": "list_for_retrieval",
         }
     ]
 

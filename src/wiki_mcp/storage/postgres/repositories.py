@@ -50,6 +50,40 @@ class PostgresFactRepository(PostgresRepositoryBase):
             )
             return [self._row_to_fact_record(row) for row in cursor.fetchall()]
 
+    def list_for_retrieval(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        limit: int,
+    ) -> list[FactRecord]:
+        if limit <= 0:
+            return []
+
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id,
+                    domain,
+                    entity_type,
+                    canonical_key,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    schema_version,
+                    attributes_json,
+                    provenance_json
+                FROM fact.record_envelopes
+                WHERE domain = %s AND {scope_sql}
+                ORDER BY updated_at DESC, id ASC
+                LIMIT %s
+                """,
+                [domain, *scope_params, limit],
+            )
+            return [self._row_to_fact_record(row) for row in cursor.fetchall()]
+
     def write_facts(
         self,
         records: list[FactRecord],
@@ -211,6 +245,46 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             )
             return [self._row_to_interpretation_record(row) for row in cursor.fetchall()]
 
+    def list_for_retrieval(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        limit: int,
+    ) -> list[InterpretationRecord]:
+        if limit <= 0:
+            return []
+
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id,
+                    domain,
+                    kind,
+                    subject_type,
+                    subject_id,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    schema_version,
+                    status,
+                    confidence,
+                    computed_at,
+                    expires_at,
+                    body_json,
+                    provenance_json,
+                    render_hints_json
+                FROM interp.record
+                WHERE domain = %s AND {scope_sql}
+                ORDER BY updated_at DESC, id ASC
+                LIMIT %s
+                """,
+                [domain, *scope_params, limit],
+            )
+            return [self._row_to_interpretation_record(row) for row in cursor.fetchall()]
+
     def save_records(
         self,
         records: list[InterpretationRecord],
@@ -349,6 +423,45 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                 WHERE id = ANY(%s) AND {scope_sql}
                 """,
                 [ids, *scope_params],
+            )
+            return [self._row_to_personal_record(row) for row in cursor.fetchall()]
+
+    def list_for_retrieval(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        limit: int,
+    ) -> list[PersonalRecord]:
+        if limit <= 0:
+            return []
+
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id,
+                    domain,
+                    kind,
+                    title,
+                    summary,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    fact_snapshot_id,
+                    interpretation_snapshot_id,
+                    profile_version,
+                    body_path,
+                    status,
+                    schema_version,
+                    provenance_json
+                FROM personal.record
+                WHERE domain = %s AND {scope_sql}
+                ORDER BY updated_at DESC, id ASC
+                LIMIT %s
+                """,
+                [domain, *scope_params, limit],
             )
             return [self._row_to_personal_record(row) for row in cursor.fetchall()]
 
