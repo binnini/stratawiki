@@ -20,6 +20,28 @@ class StubRetrievalService:
             "personal_ids": ["personal:plan-1"],
             "interpretation_ids": ["interp:market-1"],
             "fact_ids": ["fact:job-1"],
+            "personal_pages": [
+                {
+                    "domain": "recruiting",
+                    "layer": "personal",
+                    "record_id": "personal:plan-1",
+                    "path": "wiki/personal/tenant-1/user-1/plan-1.md",
+                    "title": "Backend transition plan",
+                    "scope_ref": {
+                        "scope": "user",
+                        "tenant_id": "tenant-1",
+                        "user_id": "user-1",
+                    },
+                    "snapshot_ref": {
+                        "fact_snapshot_id": "fact_snap:new",
+                        "interpretation_snapshot_id": "interp_snap:new",
+                        "profile_version": "profile-v2",
+                    },
+                    "metadata": {"title": "Backend transition plan"},
+                }
+            ],
+            "interpretation_pages": [],
+            "fact_pages": [],
             "snapshot_ref": {
                 "fact_snapshot_id": "fact_snap:new",
                 "interpretation_snapshot_id": "interp_snap:new",
@@ -75,6 +97,28 @@ def test_retrieval_read_entrypoint_returns_authoritative_envelope() -> None:
             "personal_ids": ["personal:plan-1"],
             "interpretation_ids": ["interp:market-1"],
             "fact_ids": ["fact:job-1"],
+            "personal_pages": [
+                {
+                    "domain": "recruiting",
+                    "layer": "personal",
+                    "record_id": "personal:plan-1",
+                    "path": "wiki/personal/tenant-1/user-1/plan-1.md",
+                    "title": "Backend transition plan",
+                    "scope_ref": {
+                        "scope": "user",
+                        "tenant_id": "tenant-1",
+                        "user_id": "user-1",
+                    },
+                    "snapshot_ref": {
+                        "fact_snapshot_id": "fact_snap:new",
+                        "interpretation_snapshot_id": "interp_snap:new",
+                        "profile_version": "profile-v2",
+                    },
+                    "metadata": {"title": "Backend transition plan"},
+                }
+            ],
+            "interpretation_pages": [],
+            "fact_pages": [],
             "snapshot_ref": {
                 "fact_snapshot_id": "fact_snap:new",
                 "interpretation_snapshot_id": "interp_snap:new",
@@ -191,4 +235,6 @@ def test_default_retrieval_read_entrypoint_loads_candidates_from_postgres(
     assert result["read_model_state"] == "applied"
     assert result["retrieval"]["personal_ids"] == ["personal:plan-1"]
     assert result["retrieval"]["interpretation_ids"] == ["interp:market-1"]
+    assert result["retrieval"]["personal_pages"][0]["record_id"] == "personal:plan-1"
+    assert result["retrieval"]["interpretation_pages"][0]["record_id"] == "interp:market-1"
     assert result["retrieval"]["snapshot_ref"]["fact_snapshot_id"] == "fact_snap:new"

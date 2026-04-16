@@ -52,6 +52,10 @@ The implemented slice adds:
   - `projection.scope`
   - `projection.layers = [personal, interpretation, fact]`
   - `read_model_state = applied`
+- hydrated page-summary groups alongside ids:
+  - `personal_pages`
+  - `interpretation_pages`
+  - `fact_pages`
 - `retrieve_personal_context(...)` as the first user-scoped wrapper
 - bootstrap wiring for `entrypoints.retrieval_reads`
 - a non-placeholder server tool:
@@ -78,6 +82,12 @@ generation.
   of the current candidate ids.
 - Revisit naming once the MCP tool contract for personal querying is actually
   implemented.
-- Re-run the DB-backed suite in an environment with reachable local Postgres;
-  this session's environment still skipped integration fixtures for both plain
-  and explicit `DATABASE_URL` test runs.
+
+## Verification
+
+- `pytest -q`
+  - `38 passed, 14 skipped`
+- `bash scripts/bootstrap_db.sh`
+  - local Postgres became reachable and Alembic upgraded successfully
+- `DATABASE_URL=postgresql+psycopg://stratawiki:stratawiki@localhost:5432/stratawiki pytest -q`
+  - `52 passed in 8.40s`

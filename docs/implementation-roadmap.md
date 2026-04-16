@@ -236,6 +236,8 @@ Status:
   `DefaultRetrievalReadEntrypoint` wraps `DefaultRetrievalService` with an
   authoritative retrieval envelope and is wired through the thin bootstrap/tool
   layer as `retrieve_for_query`
+- retrieval results now also include grouped rendered-page summaries so
+  consumer-facing reads do not need to resolve candidate ids blindly
 - richer personal generation and answer-producing retrieval behavior still
   remain to be implemented
 
@@ -244,7 +246,7 @@ Verification:
 - the repository's PostgreSQL integration suite now also covers the shared
   Interpretation rendered-page write path
 - with a reachable local Postgres instance, `pytest -q` currently passes with
-  `40 passed`
+  `52 passed`
 
 Exit criteria:
 

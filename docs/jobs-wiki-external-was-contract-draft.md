@@ -205,6 +205,13 @@ The minimum response contract for this slice should therefore be:
     "fact_ids": [
       "fact:job-1"
     ],
+    "personal_pages": [
+      {
+        "record_id": "personal:plan-1",
+        "title": "Backend transition plan",
+        "path": "wiki/personal/tenant-a/user-42/plan-1.md"
+      }
+    ],
     "snapshot_ref": {
       "fact_snapshot_id": "fact_snap_2026_04_16",
       "interpretation_snapshot_id": "interp_snap_2026_04_16",
@@ -221,8 +228,9 @@ Current rules for this slice:
 - `read_model_state` remains `applied` because richer retrieval visibility state
   is not yet implemented
 - `projection.layers` should state the actual retrieval order used by the slice
-- grouped ids are the stable v1 output; page summaries or explanations can be
-  added later without changing the basic authoritative envelope
+- grouped ids remain the stable identity output
+- grouped page summaries are also available for direct consumer hydration of
+  title/path/snapshot metadata without a second lookup
 
 ## Recommended Refresh Scope Vocabulary
 

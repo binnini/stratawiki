@@ -40,6 +40,9 @@ class DefaultRetrievalService:
                 "personal_ids": [],
                 "interpretation_ids": [],
                 "fact_ids": [],
+                "personal_pages": [],
+                "interpretation_pages": [],
+                "fact_pages": [],
             }
 
         query_tokens = self._tokenize(question)
@@ -67,6 +70,9 @@ class DefaultRetrievalService:
                 page["record_id"] for page in matches_by_layer["interpretation"]
             ],
             "fact_ids": [page["record_id"] for page in matches_by_layer["fact"]],
+            "personal_pages": matches_by_layer["personal"],
+            "interpretation_pages": matches_by_layer["interpretation"],
+            "fact_pages": matches_by_layer["fact"],
         }
 
         snapshot_ref = self._merge_snapshot_ref(matches_by_layer)
