@@ -115,6 +115,31 @@ For substantial work, the default workflow is:
 
 Do not skip step 4 for substantial tasks.
 
+## Operating Dashboard Rule
+
+For substantial work, the agent should also use the working project dashboard in:
+
+- `dev-wiki/architecture/2026-04-16-project-phase-and-todo-map.md`
+
+Use it as the default quick-orientation page for:
+
+- current implementation status
+- current priority TODOs
+- last verified test state
+- current working branch/worktree assumptions
+
+Expected behavior:
+
+1. At the start of substantial work, read the dashboard after the relevant
+   official docs so the current repository status and next priorities are
+   visible.
+2. When a task materially changes project status, next-step priority, or the
+   recorded verification baseline, update the dashboard.
+3. Keep the dashboard short and operational; do not turn it back into a second
+   copy of the full roadmap.
+4. Keep official phase planning in `docs/implementation-roadmap.md`, and use
+   the dashboard only as the working snapshot of “now / done / next / later”.
+
 ## Relationship to Official Docs
 
 The current official design set lives in `docs/` and is the primary source of truth for architecture.
