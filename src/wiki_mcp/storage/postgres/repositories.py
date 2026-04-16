@@ -4,11 +4,12 @@ import json
 from typing import Any
 
 from wiki_mcp.schemas.dependency_impact import DependencyImpact
+from wiki_mcp.schemas.dependency_edge import DependencyEdge
 from wiki_mcp.schemas.fact_record import FactRecord
 from wiki_mcp.schemas.fact_relation import FactRelation
 from wiki_mcp.schemas.fact_write_result import FactWriteResult
 from wiki_mcp.schemas.interpretation_record import InterpretationRecord
-from wiki_mcp.schemas.outbox_event import OutboxEvent
+from wiki_mcp.schemas.outbox_event import OutboxEvent, OutboxEventRecord
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
 from wiki_mcp.schemas.scope_ref import ScopeRef
@@ -18,6 +19,36 @@ from wiki_mcp.storage.postgres.base import PostgresRepositoryBase, managed_curso
 
 class PostgresFactRepository(PostgresRepositoryBase):
     """Persist generic fact envelopes into early Postgres staging tables."""
+
+    def get_by_ids(
+        self,
+        ids: list[str],
+        scope_ref: ScopeRef,
+    ) -> list[FactRecord]:
+        if not ids:
+            return []
+
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id,
+                    domain,
+                    entity_type,
+                    canonical_key,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    schema_version,
+                    attributes_json,
+                    provenance_json
+                FROM fact.record_envelopes
+                WHERE id = ANY(%s) AND {scope_sql}
+                """,
+                [ids, *scope_params],
+            )
+            return [self._row_to_fact_record(row) for row in cursor.fetchall()]
 
     def write_facts(
         self,
@@ -119,6 +150,28 @@ class PostgresFactRepository(PostgresRepositoryBase):
             "relations_created": relations_created,
             "affected_fact_ids": affected_fact_ids,
         }
+
+    def _row_to_fact_record(self, row: Any) -> FactRecord:
+        data = self._row_to_dict(row)
+        return {
+            "id": data["id"],
+            "domain": data["domain"],
+            "entity_type": data["entity_type"],
+            "canonical_key": data["canonical_key"],
+            "attributes": self._load_json(data["attributes_json"]),
+            "scope": data["scope"],
+            **({"tenant_id": data["tenant_id"]} if data.get("tenant_id") else {}),
+            **({"user_id": data["user_id"]} if data.get("user_id") else {}),
+            "schema_version": data["schema_version"],
+            "provenance": self._load_json(data["provenance_json"]),
+        }
+
+    def _load_json(self, value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if value is None:
+            return {}
+        return json.loads(value)
 
 
 class PostgresInterpretationRepository(PostgresRepositoryBase):
@@ -571,8 +624,164 @@ class PostgresOutboxRepository(PostgresRepositoryBase):
                 stored_ids.append(str(self._row_to_dict(row)["id"]))
         return stored_ids
 
+    def claim_pending(
+        self,
+        *,
+        limit: int,
+        event_types: list[str] | None = None,
+    ) -> list[OutboxEventRecord]:
+        filters = ["status = 'pending'", "available_at <= NOW()"]
+        params: list[Any] = []
+
+        if event_types:
+            filters.append("event_type = ANY(%s)")
+            params.append(event_types)
+
+        params.append(limit)
+        where_sql = " AND ".join(filters)
+
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                WITH candidates AS (
+                    SELECT id
+                    FROM ops.outbox_event
+                    WHERE {where_sql}
+                    ORDER BY created_at
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT %s
+                )
+                UPDATE ops.outbox_event AS e
+                SET
+                    status = 'claimed',
+                    claimed_at = NOW(),
+                    attempt_count = e.attempt_count + 1
+                FROM candidates
+                WHERE e.id = candidates.id
+                RETURNING
+                    e.id,
+                    e.idempotency_key,
+                    e.event_type,
+                    e.aggregate_layer,
+                    e.aggregate_id,
+                    e.payload_json,
+                    e.status,
+                    e.attempt_count,
+                    e.available_at,
+                    e.claimed_at,
+                    e.processed_at,
+                    e.last_error
+                """
+                ,
+                params,
+            )
+            return [self._row_to_outbox_event_record(row) for row in cursor.fetchall()]
+
+    def mark_processed(self, event_id: str) -> None:
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                """
+                UPDATE ops.outbox_event
+                SET
+                    status = 'processed',
+                    processed_at = NOW(),
+                    last_error = NULL
+                WHERE id = %s
+                """,
+                (event_id,),
+            )
+
+    def mark_failed(self, event_id: str, error_message: str) -> None:
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                """
+                UPDATE ops.outbox_event
+                SET
+                    status = 'failed',
+                    last_error = %s
+                WHERE id = %s
+                """,
+                (error_message, event_id),
+            )
+
+    def _row_to_outbox_event_record(self, row: Any) -> OutboxEventRecord:
+        data = self._row_to_dict(row)
+        return {
+            "id": str(data["id"]),
+            "idempotency_key": data.get("idempotency_key"),
+            "event_type": data["event_type"],
+            "aggregate_layer": data["aggregate_layer"],
+            "aggregate_id": data["aggregate_id"],
+            "payload": self._load_json(data["payload_json"]),
+            "status": data["status"],
+            "attempt_count": data["attempt_count"],
+            "available_at": str(data["available_at"]),
+            "claimed_at": str(data["claimed_at"]) if data.get("claimed_at") else None,
+            "processed_at": str(data["processed_at"]) if data.get("processed_at") else None,
+            "last_error": data.get("last_error"),
+        }
+
+    def _load_json(self, value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if value is None:
+            return {}
+        return json.loads(value)
+
 
 class PostgresDependencyRepository(PostgresRepositoryBase):
+    def replace_edges_for_target(
+        self,
+        *,
+        domain: str,
+        to_layer: str,
+        to_id: str,
+        scope_ref: ScopeRef,
+        edges: list[DependencyEdge],
+    ) -> None:
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                DELETE FROM graph.dependency_edge
+                WHERE domain = %s
+                  AND to_layer = %s
+                  AND to_id = %s
+                  AND {scope_sql}
+                """,
+                [domain, to_layer, to_id, *scope_params],
+            )
+            for edge in edges:
+                edge_scope_ref = edge["scope_ref"]
+                cursor.execute(
+                    """
+                    INSERT INTO graph.dependency_edge (
+                        domain,
+                        from_layer,
+                        from_id,
+                        to_layer,
+                        to_id,
+                        scope,
+                        tenant_id,
+                        user_id,
+                        edge_type,
+                        attributes_json
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    """,
+                    (
+                        edge["domain"],
+                        edge["from_layer"],
+                        edge["from_id"],
+                        edge["to_layer"],
+                        edge["to_id"],
+                        edge_scope_ref["scope"],
+                        edge_scope_ref.get("tenant_id"),
+                        edge_scope_ref.get("user_id"),
+                        edge.get("edge_type"),
+                        self._json(edge.get("attributes", {})),
+                    ),
+                )
+
     def get_impact(
         self,
         domain: str,

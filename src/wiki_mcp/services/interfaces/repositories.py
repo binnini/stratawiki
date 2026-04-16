@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from wiki_mcp.schemas.dependency_edge import DependencyEdge
 from wiki_mcp.schemas.dependency_impact import DependencyImpact
 from wiki_mcp.schemas.fact_record import FactRecord
 from wiki_mcp.schemas.fact_relation import FactRelation
 from wiki_mcp.schemas.fact_write_result import FactWriteResult
 from wiki_mcp.schemas.interpretation_record import InterpretationRecord
-from wiki_mcp.schemas.outbox_event import OutboxEvent
+from wiki_mcp.schemas.outbox_event import OutboxEvent, OutboxEventRecord
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
 from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
@@ -17,6 +18,13 @@ from wiki_mcp.schemas.snapshot_ref import SnapshotRef
 
 class FactRepository(Protocol):
     """Persistence boundary for canonical Fact records and relations."""
+
+    def get_by_ids(
+        self,
+        ids: list[str],
+        scope_ref: ScopeRef,
+    ) -> list[FactRecord]:
+        """Load Fact records by id with scope filtering."""
 
     def write_facts(
         self,
@@ -95,9 +103,34 @@ class OutboxRepository(Protocol):
     def append_events(self, events: list[OutboxEvent]) -> list[str]:
         """Append outbox events and return stored event ids."""
 
+    def claim_pending(
+        self,
+        *,
+        limit: int,
+        event_types: list[str] | None = None,
+    ) -> list[OutboxEventRecord]:
+        """Claim pending outbox events for processing."""
+
+    def mark_processed(self, event_id: str) -> None:
+        """Mark a claimed outbox event as processed."""
+
+    def mark_failed(self, event_id: str, error_message: str) -> None:
+        """Mark a claimed outbox event as failed."""
+
 
 class DependencyRepository(Protocol):
     """Persistence boundary for dependency and impact lookup."""
+
+    def replace_edges_for_target(
+        self,
+        *,
+        domain: str,
+        to_layer: str,
+        to_id: str,
+        scope_ref: ScopeRef,
+        edges: list[DependencyEdge],
+    ) -> None:
+        """Replace downstream dependency edges for one target record."""
 
     def get_impact(
         self,

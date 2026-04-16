@@ -215,6 +215,20 @@ class DefaultCoreIngestionService:
                 "connector": source["connector"],
                 "fact_snapshot_id": fact_snapshot_id,
                 "affected_fact_ids": write_result["affected_fact_ids"],
+                "affected_entity_types": [
+                    record["entity_type"] for record in batch["records"]
+                ],
+                "scope": batch["records"][0]["scope"] if batch["records"] else "shared",
+                **(
+                    {"tenant_id": batch["records"][0]["tenant_id"]}
+                    if batch["records"] and "tenant_id" in batch["records"][0]
+                    else {}
+                ),
+                **(
+                    {"user_id": batch["records"][0]["user_id"]}
+                    if batch["records"] and "user_id" in batch["records"][0]
+                    else {}
+                ),
                 "facts_created": write_result["facts_created"],
                 "facts_updated": write_result["facts_updated"],
                 "relations_created": write_result["relations_created"],

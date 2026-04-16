@@ -201,3 +201,8 @@ def test_ingest_source_wires_fact_write_snapshot_and_outbox() -> None:
     ]
     assert outbox_repository.calls[0][0]["event_type"] == "fact_ingested"
     assert outbox_repository.calls[0][0]["payload"]["fact_snapshot_id"] == result["fact_snapshot_id"]
+    assert outbox_repository.calls[0][0]["payload"]["affected_entity_types"] == [
+        "job_posting",
+        "company",
+    ]
+    assert outbox_repository.calls[0][0]["payload"]["scope"] == "shared"

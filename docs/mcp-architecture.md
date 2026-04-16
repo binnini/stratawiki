@@ -287,6 +287,48 @@ Every adapter should produce this shape before the Fact ingest pipeline runs.
 4. publish interpretation snapshot or family snapshot
 5. render shared interpretation pages if needed
 
+### Version-One Outbox Contract
+
+The first concrete projection contract is:
+
+1. Fact ingestion emits `fact_ingested`
+2. worker claims pending `fact_ingested` events
+3. worker computes deterministic shared interpretation records
+4. worker publishes an interpretation snapshot
+5. worker emits `interpretation_snapshot_published`
+6. Personal stale worker claims `interpretation_snapshot_published`
+7. worker marks dependent Personal records `stale`
+
+The `fact_ingested` payload should carry enough context for downstream
+projection without re-reading the original source envelope:
+
+- `domain`
+- `source_id`
+- `connector`
+- `fact_snapshot_id`
+- `affected_fact_ids`
+- `affected_entity_types`
+- `scope` plus optional `tenant_id` / `user_id`
+- write counters for created/updated facts and relations
+
+The first implemented interpretation slice uses this contract to derive a
+shared recruiting `company_hiring_pattern` record and rewrite fact ->
+interpretation dependency edges.
+
+The `interpretation_snapshot_published` payload should carry:
+
+- `domain`
+- `interpretation_kind`
+- `fact_snapshot_id`
+- `interpretation_snapshot_id`
+- `interpretation_ids`
+- `source_event_id`
+- `scope` plus optional `tenant_id` / `user_id`
+
+The first implemented Personal downstream action does not regenerate personal
+content yet. It marks dependent Personal records `stale` while preserving the
+original snapshot tuple and storing the fresher upstream snapshot in provenance.
+
 ### Personal Retrieval and Generation Flow
 
 1. resolve user profile and current profile version

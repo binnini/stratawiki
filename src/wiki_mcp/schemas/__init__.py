@@ -1,6 +1,7 @@
 """Shared schema definitions."""
 
 from wiki_mcp.schemas.dependency_impact import DependencyImpact
+from wiki_mcp.schemas.dependency_edge import DependencyEdge
 from wiki_mcp.schemas.external_recruiting_payload import (
     RecruitingAttachmentPayload,
     RecruitingCompanyCoordinates,
@@ -20,7 +21,16 @@ from wiki_mcp.schemas.ingestion_error import IngestionError
 from wiki_mcp.schemas.ingestion_execution_result import IngestionExecutionResult
 from wiki_mcp.schemas.ingestion_result import IngestionResult
 from wiki_mcp.schemas.interpretation_record import InterpretationRecord
-from wiki_mcp.schemas.outbox_event import OutboxEvent
+from wiki_mcp.schemas.interpretation_projection_result import (
+    InterpretationProjectionResult,
+)
+from wiki_mcp.schemas.outbox_event import (
+    FactIngestedPayload,
+    InterpretationSnapshotPublishedPayload,
+    OutboxEvent,
+    OutboxEventRecord,
+    PersonalRecordsMarkedStalePayload,
+)
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
 from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
@@ -32,6 +42,8 @@ from wiki_mcp.schemas.validation_result import ValidationResult
 
 __all__ = [
     "DependencyImpact",
+    "DependencyEdge",
+    "FactIngestedPayload",
     "FactRecord",
     "FactRelation",
     "FactWriteResult",
@@ -40,7 +52,11 @@ __all__ = [
     "IngestionExecutionResult",
     "IngestionResult",
     "InterpretationRecord",
+    "InterpretationProjectionResult",
+    "InterpretationSnapshotPublishedPayload",
     "OutboxEvent",
+    "OutboxEventRecord",
+    "PersonalRecordsMarkedStalePayload",
     "PersonalRecord",
     "ProfileContext",
     "RecruitingAttachmentPayload",

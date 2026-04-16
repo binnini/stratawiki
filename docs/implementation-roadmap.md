@@ -144,7 +144,10 @@ Recommended initial interpretation families:
 Status:
 
 - interpretation canonical storage baseline now exists
-- family-level generation and refresh logic remain to be implemented
+- one deterministic recruiting interpretation slice now exists:
+  `fact_ingested` outbox event -> `company_hiring_pattern` projection ->
+  interpretation snapshot publication
+- richer interpretation families and LLM-backed generation remain to be implemented
 
 Exit criteria:
 
@@ -209,7 +212,8 @@ Recommended first personal record families:
 Status:
 
 - profile context and personal metadata storage baseline now exist
-- personal generation and stale-state behavior remain to be implemented
+- personal stale marking now exists for the interpretation -> personal path
+- personal generation and richer stale-state behavior still remain to be implemented
 
 Exit criteria:
 
@@ -238,6 +242,7 @@ Implementation tasks:
 Status:
 
 - dependency edge and impact lookup storage baseline now exist
+- interpretation projection now rewrites fact -> interpretation dependency edges for its target record
 - graph builders and richer routing semantics remain to be implemented
 
 Exit criteria:
@@ -260,6 +265,9 @@ Deliverables:
 
 Implementation tasks:
 
+- define v1 outbox event payloads and processing states
+- claim pending projection work safely
+- publish downstream snapshot events after projection success
 - implement retrieval cache
 - implement personal answer cache
 - implement rendered page cache
@@ -269,10 +277,17 @@ Implementation tasks:
 Status:
 
 - snapshot pointer/publication storage and outbox storage now exist
-- worker flow, cache policies, and inspection tools remain to be implemented
+- a first worker path now claims `fact_ingested` events, builds a deterministic
+  interpretation slice, publishes an interpretation snapshot, and marks the
+  source event processed
+- a second worker path now claims `interpretation_snapshot_published` events
+  and marks dependent Personal records `stale`
+- broader stale-marking, retry policy, cache policies, and inspection tools
+  remain to be implemented
 
 Exit criteria:
 
+- projection workers can advance downstream snapshots without manual intervention
 - the system can answer whether outputs are fresh, stale, or invalid
 
 ## Phase 8: ACL and Multi-Tenant Hardening
@@ -373,3 +388,21 @@ The roadmap is functionally successful when:
 2. add repository-level smoke tests for Postgres persistence paths
 3. implement the recruiting Fact slice on top of the envelope-first schema
 4. implement one interpretation family and its rendered page
+Implementation tasks:
+
+- define v1 outbox event payloads and processing states
+- claim pending projection work safely
+- publish downstream snapshot events after projection success
+- distinguish retryable/terminal failure behavior over time
+
+Status:
+
+- snapshot pointer/publication storage and outbox storage now exist
+- a first worker path now claims `fact_ingested` events, builds a deterministic
+  interpretation slice, publishes an interpretation snapshot, and marks the
+  source event processed
+- broader stale-marking and retry policy still need to be finalized
+
+Exit criteria:
+
+- projection workers can advance downstream snapshots without manual intervention

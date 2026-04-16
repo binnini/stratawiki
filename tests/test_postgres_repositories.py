@@ -5,6 +5,7 @@ from psycopg import Connection
 from wiki_mcp.storage.postgres.repositories import (
     PostgresDependencyRepository,
     PostgresFactRepository,
+    PostgresInterpretationRepository,
     PostgresOutboxRepository,
     PostgresSnapshotRepository,
 )
@@ -136,6 +137,49 @@ def test_outbox_repository_uses_idempotency_keys(
     assert row["count"] == 2
 
 
+def test_outbox_repository_claims_and_marks_events(
+    postgres_connection: Connection[dict],
+) -> None:
+    repository = PostgresOutboxRepository(postgres_connection)
+    [event_id] = repository.append_events(
+        [
+            {
+                "event_type": "fact_ingested",
+                "aggregate_layer": "fact",
+                "aggregate_id": "fact_snap:1",
+                "payload": {
+                    "domain": "recruiting",
+                    "source_id": "EMP-1",
+                    "connector": "worknet",
+                    "fact_snapshot_id": "fact_snap:1",
+                    "affected_fact_ids": ["fact:job_posting:emp-1"],
+                    "affected_entity_types": ["job_posting"],
+                    "scope": "shared",
+                    "facts_created": 1,
+                    "facts_updated": 0,
+                    "relations_created": 0,
+                },
+            }
+        ]
+    )
+
+    claimed = repository.claim_pending(limit=10, event_types=["fact_ingested"])
+    repository.mark_processed(event_id)
+
+    assert claimed[0]["id"] == event_id
+    assert claimed[0]["status"] == "claimed"
+    assert claimed[0]["attempt_count"] == 1
+
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT status, processed_at IS NOT NULL AS processed FROM ops.outbox_event WHERE id = %s",
+            (event_id,),
+        )
+        row = cursor.fetchone()
+
+    assert row == {"status": "processed", "processed": True}
+
+
 def test_snapshot_repository_tracks_pointer_and_publication_history(
     postgres_connection: Connection[dict],
 ) -> None:
@@ -177,6 +221,39 @@ def test_snapshot_repository_tracks_pointer_and_publication_history(
         "fact_snapshot_id": "fact_snap:2",
     }
     assert publications == [{"snapshot_id": "fact_snap:1"}, {"snapshot_id": "fact_snap:2"}]
+
+
+def test_interpretation_repository_saves_records_with_fact_snapshot(
+    postgres_connection: Connection[dict],
+) -> None:
+    repository = PostgresInterpretationRepository(postgres_connection)
+
+    stored_ids = repository.save_records(
+        [
+            {
+                "id": "interp:company_hiring_pattern:company-name:jobswiki",
+                "domain": "recruiting",
+                "kind": "company_hiring_pattern",
+                "subject_type": "company",
+                "subject_id": "company-name:jobswiki",
+                "scope_ref": {"scope": "shared"},
+                "schema_version": "v1",
+                "status": "active",
+                "confidence": 0.6,
+                "computed_at": "2026-04-16T00:00:00Z",
+                "expires_at": None,
+                "body": {"summary": "JobsWiki is actively hiring."},
+                "provenance": {"source_event_id": "evt-1"},
+                "render_hints": {"template": "company_hiring_pattern"},
+            }
+        ],
+        {"fact_snapshot_id": "fact_snap:1"},
+    )
+
+    loaded = repository.get_by_ids(stored_ids, {"scope": "shared"})
+
+    assert stored_ids == ["interp:company_hiring_pattern:company-name:jobswiki"]
+    assert loaded[0]["body"]["summary"] == "JobsWiki is actively hiring."
 
 
 def test_dependency_repository_matches_rendered_pages_by_scope(
