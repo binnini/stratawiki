@@ -268,8 +268,14 @@ Status:
   `career_transition_plan`
 - a second family-aware personal answer path now also exists for
   `profile_gap_analysis`
+- a third family-aware personal answer path now also exists for
+  `weekly_action_plan`
 - rationale is now available in both plain-text and structured forms:
   retrieval rank/explanation metadata -> `answer_rationale_items`
+- current project decision: keep retrieval page-summary-first until a separate
+  canonical retrieval slice is ready
+- current project decision: keep family-aware structured outputs at
+  `recommended_actions` plus rationale items until one family needs more
 - richer personal generation, stronger answer quality, and more domain-shaped
   personal families still remain to be implemented
 

@@ -322,3 +322,126 @@ def test_personal_query_service_builds_profile_gap_analysis_family_answer() -> N
     assert answer["recommended_actions"][0].startswith("Turn the main gap described")
     assert "## Gap-Closing Actions" in answer["answer_markdown"]
     assert answer["answer_rationale_items"][1]["category"] == "ranking"
+
+
+def test_personal_query_service_builds_weekly_action_plan_family_answer() -> None:
+    class WeeklyActionRetrievalService:
+        def retrieve_for_query(self, **kwargs: object) -> dict[str, object]:
+            return {
+                "personal_ids": ["personal:weekly-1"],
+                "interpretation_ids": ["interp:market-1"],
+                "fact_ids": ["fact:job-1"],
+                "personal_explanations": [
+                    {
+                        "layer": "personal",
+                        "record_id": "personal:weekly-1",
+                        "rank": 1,
+                        "score": 80,
+                        "match_type": "contains",
+                        "matched_fields": ["title"],
+                        "matched_token_count": 2,
+                        "profile_boost_applied": False,
+                    }
+                ],
+                "personal_records": [
+                    {
+                        "id": "personal:weekly-1",
+                        "domain": "recruiting",
+                        "kind": "weekly_action_plan",
+                        "title": "Backend weekly action plan",
+                        "summary": "Focus this week on applications, Python refresh, and one portfolio improvement.",
+                        "snapshot_ref": {
+                            "fact_snapshot_id": "fact_snap:new",
+                            "interpretation_snapshot_id": "interp_snap:new",
+                            "profile_version": "profile-v2",
+                        },
+                    }
+                ],
+                "interpretation_explanations": [
+                    {
+                        "layer": "interpretation",
+                        "record_id": "interp:market-1",
+                        "rank": 1,
+                        "score": 32,
+                        "match_type": "token_overlap",
+                        "matched_fields": ["title"],
+                        "matched_token_count": 1,
+                        "profile_boost_applied": False,
+                    }
+                ],
+                "interpretation_records": [
+                    {
+                        "id": "interp:market-1",
+                        "domain": "recruiting",
+                        "kind": "market_summary",
+                        "subject_type": "career_path",
+                        "subject_id": "backend-transition",
+                        "status": "active",
+                        "confidence": 0.9,
+                        "summary": "Backend demand is still active this week.",
+                    }
+                ],
+                "fact_explanations": [
+                    {
+                        "layer": "fact",
+                        "record_id": "fact:job-1",
+                        "rank": 1,
+                        "score": 32,
+                        "match_type": "token_overlap",
+                        "matched_fields": ["title"],
+                        "matched_token_count": 1,
+                        "profile_boost_applied": False,
+                    }
+                ],
+                "fact_records": [
+                    {
+                        "id": "fact:job-1",
+                        "domain": "recruiting",
+                        "entity_type": "job_posting",
+                        "canonical_key": "backend-engineer-seoul",
+                        "scope": "shared",
+                        "title": "Backend Engineer",
+                    }
+                ],
+                "personal_pages": [
+                    {
+                        "domain": "recruiting",
+                        "layer": "personal",
+                        "record_id": "personal:weekly-1",
+                        "path": "wiki/personal/tenant-1/user-1/weekly-1.md",
+                        "title": "Backend weekly action plan",
+                        "scope_ref": {
+                            "scope": "user",
+                            "tenant_id": "tenant-1",
+                            "user_id": "user-1",
+                        },
+                        "snapshot_ref": {
+                            "fact_snapshot_id": "fact_snap:new",
+                            "interpretation_snapshot_id": "interp_snap:new",
+                            "profile_version": "profile-v2",
+                        },
+                        "metadata": {"title": "Backend weekly action plan"},
+                    }
+                ],
+                "interpretation_pages": [],
+                "fact_pages": [],
+                "snapshot_ref": {
+                    "fact_snapshot_id": "fact_snap:new",
+                    "interpretation_snapshot_id": "interp_snap:new",
+                    "profile_version": "profile-v2",
+                },
+            }
+
+    service = DefaultPersonalQueryService(retrieval_service=WeeklyActionRetrievalService())
+
+    _, answer = service.query_personal_knowledge(
+        domain="recruiting",
+        question="What should I do this week?",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+    )
+
+    assert answer["personal_family"] == "weekly_action_plan"
+    assert answer["answer_summary"].startswith("Current weekly action focus:")
+    assert answer["recommended_actions"][0].startswith("Execute the top weekly priority")
+    assert "## This Week" in answer["answer_markdown"]
+    assert answer["answer_rationale_items"][1]["category"] == "ranking"

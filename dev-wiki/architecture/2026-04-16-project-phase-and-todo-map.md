@@ -7,7 +7,7 @@
 | Overall phase | In progress | Early implementation, no longer design-only |
 | Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus first personal answer slice |
 | Weakest | Early | Retrieval quality, broader Personal coverage, domain breadth, runtime/ops |
-| Next build | Now | Add `weekly_action_plan` or strengthen canonical retrieval |
+| Next build | Now | Open a dedicated canonical retrieval strengthening slice |
 
 ## Operating Metadata
 
@@ -15,7 +15,7 @@
 | --- | --- |
 | Current branch | `feat/query-personal-knowledge-first-slice` |
 | Main worktree | `/home/yebin/projects/stratawiki` |
-| Last verified tests | `pytest -q` -> `54 passed, 15 skipped` |
+| Last verified tests | `pytest -q` -> `55 passed, 15 skipped` |
 | Last verified DB-backed tests | `DATABASE_URL=postgresql+psycopg://stratawiki:stratawiki@localhost:5432/stratawiki pytest -q` -> `54 passed, 15 skipped` |
 | Current dashboard source | `dev-wiki/architecture/2026-04-16-project-phase-and-todo-map.md` |
 | Official roadmap | `docs/implementation-roadmap.md` |
@@ -33,16 +33,19 @@
 - [x] Personal answer bundle now carries retrieval scores and match reasons
 - [x] `career_transition_plan` now has a first family-aware answer rendering path
 - [x] `profile_gap_analysis` now has a second family-aware answer rendering path
+- [x] `weekly_action_plan` now has a third family-aware answer rendering path
 - [x] Retrieval explanations now expose rank and token-match metadata
 - [x] Personal answers now return structured rationale items
+- [x] Current decision: retrieval remains page-summary-first for now
+- [x] Current decision: structured answer fields stay at `recommended_actions` plus rationale items
 - [x] Bootstrap/server/tool registry wiring exists
 - [x] Local and DB-backed validation are both passing on the current baseline
 
 ## Next
 
-- [ ] Add `weekly_action_plan` as the next Personal family
-- [ ] Decide whether retrieval should keep page-summary-first ranking or start using stronger canonical retrieval
-- [ ] Decide whether family-aware answers need richer structured fields than `recommended_actions`
+- [ ] Strengthen canonical retrieval without breaking the current answer bundle contract
+- [ ] Decide which additional Personal family matters most after the current trio
+- [ ] Decide whether any one family now needs richer structured fields than `recommended_actions`
 
 ## Later
 
@@ -53,18 +56,17 @@
 
 ## One-Line Read
 
-StrataWiki now has two family-aware personal answer paths plus structured
-rationale, but broader Personal coverage and stronger retrieval quality still
+StrataWiki now has three family-aware personal answer paths plus structured
+rationale, but stronger retrieval quality and broader domain maturity still
 remain early.
 
 ## Open Questions
 
 - Should retrieval remain page-summary centric, or should canonical
   read/search become the next stronger dependency?
-- Should `weekly_action_plan` be the next family-aware answer mode?
 - When should answer quality move beyond deterministic summary assembly?
-- Should family-aware answers grow richer structured payloads than
-  `recommended_actions` plus rationale items?
+- Which follow-up slice matters more now: canonical retrieval quality or another
+  Personal family?
 
 ## Background
 

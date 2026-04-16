@@ -226,6 +226,13 @@ class DefaultPersonalQueryService:
                 lead_item=lead_item,
             )
 
+        if lead_item.get("kind") == "weekly_action_plan":
+            return self._build_weekly_action_plan_answer(
+                question=question,
+                input_bundle=input_bundle,
+                lead_item=lead_item,
+            )
+
         layer_label = lead_item["layer"]
         answer_summary = (
             f"Best current {layer_label} context: {lead_item['title']}. "
@@ -310,6 +317,40 @@ class DefaultPersonalQueryService:
             "answer_type": "personal_query_answer",
             "generation_strategy": "deterministic_summary_bundle_v1",
             "personal_family": "profile_gap_analysis",
+            "question": question,
+            "answer_summary": answer_summary,
+            "answer_rationale": answer_rationale,
+            "answer_rationale_items": self._build_rationale_items(input_bundle, lead_item),
+            "answer_markdown": answer_markdown,
+            "recommended_actions": recommended_actions,
+            "citations": self._build_citations(input_bundle),
+            "input_bundle": input_bundle,
+        }
+
+    def _build_weekly_action_plan_answer(
+        self,
+        *,
+        question: str,
+        input_bundle: PersonalQueryBundle,
+        lead_item: PersonalQueryBundleItem,
+    ) -> PersonalQueryAnswer:
+        answer_summary = (
+            f"Current weekly action focus: {lead_item['title']}. "
+            f"{lead_item['summary']}"
+        )
+        answer_rationale = self._build_answer_rationale(input_bundle, lead_item)
+        recommended_actions = self._build_weekly_actions(input_bundle, lead_item)
+        answer_markdown = self._render_weekly_action_plan_markdown(
+            question=question,
+            answer_summary=answer_summary,
+            answer_rationale=answer_rationale,
+            input_bundle=input_bundle,
+            recommended_actions=recommended_actions,
+        )
+        return {
+            "answer_type": "personal_query_answer",
+            "generation_strategy": "deterministic_summary_bundle_v1",
+            "personal_family": "weekly_action_plan",
             "question": question,
             "answer_summary": answer_summary,
             "answer_rationale": answer_rationale,
@@ -427,6 +468,25 @@ class DefaultPersonalQueryService:
         if input_bundle["interpretation_context"]:
             actions.append(
                 "Use the strongest shared interpretation to validate which gap matters first: "
+                f"{input_bundle['interpretation_context'][0]['summary']}"
+            )
+        return actions[:3]
+
+    def _build_weekly_actions(
+        self,
+        input_bundle: PersonalQueryBundle,
+        lead_item: PersonalQueryBundleItem,
+    ) -> list[str]:
+        actions = [
+            f"Execute the top weekly priority captured in {lead_item['title'].lower()}.",
+        ]
+        if input_bundle["fact_context"]:
+            actions.append(
+                f"Use {input_bundle['fact_context'][0]['title']} as the first concrete action target this week."
+            )
+        if input_bundle["interpretation_context"]:
+            actions.append(
+                "Keep the weekly plan aligned with the strongest shared signal: "
                 f"{input_bundle['interpretation_context'][0]['summary']}"
             )
         return actions[:3]
@@ -572,6 +632,50 @@ class DefaultPersonalQueryService:
             ("personal_context", "Gap Context"),
             ("interpretation_context", "Shared Signals"),
             ("fact_context", "Supporting Evidence"),
+        ):
+            items = input_bundle[key]
+            if not items:
+                continue
+            lines.extend(["", f"## {heading}"])
+            for item in items:
+                detail = f"- {item['title']}: {item['summary']}"
+                if "match_reason" in item:
+                    detail += f" ({item['match_reason']}"
+                    if "retrieval_rank" in item:
+                        detail += f", rank={item['retrieval_rank']}"
+                    if "retrieval_score" in item:
+                        detail += f", score={item['retrieval_score']}"
+                    detail += ")"
+                lines.append(detail)
+        return "\n".join(lines)
+
+    def _render_weekly_action_plan_markdown(
+        self,
+        *,
+        question: str,
+        answer_summary: str,
+        answer_rationale: str,
+        input_bundle: PersonalQueryBundle,
+        recommended_actions: list[str],
+    ) -> str:
+        lines = [
+            "# Weekly Action Plan",
+            "",
+            f"Question: {question}",
+            "",
+            "## Weekly Focus",
+            answer_summary,
+            "",
+            "## Why These Actions",
+            answer_rationale,
+        ]
+        if recommended_actions:
+            lines.extend(["", "## This Week"])
+            lines.extend(f"- {action}" for action in recommended_actions)
+        for key, heading in (
+            ("personal_context", "Weekly Plan Context"),
+            ("interpretation_context", "Shared Signals"),
+            ("fact_context", "Immediate Evidence"),
         ):
             items = input_bundle[key]
             if not items:
