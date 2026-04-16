@@ -3,6 +3,7 @@
 from wiki_mcp.services.interfaces.core_ingestion import CoreIngestionService
 from wiki_mcp.services.interfaces.dependency import DependencyService
 from wiki_mcp.services.interfaces.domain_ingestion import DomainIngestionPlugin
+from wiki_mcp.services.interfaces.page_reads import PageReadService
 from wiki_mcp.services.interfaces.profile_context import ProfileContextService
 from wiki_mcp.services.interfaces.rendering import RenderingService
 from wiki_mcp.services.interfaces.repositories import (
@@ -25,6 +26,7 @@ __all__ = [
     "FactRepository",
     "InterpretationRepository",
     "OutboxRepository",
+    "PageReadService",
     "PersonalRepository",
     "ProfileContextRepository",
     "ProfileContextService",

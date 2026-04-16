@@ -176,7 +176,10 @@ Implementation tasks:
 Status:
 
 - rendered page metadata storage baseline now exists in PostgreSQL
-- rendering pipeline itself remains to be implemented
+- a first internal rendered-page read slice now exists for Personal pages:
+  `graph.rendered_page` metadata + filesystem markdown body ->
+  `DefaultPageReadService`
+- shared interpretation rendering pipeline itself remains to be implemented
 
 Exit criteria:
 
@@ -216,7 +219,10 @@ Status:
 - a first deterministic personal regeneration path now exists:
   stale personal event -> profile plus interpretation refresh -> markdown rewrite
 - regenerated Personal artifacts now also upsert graph.rendered_page metadata
-- richer personal generation and broader read-path behavior still remain to be implemented
+- regenerated Personal artifacts can now be listed and loaded through the first
+  internal page read path
+- richer personal generation and broader retrieval/read API behavior still remain
+  to be implemented
 
 Exit criteria:
 

@@ -10,6 +10,7 @@ from wiki_mcp.services.interpretation_projection import (
     DefaultInterpretationProjectionService,
     DefaultOutboxProjectionWorker,
 )
+from wiki_mcp.services.page_reads import DefaultPageReadService
 from wiki_mcp.services.personal_regeneration import (
     DefaultPersonalRegenerationService,
     DefaultPersonalRegenerationWorker,
@@ -24,6 +25,7 @@ __all__ = [
     "DefaultIngestionEntrypoint",
     "DefaultInterpretationProjectionService",
     "DefaultOutboxProjectionWorker",
+    "DefaultPageReadService",
     "DefaultPersonalRegenerationService",
     "DefaultPersonalRegenerationWorker",
     "DefaultPersonalStaleMarkingService",

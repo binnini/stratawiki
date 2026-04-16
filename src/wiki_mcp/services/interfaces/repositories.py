@@ -12,6 +12,8 @@ from wiki_mcp.schemas.outbox_event import OutboxEvent, OutboxEventRecord
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
 from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
+from wiki_mcp.schemas.rendered_page import RenderedPage
+from wiki_mcp.schemas.rendered_page_summary import RenderedPageSummary
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
 
@@ -83,6 +85,26 @@ class RenderingRepository(Protocol):
 
     def write_artifact(self, artifact: RenderedArtifact) -> str:
         """Persist one rendered artifact and return its path."""
+
+    def get_page(
+        self,
+        *,
+        domain: str,
+        layer: str,
+        record_id: str,
+        scope_ref: ScopeRef,
+    ) -> RenderedPage | None:
+        """Load one rendered page with scope filtering."""
+
+    def list_pages(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        layer: str | None = None,
+        limit: int = 20,
+    ) -> list[RenderedPageSummary]:
+        """List rendered page metadata in recency order with scope filtering."""
 
 
 class SnapshotRepository(Protocol):

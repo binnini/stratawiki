@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from psycopg import Connection
 
+from wiki_mcp.storage.filesystem.rendering import (
+    FilesystemAndPostgresRenderingRepository,
+)
 from wiki_mcp.storage.postgres.repositories import (
     PostgresDependencyRepository,
     PostgresFactRepository,
@@ -360,6 +365,91 @@ def test_dependency_repository_matches_rendered_pages_by_scope(
         "affected_rendered_paths": ["wiki/personal/tenant-1/user-1/plan-1.md"],
         "affected_personal_ids": ["personal:plan-1"],
     }
+
+
+def test_rendering_repository_reads_rendered_page_by_scope(
+    postgres_connection: Connection[dict],
+    tmp_path: Path,
+) -> None:
+    repository = FilesystemAndPostgresRenderingRepository(tmp_path, postgres_connection)
+
+    repository.write_artifact(
+        {
+            "domain": "recruiting",
+            "layer": "personal",
+            "record_id": "personal:plan-1",
+            "path": "wiki/personal/tenant-1/user-1/plan-1.md",
+            "title": "Backend transition plan",
+            "body_markdown": "# Backend transition plan\n",
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "snapshot_ref": {
+                "fact_snapshot_id": "fact_snap:new",
+                "interpretation_snapshot_id": "interp_snap:new",
+                "profile_version": "profile-v2",
+            },
+        }
+    )
+    repository.write_artifact(
+        {
+            "domain": "recruiting",
+            "layer": "personal",
+            "record_id": "personal:plan-2",
+            "path": "wiki/personal/tenant-1/user-2/plan-2.md",
+            "title": "Frontend transition plan",
+            "body_markdown": "# Frontend transition plan\n",
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-2"},
+            "snapshot_ref": {
+                "fact_snapshot_id": "fact_snap:new",
+                "interpretation_snapshot_id": "interp_snap:new",
+                "profile_version": "profile-v2",
+            },
+        }
+    )
+
+    page = repository.get_page(
+        domain="recruiting",
+        layer="personal",
+        record_id="personal:plan-1",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+    )
+    pages = repository.list_pages(
+        domain="recruiting",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+        layer="personal",
+        limit=10,
+    )
+
+    assert page == {
+        "domain": "recruiting",
+        "layer": "personal",
+        "record_id": "personal:plan-1",
+        "path": "wiki/personal/tenant-1/user-1/plan-1.md",
+        "title": "Backend transition plan",
+        "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+        "snapshot_ref": {
+            "fact_snapshot_id": "fact_snap:new",
+            "interpretation_snapshot_id": "interp_snap:new",
+            "profile_version": "profile-v2",
+        },
+        "metadata": {"title": "Backend transition plan"},
+        "body_markdown": "# Backend transition plan\n",
+    }
+    assert pages == [
+        {
+            "domain": "recruiting",
+            "layer": "personal",
+            "record_id": "personal:plan-1",
+            "path": "wiki/personal/tenant-1/user-1/plan-1.md",
+            "title": "Backend transition plan",
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "snapshot_ref": {
+                "fact_snapshot_id": "fact_snap:new",
+                "interpretation_snapshot_id": "interp_snap:new",
+                "profile_version": "profile-v2",
+            },
+            "metadata": {"title": "Backend transition plan"},
+        }
+    ]
 
 
 def test_outbox_repository_requeues_retryable_failures(
