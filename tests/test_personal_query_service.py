@@ -17,9 +17,11 @@ class StubRetrievalService:
                 {
                     "layer": "personal",
                     "record_id": "personal:plan-1",
+                    "rank": 1,
                     "score": 100,
                     "match_type": "exact",
                     "matched_fields": ["title"],
+                    "matched_token_count": 3,
                     "profile_boost_applied": True,
                 }
             ],
@@ -41,9 +43,11 @@ class StubRetrievalService:
                 {
                     "layer": "interpretation",
                     "record_id": "interp:market-1",
+                    "rank": 1,
                     "score": 64,
                     "match_type": "token_overlap",
                     "matched_fields": ["title", "path"],
+                    "matched_token_count": 2,
                     "profile_boost_applied": False,
                 }
             ],
@@ -63,9 +67,11 @@ class StubRetrievalService:
                 {
                     "layer": "fact",
                     "record_id": "fact:job-1",
+                    "rank": 1,
                     "score": 32,
                     "match_type": "token_overlap",
                     "matched_fields": ["title"],
+                    "matched_token_count": 1,
                     "profile_boost_applied": False,
                 }
             ],
@@ -146,6 +152,8 @@ def test_personal_query_service_builds_answer_bundle_on_retrieval_output() -> No
     assert answer["answer_type"] == "personal_query_answer"
     assert answer["generation_strategy"] == "deterministic_summary_bundle_v1"
     assert answer["personal_family"] == "career_transition_plan"
+    assert answer["answer_rationale_items"][0]["category"] == "selection"
+    assert answer["answer_rationale_items"][1]["category"] == "ranking"
     assert answer["question"] == "How should I focus my backend transition?"
     assert answer["answer_summary"].startswith("Current career transition plan focus:")
     assert "profile-version preference" in answer["answer_rationale"]
@@ -158,7 +166,9 @@ def test_personal_query_service_builds_answer_bundle_on_retrieval_output() -> No
         "title": "Backend transition plan",
         "summary": "Prioritize backend-focused applications this week.",
         "kind": "career_transition_plan",
+        "retrieval_rank": 1,
         "retrieval_score": 100,
+        "matched_token_count": 3,
         "match_reason": "exact match on title with profile-version preference",
         "matched_fields": ["title"],
         "path": "wiki/personal/tenant-1/user-1/plan-1.md",
@@ -198,4 +208,117 @@ def test_personal_query_service_returns_no_match_answer_when_retrieval_is_empty(
     assert answer["answer_rationale"] == (
         "No retrieval candidate cleared the current matching threshold."
     )
+    assert answer["answer_rationale_items"][0]["category"] == "selection"
     assert answer["citations"] == []
+
+
+def test_personal_query_service_builds_profile_gap_analysis_family_answer() -> None:
+    class ProfileGapRetrievalService:
+        def retrieve_for_query(self, **kwargs: object) -> dict[str, object]:
+            return {
+                "personal_ids": ["personal:gap-1"],
+                "interpretation_ids": ["interp:market-1"],
+                "fact_ids": [],
+                "personal_explanations": [
+                    {
+                        "layer": "personal",
+                        "record_id": "personal:gap-1",
+                        "rank": 1,
+                        "score": 80,
+                        "match_type": "contains",
+                        "matched_fields": ["title"],
+                        "matched_token_count": 2,
+                        "profile_boost_applied": False,
+                    }
+                ],
+                "personal_records": [
+                    {
+                        "id": "personal:gap-1",
+                        "domain": "recruiting",
+                        "kind": "profile_gap_analysis",
+                        "title": "Backend profile gap analysis",
+                        "summary": "Your strongest gaps are backend project signaling and production Python depth.",
+                        "snapshot_ref": {
+                            "fact_snapshot_id": "fact_snap:new",
+                            "interpretation_snapshot_id": "interp_snap:new",
+                            "profile_version": "profile-v2",
+                        },
+                    }
+                ],
+                "interpretation_explanations": [
+                    {
+                        "layer": "interpretation",
+                        "record_id": "interp:market-1",
+                        "rank": 1,
+                        "score": 32,
+                        "match_type": "token_overlap",
+                        "matched_fields": ["title"],
+                        "matched_token_count": 1,
+                        "profile_boost_applied": False,
+                    }
+                ],
+                "interpretation_records": [
+                    {
+                        "id": "interp:market-1",
+                        "domain": "recruiting",
+                        "kind": "market_summary",
+                        "subject_type": "career_path",
+                        "subject_id": "backend-transition",
+                        "status": "active",
+                        "confidence": 0.9,
+                        "summary": "Python-heavy backend hiring remains active.",
+                    }
+                ],
+                "fact_explanations": [],
+                "fact_records": [],
+                "personal_pages": [
+                    {
+                        "domain": "recruiting",
+                        "layer": "personal",
+                        "record_id": "personal:gap-1",
+                        "path": "wiki/personal/tenant-1/user-1/gap-1.md",
+                        "title": "Backend profile gap analysis",
+                        "scope_ref": {
+                            "scope": "user",
+                            "tenant_id": "tenant-1",
+                            "user_id": "user-1",
+                        },
+                        "snapshot_ref": {
+                            "fact_snapshot_id": "fact_snap:new",
+                            "interpretation_snapshot_id": "interp_snap:new",
+                            "profile_version": "profile-v2",
+                        },
+                        "metadata": {"title": "Backend profile gap analysis"},
+                    }
+                ],
+                "interpretation_pages": [],
+                "fact_pages": [],
+                "snapshot_ref": {
+                    "fact_snapshot_id": "fact_snap:new",
+                    "interpretation_snapshot_id": "interp_snap:new",
+                    "profile_version": "profile-v2",
+                },
+            }
+
+    service = DefaultPersonalQueryService(retrieval_service=ProfileGapRetrievalService())
+
+    _, answer = service.query_personal_knowledge(
+        domain="recruiting",
+        question="What are my backend gaps?",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+        profile_context={
+            "user_id": "user-1",
+            "tenant_id": "tenant-1",
+            "domain": "recruiting",
+            "profile_version": "profile-v2",
+            "goals": ["transition_to_backend", "improve_signaling"],
+            "preferences": {},
+            "attributes": {"experience_years": 3},
+        },
+    )
+
+    assert answer["personal_family"] == "profile_gap_analysis"
+    assert answer["answer_summary"].startswith("Current profile gap focus:")
+    assert answer["recommended_actions"][0].startswith("Turn the main gap described")
+    assert "## Gap-Closing Actions" in answer["answer_markdown"]
+    assert answer["answer_rationale_items"][1]["category"] == "ranking"

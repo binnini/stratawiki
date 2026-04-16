@@ -8,7 +8,9 @@ class RetrievalMatchExplanation(TypedDict):
 
     layer: Literal["personal", "interpretation", "fact"]
     record_id: str
+    rank: int
     score: int
     match_type: str
     matched_fields: list[str]
+    matched_token_count: int
     profile_boost_applied: bool

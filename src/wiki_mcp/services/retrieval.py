@@ -89,7 +89,13 @@ class DefaultRetrievalService:
                 profile_context=profile_context,
             )[: self.layer_result_limit]
             matches_by_layer[layer] = [page for page, _ in matched_candidates]
-            explanations_by_layer[layer] = [explanation for _, explanation in matched_candidates]
+            explanations_by_layer[layer] = [
+                {
+                    **explanation,
+                    "rank": index + 1,
+                }
+                for index, (_, explanation) in enumerate(matched_candidates)
+            ]
 
         result: RetrievalResult = {
             "personal_ids": [page["record_id"] for page in matches_by_layer["personal"]],
@@ -327,6 +333,7 @@ class DefaultRetrievalService:
                 "score": 100,
                 "match_type": "exact",
                 "matched_fields": exact_matches,
+                "matched_token_count": len(query_tokens),
             }
 
         contains_matches = [
@@ -339,6 +346,7 @@ class DefaultRetrievalService:
                 "score": 80,
                 "match_type": "contains",
                 "matched_fields": contains_matches,
+                "matched_token_count": len(query_tokens),
             }
 
         if structured_lookup:
@@ -346,10 +354,16 @@ class DefaultRetrievalService:
                 "score": 0,
                 "match_type": "structured_miss",
                 "matched_fields": [],
+                "matched_token_count": 0,
             }
 
         if not query_tokens:
-            return {"score": 0, "match_type": "blank_query", "matched_fields": []}
+            return {
+                "score": 0,
+                "match_type": "blank_query",
+                "matched_fields": [],
+                "matched_token_count": 0,
+            }
 
         token_scores = {
             "record_id": self._token_overlap_score(
@@ -373,6 +387,17 @@ class DefaultRetrievalService:
             "score": best_score,
             "match_type": "token_overlap" if best_score > 0 else "no_match",
             "matched_fields": matched_fields,
+            "matched_token_count": max(
+                (
+                    len(set(query_tokens) & set(self._tokenize(getattr_value)))
+                    for getattr_value in (
+                        page["record_id"],
+                        page["title"],
+                        page["path"],
+                    )
+                ),
+                default=0,
+            ),
         }
 
     def _build_match_explanation(
@@ -386,9 +411,11 @@ class DefaultRetrievalService:
         return {
             "layer": cast(Any, layer),
             "record_id": page["record_id"],
+            "rank": 0,
             "score": int(match_result["score"]),
             "match_type": str(match_result["match_type"]),
             "matched_fields": cast(list[str], match_result["matched_fields"]),
+            "matched_token_count": int(match_result["matched_token_count"]),
             "profile_boost_applied": profile_boost_applied,
         }
 

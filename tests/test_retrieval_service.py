@@ -195,13 +195,16 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
         {
             "layer": "personal",
             "record_id": "personal:plan-1",
+            "rank": 1,
             "score": 100,
             "match_type": "exact",
             "matched_fields": ["title"],
+            "matched_token_count": 3,
             "profile_boost_applied": False,
         }
     ]
     assert result["interpretation_explanations"][0]["record_id"] == "interp:backend-transition-market"
+    assert result["interpretation_explanations"][0]["rank"] == 1
     assert result["interpretation_explanations"][0]["match_type"] == "token_overlap"
     assert set(result["interpretation_explanations"][0]["matched_fields"]) == {
         "record_id",
@@ -209,10 +212,13 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
         "path",
     }
     assert result["interpretation_explanations"][0]["score"] > 0
+    assert result["interpretation_explanations"][0]["matched_token_count"] > 0
     assert result["fact_explanations"][0]["record_id"] == "fact:job-posting-1"
+    assert result["fact_explanations"][0]["rank"] == 1
     assert result["fact_explanations"][0]["match_type"] == "token_overlap"
     assert set(result["fact_explanations"][0]["matched_fields"]) == {"title", "path"}
     assert result["fact_explanations"][0]["score"] > 0
+    assert result["fact_explanations"][0]["matched_token_count"] > 0
     assert result["personal_records"] == [
         {
             "id": "personal:plan-1",
@@ -289,6 +295,7 @@ def test_retrieval_service_matches_exact_record_id_lookup() -> None:
     assert result["personal_ids"] == ["personal:plan-1"]
     assert result["personal_pages"][0]["record_id"] == "personal:plan-1"
     assert result["personal_explanations"][0]["match_type"] == "exact"
+    assert result["personal_explanations"][0]["rank"] == 1
     assert result["interpretation_ids"] == []
     assert result["interpretation_pages"] == []
     assert result["interpretation_explanations"] == []

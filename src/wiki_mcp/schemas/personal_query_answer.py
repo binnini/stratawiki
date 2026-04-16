@@ -14,6 +14,13 @@ class PersonalQueryCitation(TypedDict):
     path: str | None
 
 
+class PersonalQueryRationaleItem(TypedDict):
+    """Structured rationale entry emitted with a personal answer."""
+
+    category: Literal["selection", "ranking", "context"]
+    summary: str
+
+
 class PersonalQueryAnswer(TypedDict):
     """Deterministic answer payload for the first personal query slice."""
 
@@ -23,6 +30,7 @@ class PersonalQueryAnswer(TypedDict):
     question: str
     answer_summary: str
     answer_rationale: str
+    answer_rationale_items: list[PersonalQueryRationaleItem]
     answer_markdown: str
     recommended_actions: NotRequired[list[str]]
     citations: list[PersonalQueryCitation]

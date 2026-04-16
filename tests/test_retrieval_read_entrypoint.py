@@ -38,9 +38,11 @@ class StubRetrievalService:
                 {
                     "layer": "personal",
                     "record_id": "personal:plan-1",
+                    "rank": 1,
                     "score": 100,
                     "match_type": "exact",
                     "matched_fields": ["title"],
+                    "matched_token_count": 3,
                     "profile_boost_applied": True,
                 }
             ],
@@ -129,9 +131,11 @@ def test_retrieval_read_entrypoint_returns_authoritative_envelope() -> None:
                 {
                     "layer": "personal",
                     "record_id": "personal:plan-1",
+                    "rank": 1,
                     "score": 100,
                     "match_type": "exact",
                     "matched_fields": ["title"],
+                    "matched_token_count": 3,
                     "profile_boost_applied": True,
                 }
             ],

@@ -35,6 +35,12 @@ class StubPersonalQueryService:
                 "question": kwargs["question"],
                 "answer_summary": "Current career transition plan focus: Backend transition plan.",
                 "answer_rationale": "Selected personal context first because the current layer order is personal -> interpretation -> fact.",
+                "answer_rationale_items": [
+                    {
+                        "category": "selection",
+                        "summary": "Selected personal context first because the current layer order is personal -> interpretation -> fact.",
+                    }
+                ],
                 "answer_markdown": "# Career Transition Plan\n",
                 "recommended_actions": ["Prioritize the transition direction captured in backend transition plan."],
                 "citations": [],
@@ -76,6 +82,7 @@ def test_personal_query_entrypoint_returns_authoritative_answer_envelope() -> No
     }
     assert result["answer"]["answer_type"] == "personal_query_answer"
     assert result["answer"]["personal_family"] == "career_transition_plan"
+    assert result["answer"]["answer_rationale_items"][0]["category"] == "selection"
     assert result["answer"]["answer_rationale"].startswith("Selected personal context first")
     assert result["answer"]["question"] == "How should I focus?"
     assert result["retrieval"]["personal_ids"] == ["personal:plan-1"]
@@ -173,6 +180,7 @@ def test_default_personal_query_entrypoint_loads_answer_from_postgres(
     assert result["projection"]["kind"] == "personal_query"
     assert result["answer"]["personal_family"] == "career_transition_plan"
     assert result["answer"]["answer_summary"].startswith("Current career transition plan focus:")
+    assert result["answer"]["answer_rationale_items"][1]["category"] == "ranking"
     assert "## Recommended Actions" in result["answer"]["answer_markdown"]
     assert "Top match reason:" in result["answer"]["answer_rationale"]
     assert result["answer"]["input_bundle"]["personal_context"][0]["record_id"] == "personal:plan-1"

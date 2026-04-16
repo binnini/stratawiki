@@ -5,6 +5,7 @@ from typing import Any
 from wiki_mcp.schemas.personal_query_answer import (
     PersonalQueryAnswer,
     PersonalQueryCitation,
+    PersonalQueryRationaleItem,
 )
 from wiki_mcp.schemas.personal_query_bundle import (
     PersonalQueryBundle,
@@ -129,7 +130,9 @@ class DefaultPersonalQueryService:
         if explanation is None:
             return {}
         metadata: dict[str, Any] = {
+            "retrieval_rank": explanation["rank"],
             "retrieval_score": explanation["score"],
+            "matched_token_count": explanation["matched_token_count"],
             "matched_fields": explanation["matched_fields"],
             "match_reason": self._match_reason(explanation),
         }
@@ -198,6 +201,12 @@ class DefaultPersonalQueryService:
                 "question": question,
                 "answer_summary": answer_summary,
                 "answer_rationale": answer_rationale,
+                "answer_rationale_items": [
+                    {
+                        "category": "selection",
+                        "summary": answer_rationale,
+                    }
+                ],
                 "answer_markdown": answer_markdown,
                 "citations": citations,
                 "input_bundle": input_bundle,
@@ -205,6 +214,13 @@ class DefaultPersonalQueryService:
 
         if lead_item.get("kind") == "career_transition_plan":
             return self._build_career_transition_plan_answer(
+                question=question,
+                input_bundle=input_bundle,
+                lead_item=lead_item,
+            )
+
+        if lead_item.get("kind") == "profile_gap_analysis":
+            return self._build_profile_gap_analysis_answer(
                 question=question,
                 input_bundle=input_bundle,
                 lead_item=lead_item,
@@ -230,6 +246,7 @@ class DefaultPersonalQueryService:
             "question": question,
             "answer_summary": answer_summary,
             "answer_rationale": answer_rationale,
+            "answer_rationale_items": self._build_rationale_items(input_bundle, lead_item),
             "answer_markdown": answer_markdown,
             "citations": citations,
             "input_bundle": input_bundle,
@@ -262,6 +279,41 @@ class DefaultPersonalQueryService:
             "question": question,
             "answer_summary": answer_summary,
             "answer_rationale": answer_rationale,
+            "answer_rationale_items": self._build_rationale_items(input_bundle, lead_item),
+            "answer_markdown": answer_markdown,
+            "recommended_actions": recommended_actions,
+            "citations": self._build_citations(input_bundle),
+            "input_bundle": input_bundle,
+        }
+
+    def _build_profile_gap_analysis_answer(
+        self,
+        *,
+        question: str,
+        input_bundle: PersonalQueryBundle,
+        lead_item: PersonalQueryBundleItem,
+    ) -> PersonalQueryAnswer:
+        answer_summary = (
+            f"Current profile gap focus: {lead_item['title']}. "
+            f"{lead_item['summary']}"
+        )
+        answer_rationale = self._build_answer_rationale(input_bundle, lead_item)
+        recommended_actions = self._build_profile_gap_actions(input_bundle, lead_item)
+        answer_markdown = self._render_profile_gap_markdown(
+            question=question,
+            answer_summary=answer_summary,
+            answer_rationale=answer_rationale,
+            input_bundle=input_bundle,
+            recommended_actions=recommended_actions,
+        )
+        return {
+            "answer_type": "personal_query_answer",
+            "generation_strategy": "deterministic_summary_bundle_v1",
+            "personal_family": "profile_gap_analysis",
+            "question": question,
+            "answer_summary": answer_summary,
+            "answer_rationale": answer_rationale,
+            "answer_rationale_items": self._build_rationale_items(input_bundle, lead_item),
             "answer_markdown": answer_markdown,
             "recommended_actions": recommended_actions,
             "citations": self._build_citations(input_bundle),
@@ -296,6 +348,46 @@ class DefaultPersonalQueryService:
         )
         return " ".join(lines)
 
+    def _build_rationale_items(
+        self,
+        input_bundle: PersonalQueryBundle,
+        lead_item: PersonalQueryBundleItem,
+    ) -> list[PersonalQueryRationaleItem]:
+        items: list[PersonalQueryRationaleItem] = [
+            {
+                "category": "selection",
+                "summary": (
+                    f"Selected {lead_item['layer']} layer first because the current layer order is "
+                    "personal -> interpretation -> fact."
+                ),
+            }
+        ]
+        if "retrieval_rank" in lead_item or "retrieval_score" in lead_item:
+            rank_text = f"rank {lead_item['retrieval_rank']}" if "retrieval_rank" in lead_item else "top rank"
+            score_text = (
+                f", score {lead_item['retrieval_score']}"
+                if "retrieval_score" in lead_item
+                else ""
+            )
+            items.append(
+                {
+                    "category": "ranking",
+                    "summary": f"Lead item ranked at {rank_text}{score_text}.",
+                }
+            )
+        items.append(
+            {
+                "category": "context",
+                "summary": (
+                    "Context bundle includes "
+                    f"{len(input_bundle['personal_context'])} personal, "
+                    f"{len(input_bundle['interpretation_context'])} interpretation, "
+                    f"and {len(input_bundle['fact_context'])} fact matches."
+                ),
+            }
+        )
+        return items
+
     def _build_career_transition_actions(
         self,
         input_bundle: PersonalQueryBundle,
@@ -314,6 +406,28 @@ class DefaultPersonalQueryService:
             top_fact = input_bundle["fact_context"][0]
             actions.append(
                 f"Turn the top supporting fact into a concrete next step: {top_fact['title']}."
+            )
+        return actions[:3]
+
+    def _build_profile_gap_actions(
+        self,
+        input_bundle: PersonalQueryBundle,
+        lead_item: PersonalQueryBundleItem,
+    ) -> list[str]:
+        actions = [
+            f"Turn the main gap described in {lead_item['title'].lower()} into a concrete skill or signaling task.",
+        ]
+        profile_context = input_bundle.get("profile_context")
+        if isinstance(profile_context, dict):
+            goals = [str(goal) for goal in profile_context.get("goals", [])[:2]]
+            if goals:
+                actions.append(
+                    "Align the next gap-closing step with active goals: " + ", ".join(goals) + "."
+                )
+        if input_bundle["interpretation_context"]:
+            actions.append(
+                "Use the strongest shared interpretation to validate which gap matters first: "
+                f"{input_bundle['interpretation_context'][0]['summary']}"
             )
         return actions[:3]
 
@@ -425,6 +539,50 @@ class DefaultPersonalQueryService:
                 detail = f"- {item['title']}: {item['summary']}"
                 if "match_reason" in item:
                     detail += f" ({item['match_reason']}"
+                    if "retrieval_score" in item:
+                        detail += f", score={item['retrieval_score']}"
+                    detail += ")"
+                lines.append(detail)
+        return "\n".join(lines)
+
+    def _render_profile_gap_markdown(
+        self,
+        *,
+        question: str,
+        answer_summary: str,
+        answer_rationale: str,
+        input_bundle: PersonalQueryBundle,
+        recommended_actions: list[str],
+    ) -> str:
+        lines = [
+            "# Profile Gap Analysis",
+            "",
+            f"Question: {question}",
+            "",
+            "## Gap Focus",
+            answer_summary,
+            "",
+            "## Why This Gap",
+            answer_rationale,
+        ]
+        if recommended_actions:
+            lines.extend(["", "## Gap-Closing Actions"])
+            lines.extend(f"- {action}" for action in recommended_actions)
+        for key, heading in (
+            ("personal_context", "Gap Context"),
+            ("interpretation_context", "Shared Signals"),
+            ("fact_context", "Supporting Evidence"),
+        ):
+            items = input_bundle[key]
+            if not items:
+                continue
+            lines.extend(["", f"## {heading}"])
+            for item in items:
+                detail = f"- {item['title']}: {item['summary']}"
+                if "match_reason" in item:
+                    detail += f" ({item['match_reason']}"
+                    if "retrieval_rank" in item:
+                        detail += f", rank={item['retrieval_rank']}"
                     if "retrieval_score" in item:
                         detail += f", score={item['retrieval_score']}"
                     detail += ")"

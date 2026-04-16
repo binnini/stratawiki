@@ -266,6 +266,10 @@ Status:
   `retrieval_score`/`match_reason` -> answer rationale text
 - the first truly family-aware personal answer path now exists for
   `career_transition_plan`
+- a second family-aware personal answer path now also exists for
+  `profile_gap_analysis`
+- rationale is now available in both plain-text and structured forms:
+  retrieval rank/explanation metadata -> `answer_rationale_items`
 - richer personal generation, stronger answer quality, and more domain-shaped
   personal families still remain to be implemented
 

@@ -40,6 +40,7 @@ from wiki_mcp.schemas.page_read_result import PageReadResult
 from wiki_mcp.schemas.personal_query_answer import (
     PersonalQueryAnswer,
     PersonalQueryCitation,
+    PersonalQueryRationaleItem,
 )
 from wiki_mcp.schemas.personal_query_bundle import (
     PersonalQueryBundle,
@@ -92,6 +93,7 @@ __all__ = [
     "PersonalQueryBundleItem",
     "PersonalQueryCitation",
     "PersonalQueryProjectionRef",
+    "PersonalQueryRationaleItem",
     "PersonalQueryReadResult",
     "PersonalRecordsMarkedStalePayload",
     "PersonalRecordsRegeneratedPayload",

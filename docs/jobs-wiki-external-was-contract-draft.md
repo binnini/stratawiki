@@ -236,6 +236,8 @@ Current rules for this slice:
 - grouped retrieval explanations may also be included per layer as optional
   `personal_explanations`, `interpretation_explanations`, and
   `fact_explanations`
+- current explanation items may include ranking fields such as `rank` and
+  simple overlap counters such as `matched_token_count`
 - these are intentionally narrower than full canonical storage envelopes
 - these hydrated summaries strengthen the pre-generation contract but still do
   not imply synthesized answer generation
@@ -288,6 +290,8 @@ Current rules for this slice:
   when the implementation is deterministic or otherwise strategy-bound
 - `answer_rationale` may be included as a user-facing explanation of why the
   current context bundle was selected
+- `answer_rationale_items` may also be included as a structured explanation
+  surface for downstream consumers that should not parse free-text rationale
 - the underlying `retrieval` payload may still be returned for explainability
   and consumer debugging
 

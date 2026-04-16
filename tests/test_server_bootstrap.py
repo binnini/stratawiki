@@ -89,6 +89,12 @@ class StubPersonalQueryEntrypoint:
                 "question": kwargs["question"],
                 "answer_summary": "Current career transition plan focus: Backend transition plan.",
                 "answer_rationale": "Selected personal context first because the current layer order is personal -> interpretation -> fact.",
+                "answer_rationale_items": [
+                    {
+                        "category": "selection",
+                        "summary": "Selected personal context first because the current layer order is personal -> interpretation -> fact.",
+                    }
+                ],
                 "answer_markdown": "# Career Transition Plan\n",
                 "recommended_actions": ["Prioritize the transition direction captured in backend transition plan."],
                 "citations": [],

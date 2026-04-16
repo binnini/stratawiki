@@ -14,7 +14,9 @@ class PersonalQueryBundleItem(TypedDict):
     title: str
     summary: str
     kind: NotRequired[str]
+    retrieval_rank: NotRequired[int]
     retrieval_score: NotRequired[int]
+    matched_token_count: NotRequired[int]
     match_reason: NotRequired[str]
     matched_fields: NotRequired[list[str]]
     path: NotRequired[str]
