@@ -179,6 +179,8 @@ Status:
 - a first internal rendered-page read slice now exists for Personal pages:
   `graph.rendered_page` metadata + filesystem markdown body ->
   `DefaultPageReadService`
+- a first application-facing Personal read entrypoint now exists:
+  `DefaultPageReadEntrypoint.get_personal_page/list_personal_pages`
 - shared interpretation rendering pipeline itself remains to be implemented
 
 Exit criteria:
@@ -221,6 +223,8 @@ Status:
 - regenerated Personal artifacts now also upsert graph.rendered_page metadata
 - regenerated Personal artifacts can now be listed and loaded through the first
   internal page read path
+- Personal rendered pages can now also be served through a thin application-facing
+  read authority entrypoint
 - richer personal generation and broader retrieval/read API behavior still remain
   to be implemented
 
