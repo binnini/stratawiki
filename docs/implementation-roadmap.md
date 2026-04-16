@@ -179,9 +179,14 @@ Status:
 - a first internal rendered-page read slice now exists for Personal pages:
   `graph.rendered_page` metadata + filesystem markdown body ->
   `DefaultPageReadService`
-- a first application-facing Personal read entrypoint now exists:
-  `DefaultPageReadEntrypoint.get_personal_page/list_personal_pages`
-- shared interpretation rendering pipeline itself remains to be implemented
+- a first application-facing page read entrypoint now exists for both Personal
+  and shared Interpretation pages:
+  `DefaultPageReadEntrypoint.get_*/list_*_pages`
+- one shared Interpretation rendering slice now exists:
+  deterministic `company_hiring_pattern` projection -> markdown artifact ->
+  `graph.rendered_page` upsert
+- read access is now proven for both Personal and shared Interpretation pages
+  through the same rendered-page path
 
 Exit criteria:
 
@@ -227,6 +232,13 @@ Status:
   read authority entrypoint
 - richer personal generation and broader retrieval/read API behavior still remain
   to be implemented
+
+Verification:
+
+- the repository's PostgreSQL integration suite now also covers the shared
+  Interpretation rendered-page write path
+- with a reachable local Postgres instance, `pytest -q` currently passes with
+  `40 passed`
 
 Exit criteria:
 

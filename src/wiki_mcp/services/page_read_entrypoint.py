@@ -130,6 +130,32 @@ class DefaultPageReadEntrypoint:
             limit=limit,
         )
 
+    def get_interpretation_page(
+        self,
+        *,
+        domain: str,
+        record_id: str,
+    ) -> PageReadResult:
+        return self.get_page(
+            domain=domain,
+            layer="interpretation",
+            record_id=record_id,
+            scope_ref={"scope": "shared"},
+        )
+
+    def list_interpretation_pages(
+        self,
+        *,
+        domain: str,
+        limit: int = 20,
+    ) -> PageListResult:
+        return self.list_pages(
+            domain=domain,
+            scope_ref={"scope": "shared"},
+            layer="interpretation",
+            limit=limit,
+        )
+
 
 def build_default_page_read_entrypoint(
     connection: Connection[dict],

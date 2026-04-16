@@ -16,11 +16,13 @@ from wiki_mcp.schemas.outbox_event import (
     OutboxEventRecord,
 )
 from wiki_mcp.schemas.scope_ref import ScopeRef
+from wiki_mcp.schemas.snapshot_ref import SnapshotRef
 from wiki_mcp.services.interfaces.repositories import (
     DependencyRepository,
     FactRepository,
     InterpretationRepository,
     OutboxRepository,
+    RenderingRepository,
     SnapshotRepository,
 )
 
@@ -38,12 +40,14 @@ class DefaultInterpretationProjectionService:
         interpretation_repository: InterpretationRepository,
         snapshot_repository: SnapshotRepository,
         dependency_repository: DependencyRepository,
+        rendering_repository: RenderingRepository,
         outbox_repository: OutboxRepository,
     ) -> None:
         self.fact_repository = fact_repository
         self.interpretation_repository = interpretation_repository
         self.snapshot_repository = snapshot_repository
         self.dependency_repository = dependency_repository
+        self.rendering_repository = rendering_repository
         self.outbox_repository = outbox_repository
 
     def project_fact_event(
@@ -94,13 +98,20 @@ class DefaultInterpretationProjectionService:
             payload["domain"],
             self.interpretation_kind,
         )
+        snapshot_ref: SnapshotRef = {
+            "fact_snapshot_id": payload["fact_snapshot_id"],
+            "interpretation_snapshot_id": interpretation_snapshot_id,
+        }
         self.snapshot_repository.publish_snapshot(
             "interpretation",
             payload["domain"],
-            {
-                "fact_snapshot_id": payload["fact_snapshot_id"],
-                "interpretation_snapshot_id": interpretation_snapshot_id,
-            },
+            snapshot_ref,
+        )
+        self.rendering_repository.write_artifact(
+            self._build_rendered_artifact(
+                interpretation_record,
+                snapshot_ref=snapshot_ref,
+            )
         )
 
         emitted_outbox_event_ids = self.outbox_repository.append_events(
@@ -228,6 +239,79 @@ class DefaultInterpretationProjectionService:
                 "path_hint": f"interpretation/{self.interpretation_kind}/{subject_id}.md",
             },
         }
+
+    def _build_rendered_artifact(
+        self,
+        record: InterpretationRecord,
+        *,
+        snapshot_ref: SnapshotRef,
+    ) -> dict[str, object]:
+        body = record["body"]
+        company_name = body.get("company_name", record["subject_id"])
+        job_names = body.get("job_names", [])
+        section_titles = body.get("section_titles", [])
+        evidence_fact_ids = body.get("evidence_fact_ids", [])
+        lines = [
+            f"# {company_name} hiring pattern",
+            "",
+            str(body.get("summary", "")),
+            "",
+            "## Subject",
+            f"- kind: {record['kind']}",
+            f"- subject_id: {record['subject_id']}",
+        ]
+        if body.get("posting_title"):
+            lines.append(f"- posting_title: {body['posting_title']}")
+        if body.get("employment_type"):
+            lines.append(f"- employment_type: {body['employment_type']}")
+        if job_names:
+            lines.extend(
+                [
+                    "",
+                    "## Job Names",
+                    *(f"- {job_name}" for job_name in job_names),
+                ]
+            )
+        if section_titles:
+            lines.extend(
+                [
+                    "",
+                    "## Recruitment Sections",
+                    *(f"- {title}" for title in section_titles),
+                ]
+            )
+        if evidence_fact_ids:
+            lines.extend(
+                [
+                    "",
+                    "## Evidence Facts",
+                    *(f"- {fact_id}" for fact_id in evidence_fact_ids),
+                ]
+            )
+        lines.extend(
+            [
+                "",
+                "## Snapshot Provenance",
+                f"- fact_snapshot_id: {snapshot_ref['fact_snapshot_id']}",
+                f"- interpretation_snapshot_id: {snapshot_ref.get('interpretation_snapshot_id', '')}",
+            ]
+        )
+        return {
+            "domain": record["domain"],
+            "layer": "interpretation",
+            "record_id": record["id"],
+            "path": self._rendered_path_for_record(record),
+            "title": f"{company_name} hiring pattern",
+            "body_markdown": "\n".join(lines),
+            "scope_ref": record["scope_ref"],
+            "snapshot_ref": snapshot_ref,
+        }
+
+    def _rendered_path_for_record(self, record: InterpretationRecord) -> str:
+        subject_key = record["subject_id"].replace(":", "__")
+        return (
+            f"wiki/shared/{record['domain']}/{record['kind']}/{subject_key}.md"
+        )
 
     def _build_summary(
         self,

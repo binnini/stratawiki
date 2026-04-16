@@ -121,6 +121,32 @@ def test_page_read_entrypoint_lists_personal_pages() -> None:
     assert [page["record_id"] for page in result["pages"]] == ["personal:plan-1"]
 
 
+def test_page_read_entrypoint_returns_interpretation_page() -> None:
+    entrypoint = DefaultPageReadEntrypoint(page_read_service=StubPageReadService())
+
+    result = entrypoint.get_interpretation_page(
+        domain="recruiting",
+        record_id="personal:plan-1",
+    )
+
+    assert result["ok"] is True
+    assert result["read_model_state"] == "applied"
+    assert result["page"]["record_id"] == "personal:plan-1"
+
+
+def test_page_read_entrypoint_lists_interpretation_pages() -> None:
+    entrypoint = DefaultPageReadEntrypoint(page_read_service=StubPageReadService())
+
+    result = entrypoint.list_interpretation_pages(
+        domain="recruiting",
+        limit=5,
+    )
+
+    assert result["ok"] is True
+    assert result["read_model_state"] == "applied"
+    assert [page["record_id"] for page in result["pages"]] == ["personal:plan-1"]
+
+
 def test_default_page_read_entrypoint_loads_personal_page_from_postgres_and_filesystem(
     postgres_connection: Connection[dict],
     tmp_path: Path,
