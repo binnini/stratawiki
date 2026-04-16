@@ -28,6 +28,13 @@ class StrataWikiServer:
     def call_tool(self, name: str, arguments: dict[str, object] | None = None) -> object:
         return self.tools.call_tool(name, arguments)
 
+    def call_tool_with_envelope(
+        self,
+        name: str,
+        arguments: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        return self.tools.call_tool_with_envelope(name, arguments)
+
     def close(self) -> None:
         self.bootstrap.close()
 

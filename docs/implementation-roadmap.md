@@ -182,6 +182,8 @@ Status:
   grouped tool metadata -> entrypoint ownership -> thin argument contracts
 - the bootstrap tool layer now also exposes:
   public tool schema export -> thin result/error metadata -> lightweight validation
+- the bootstrap public tool schema is now versioned and checks:
+  nested object arguments -> declared result fields -> structured error envelope
 - a first internal rendered-page read slice now exists for Personal pages:
   `graph.rendered_page` metadata + filesystem markdown body ->
   `DefaultPageReadService`

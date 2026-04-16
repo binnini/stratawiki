@@ -65,13 +65,16 @@ The current bootstrap/tool slice is now a bit more contract-oriented:
   - `entrypoint`
   - `arguments`
   - `result_fields`
-  - `error_codes`
+  - `errors`
   - `status`
 - `ToolRegistry` now:
   - rejects duplicate registrations
   - returns a stable grouped listing for server/bootstrap inspection
   - validates required arguments and thin primitive/object types before dispatch
   - exports a public schema shape that a future MCP adapter can reuse
+  - validates nested object fields for selected argument families such as `source`, `scope_ref`, and `profile_context`
+  - validates returned mapping results against declared result contracts
+  - can emit a structured bootstrap error envelope with `code`, `message`, and `details`
 - `build_default_tool_definitions(...)` now expresses the default tool layer as an explicit registration list before registry construction
 - `server.main()` now reports tools grouped by contract family instead of only printing one flat available/placeholder split
 
@@ -81,6 +84,8 @@ This is still intentionally thin:
 - no fake runtime/session abstraction
 - no full schema-validator framework
 - no attempt to hide that most future tool families are still placeholders
+
+The current public schema export is now versioned as `bootstrap.v1`.
 
 ## Open Questions
 

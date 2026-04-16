@@ -144,6 +144,8 @@ Near-term implementation note:
   argument contract intent visible
 - it may also expose thin result and error metadata plus lightweight input
   validation, as long as this stays clearly below a full transport/schema layer
+- if it exports a temporary public schema before the full adapter exists, that
+  schema should be explicitly versioned and include a structured error envelope
 - it should not invent fake session, protocol, or transport abstractions
 
 For Jobs-Wiki-style integrations, this layer should be read primarily as the mutation and status facade, not as the only required read-serving surface.
