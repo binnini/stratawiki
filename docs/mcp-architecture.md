@@ -367,6 +367,8 @@ The first implemented Personal downstream path now has two steps:
   upstream snapshot ids in provenance
 - regeneration refreshes the Personal record to the new snapshot tuple and
   rewrites a readable markdown artifact from profile plus interpretation state
+- rendered-page metadata is upserted alongside the rewritten artifact so
+  dependency impact and future read paths can resolve the refreshed page
 
 ### Personal Retrieval and Generation Flow
 

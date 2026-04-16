@@ -175,6 +175,9 @@ def test_regenerate_from_stale_event_refreshes_personal_record_and_artifact() ->
             {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
         )
     ]
+    assert rendering_repository.artifacts[0]["domain"] == "recruiting"
+    assert rendering_repository.artifacts[0]["layer"] == "personal"
+    assert rendering_repository.artifacts[0]["record_id"] == "personal:plan-1"
     assert rendering_repository.artifacts[0]["path"] == "wiki/personal/tenant-1/user-1/plan-1.md"
     assert "## Shared Interpretations" in rendering_repository.artifacts[0]["body_markdown"]
     assert outbox_repository.calls[0][0]["event_type"] == "personal_records_regenerated"

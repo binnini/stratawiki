@@ -211,6 +211,9 @@ class DefaultPersonalRegenerationService:
             ]
         )
         return {
+            "domain": record["domain"],
+            "layer": "personal",
+            "record_id": record["id"],
             "path": record["body_path"],
             "title": record["title"],
             "body_markdown": "\n".join(body_lines),

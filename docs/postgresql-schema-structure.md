@@ -284,6 +284,10 @@ The rendered page table includes:
 - optional `metadata_json`
 - timestamps
 
+Current Personal regeneration now rewrites the filesystem artifact and upserts
+the matching `graph.rendered_page` row so downstream impact lookup and future
+read paths share the same rendered-page metadata.
+
 ## Cross-Schema Design Rules
 
 These rules now apply to the implemented baseline.

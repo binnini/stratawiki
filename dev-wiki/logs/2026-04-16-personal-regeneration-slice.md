@@ -59,3 +59,18 @@ This gives the repository its first true refresh path for user-scoped artifacts 
 - Decide how regenerated markdown should be indexed and exposed through MCP read paths.
 - Connect regenerated Personal artifacts to rendered-page metadata or retrieval indexes.
 - Add Postgres-backed integration coverage for Personal regeneration when a reachable DB is available.
+
+
+## Follow-Up
+
+The next pass is now partially complete.
+
+- regenerated Personal markdown now upserts the matching graph.rendered_page row
+- rendered-page metadata now carries the refreshed snapshot tuple and title metadata
+- this gives dependency impact lookup and future read APIs a stable page-level pointer after regeneration
+
+### Updated Open Questions
+
+- whether the rendering write and rendered-page upsert should become one explicit rendering subsystem contract instead of one repository convenience class
+- whether graph.rendered_page should also be refreshed for shared interpretation rendering in the next slice
+- whether regenerated Personal pages should be exposed first through a read API or through retrieval-oriented listing tools

@@ -215,7 +215,8 @@ Status:
 - personal stale marking now exists for the interpretation -> personal path
 - a first deterministic personal regeneration path now exists:
   stale personal event -> profile plus interpretation refresh -> markdown rewrite
-- richer personal generation and read-path behavior still remain to be implemented
+- regenerated Personal artifacts now also upsert graph.rendered_page metadata
+- richer personal generation and broader read-path behavior still remain to be implemented
 
 Exit criteria:
 
