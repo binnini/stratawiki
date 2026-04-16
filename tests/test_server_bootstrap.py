@@ -53,16 +53,23 @@ class StubPageReadEntrypoint:
         return {"method": "list_interpretation_pages", **kwargs}
 
 
+class StubRetrievalReadEntrypoint:
+    def retrieve_for_query(self, **kwargs: object) -> dict[str, object]:
+        return {"method": "retrieve_for_query", **kwargs}
+
+
 def test_default_tool_registry_exposes_wired_and_placeholder_tools() -> None:
     registry = build_default_tool_registry(
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
+        retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
     )
 
     definitions = {definition.name: definition for definition in registry.list_tools()}
 
     assert definitions["ingest_source"].status == "available"
     assert definitions["get_personal_page"].status == "available"
+    assert definitions["retrieve_for_query"].status == "available"
     assert definitions["ingest_fact_batch"].status == "placeholder"
     assert definitions["query_personal_knowledge"].handler is None
 
@@ -72,6 +79,7 @@ def test_default_tool_registry_dispatches_to_entrypoints() -> None:
     registry = build_default_tool_registry(
         ingestion_entrypoint=ingestion_entrypoint,
         page_read_entrypoint=StubPageReadEntrypoint(),
+        retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
     )
 
     ingest_result = registry.call_tool(
@@ -99,16 +107,30 @@ def test_default_tool_registry_dispatches_to_entrypoints() -> None:
             "record_id": "personal:plan-1",
         },
     )
+    retrieval_result = registry.call_tool(
+        "retrieve_for_query",
+        {
+            "domain": "recruiting",
+            "question": "backend transition plan",
+            "scope_ref": {
+                "scope": "user",
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+            },
+        },
+    )
 
     assert ingest_result["ok"] is True
     assert ingestion_entrypoint.sources[0]["source_id"] == "EMP-1"
     assert page_result["method"] == "get_personal_page"
+    assert retrieval_result["method"] == "retrieve_for_query"
 
 
 def test_placeholder_tool_cannot_be_called() -> None:
     registry = build_default_tool_registry(
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
+        retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
     )
 
     try:
@@ -171,10 +193,24 @@ def test_build_server_wires_postgres_entrypoints_and_tools(
                 "record_id": "personal:plan-1",
             },
         )
+        retrieval_result = server.call_tool(
+            "retrieve_for_query",
+            {
+                "domain": "recruiting",
+                "question": "backend transition plan",
+                "scope_ref": {
+                    "scope": "user",
+                    "tenant_id": "tenant-1",
+                    "user_id": "user-1",
+                },
+            },
+        )
 
         assert isinstance(server, StrataWikiServer)
         assert result["ok"] is True
         assert result["page"]["record_id"] == "personal:plan-1"
+        assert retrieval_result["ok"] is True
+        assert retrieval_result["retrieval"]["personal_ids"] == ["personal:plan-1"]
         assert "ingest_source" in {tool.name for tool in server.list_tools()}
     finally:
         server.close()

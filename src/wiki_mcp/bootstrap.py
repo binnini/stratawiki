@@ -14,7 +14,12 @@ from wiki_mcp.services.ingestion_entrypoint import (
 from wiki_mcp.services.page_read_entrypoint import (
     DEFAULT_RENDER_ROOT,
     DefaultPageReadEntrypoint,
-    build_default_page_read_entrypoint,
+)
+from wiki_mcp.services.page_reads import DefaultPageReadService
+from wiki_mcp.services.retrieval import DefaultRetrievalService
+from wiki_mcp.services.retrieval_read_entrypoint import DefaultRetrievalReadEntrypoint
+from wiki_mcp.storage.filesystem.rendering import (
+    FilesystemAndPostgresRenderingRepository,
 )
 
 
@@ -27,6 +32,7 @@ class ApplicationEntrypoints:
 
     ingestion: DefaultIngestionEntrypoint
     page_reads: DefaultPageReadEntrypoint
+    retrieval_reads: DefaultRetrievalReadEntrypoint
 
 
 @dataclass(slots=True)
@@ -57,11 +63,21 @@ def build_application_entrypoints(
     *,
     render_root: str | Path = DEFAULT_RENDER_ROOT,
 ) -> ApplicationEntrypoints:
+    page_read_service = DefaultPageReadService(
+        rendering_repository=FilesystemAndPostgresRenderingRepository(
+            render_root,
+            connection,
+        )
+    )
     return ApplicationEntrypoints(
         ingestion=build_default_ingestion_entrypoint(connection),
-        page_reads=build_default_page_read_entrypoint(
-            connection,
-            render_root=render_root,
+        page_reads=DefaultPageReadEntrypoint(
+            page_read_service=page_read_service,
+        ),
+        retrieval_reads=DefaultRetrievalReadEntrypoint(
+            retrieval_service=DefaultRetrievalService(
+                page_read_service=page_read_service,
+            )
         ),
     )
 

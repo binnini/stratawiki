@@ -10,6 +10,11 @@ from wiki_mcp.services.page_read_entrypoint import (
     DefaultPageReadEntrypoint,
     build_default_page_read_entrypoint,
 )
+from wiki_mcp.services.retrieval import DefaultRetrievalService
+from wiki_mcp.services.retrieval_read_entrypoint import (
+    DefaultRetrievalReadEntrypoint,
+    build_default_retrieval_read_entrypoint,
+)
 from wiki_mcp.services.interpretation_projection import (
     DefaultInterpretationProjectionService,
     DefaultOutboxProjectionWorker,
@@ -31,11 +36,14 @@ __all__ = [
     "DefaultOutboxProjectionWorker",
     "DefaultPageReadEntrypoint",
     "DefaultPageReadService",
+    "DefaultRetrievalReadEntrypoint",
+    "DefaultRetrievalService",
     "DefaultPersonalRegenerationService",
     "DefaultPersonalRegenerationWorker",
     "DefaultPersonalStaleMarkingService",
     "DefaultPersonalStaleWorker",
     "build_default_ingestion_entrypoint",
     "build_default_page_read_entrypoint",
+    "build_default_retrieval_read_entrypoint",
     "connect_postgres",
 ]

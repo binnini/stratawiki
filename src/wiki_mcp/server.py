@@ -42,6 +42,7 @@ def build_server(
         tools=build_default_tool_registry(
             ingestion_entrypoint=bootstrap.entrypoints.ingestion,
             page_read_entrypoint=bootstrap.entrypoints.page_reads,
+            retrieval_read_entrypoint=bootstrap.entrypoints.retrieval_reads,
         ),
     )
 

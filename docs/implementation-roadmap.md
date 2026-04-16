@@ -232,8 +232,12 @@ Status:
   internal page read path
 - Personal rendered pages can now also be served through a thin application-facing
   read authority entrypoint
-- richer personal generation and broader retrieval/read API behavior still remain
-  to be implemented
+- a first application-facing retrieval candidate read slice now exists:
+  `DefaultRetrievalReadEntrypoint` wraps `DefaultRetrievalService` with an
+  authoritative retrieval envelope and is wired through the thin bootstrap/tool
+  layer as `retrieve_for_query`
+- richer personal generation and answer-producing retrieval behavior still
+  remain to be implemented
 
 Verification:
 

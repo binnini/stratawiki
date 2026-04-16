@@ -5,6 +5,7 @@ from typing import Any
 
 from wiki_mcp.services.ingestion_entrypoint import DefaultIngestionEntrypoint
 from wiki_mcp.services.page_read_entrypoint import DefaultPageReadEntrypoint
+from wiki_mcp.services.retrieval_read_entrypoint import DefaultRetrievalReadEntrypoint
 from wiki_mcp.tools.registry import ToolDefinition, ToolRegistry
 
 
@@ -12,6 +13,7 @@ def build_default_tool_registry(
     *,
     ingestion_entrypoint: DefaultIngestionEntrypoint,
     page_read_entrypoint: DefaultPageReadEntrypoint,
+    retrieval_read_entrypoint: DefaultRetrievalReadEntrypoint,
 ) -> ToolRegistry:
     return ToolRegistry(
         [
@@ -76,6 +78,14 @@ def build_default_tool_registry(
                 description="List shared Interpretation rendered pages.",
                 handler=lambda arguments: _list_interpretation_pages(
                     page_read_entrypoint,
+                    arguments,
+                ),
+            ),
+            ToolDefinition(
+                name="retrieve_for_query",
+                description="Resolve layered retrieval candidates through the current read authority slice.",
+                handler=lambda arguments: _retrieve_for_query(
+                    retrieval_read_entrypoint,
                     arguments,
                 ),
             ),
@@ -187,4 +197,16 @@ def _list_interpretation_pages(
     return entrypoint.list_interpretation_pages(
         domain=arguments["domain"],
         limit=int(arguments.get("limit", 20)),
+    )
+
+
+def _retrieve_for_query(
+    entrypoint: DefaultRetrievalReadEntrypoint,
+    arguments: Mapping[str, Any],
+) -> object:
+    return entrypoint.retrieve_for_query(
+        domain=arguments["domain"],
+        question=arguments["question"],
+        scope_ref=arguments["scope_ref"],
+        profile_context=arguments.get("profile_context"),
     )
