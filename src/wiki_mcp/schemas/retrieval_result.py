@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
 
@@ -11,4 +11,4 @@ class RetrievalResult(TypedDict):
     personal_ids: list[str]
     interpretation_ids: list[str]
     fact_ids: list[str]
-    snapshot_ref: SnapshotRef
+    snapshot_ref: NotRequired[SnapshotRef]
