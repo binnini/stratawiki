@@ -254,8 +254,12 @@ Status:
   summaries so consumers can inspect layered Personal, Interpretation, and Fact
   context before answer generation exists without binding to full storage
   envelopes
-- richer personal generation and answer-producing retrieval behavior still
-  remain to be implemented
+- a first deterministic personal query slice now exists:
+  `query_personal_knowledge` now sits above `retrieve_for_query` as a thin
+  orchestration layer that assembles a retrieval-owned answer input bundle and
+  returns a minimal answer payload with `answer_markdown`
+- richer personal generation, stronger answer quality, and more domain-shaped
+  personal families still remain to be implemented
 
 Verification:
 

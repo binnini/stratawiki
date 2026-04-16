@@ -77,6 +77,29 @@ class StubRetrievalReadEntrypoint:
         }
 
 
+class StubPersonalQueryEntrypoint:
+    def query_personal_knowledge(self, **kwargs: object) -> dict[str, object]:
+        return {
+            "ok": True,
+            "method": "query_personal_knowledge",
+            "answer": {
+                "question": kwargs["question"],
+                "answer_summary": "Best current personal context: Backend transition plan.",
+                "answer_markdown": "# Personal Knowledge Answer\n",
+                "citations": [],
+                "input_bundle": {
+                    "question": kwargs["question"],
+                    "scope_ref": kwargs["scope_ref"],
+                    "personal_context": [],
+                    "interpretation_context": [],
+                    "fact_context": [],
+                },
+            },
+            "retrieval": {"question": kwargs["question"]},
+            **kwargs,
+        }
+
+
 class BadResultRetrievalEntrypoint:
     def retrieve_for_query(self, **kwargs: object) -> dict[str, object]:
         return {
@@ -90,6 +113,7 @@ def test_default_tool_registry_exposes_wired_and_placeholder_tools() -> None:
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
         retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+        personal_query_entrypoint=StubPersonalQueryEntrypoint(),
     )
 
     definitions = {definition.name: definition for definition in registry.list_tools()}
@@ -107,7 +131,8 @@ def test_default_tool_registry_exposes_wired_and_placeholder_tools() -> None:
     assert "fact_batch_not_supported_yet" in {
         error.code for error in definitions["ingest_fact_batch"].errors
     }
-    assert definitions["query_personal_knowledge"].handler is None
+    assert definitions["query_personal_knowledge"].status == "available"
+    assert definitions["query_personal_knowledge"].handler is not None
     assert definitions["query_personal_knowledge"].entrypoint == "personal.query_knowledge"
     assert definitions["get_page"].arguments[3].fields[0].name == "scope"
 
@@ -117,6 +142,7 @@ def test_default_tool_definitions_are_grouped_for_contract_visibility() -> None:
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
         retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+        personal_query_entrypoint=StubPersonalQueryEntrypoint(),
     )
 
     by_name = {definition.name: definition for definition in definitions}
@@ -134,6 +160,7 @@ def test_default_tool_registry_dispatches_to_entrypoints() -> None:
         ingestion_entrypoint=ingestion_entrypoint,
         page_read_entrypoint=StubPageReadEntrypoint(),
         retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+        personal_query_entrypoint=StubPersonalQueryEntrypoint(),
     )
 
     ingest_result = registry.call_tool(
@@ -173,11 +200,24 @@ def test_default_tool_registry_dispatches_to_entrypoints() -> None:
             },
         },
     )
+    personal_query_result = registry.call_tool(
+        "query_personal_knowledge",
+        {
+            "domain": "recruiting",
+            "question": "backend transition plan",
+            "scope_ref": {
+                "scope": "user",
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+            },
+        },
+    )
 
     assert ingest_result["ok"] is True
     assert ingestion_entrypoint.sources[0]["source_id"] == "EMP-1"
     assert page_result["method"] == "get_personal_page"
     assert retrieval_result["method"] == "retrieve_for_query"
+    assert personal_query_result["method"] == "query_personal_knowledge"
 
 
 def test_placeholder_tool_cannot_be_called() -> None:
@@ -185,6 +225,7 @@ def test_placeholder_tool_cannot_be_called() -> None:
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
         retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+        personal_query_entrypoint=StubPersonalQueryEntrypoint(),
     )
 
     try:
@@ -200,6 +241,7 @@ def test_registry_lists_tools_by_group() -> None:
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
         retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+        personal_query_entrypoint=StubPersonalQueryEntrypoint(),
     )
 
     grouped = registry.list_tools_by_group()
@@ -220,6 +262,7 @@ def test_registry_exports_public_tool_schema() -> None:
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
         retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+        personal_query_entrypoint=StubPersonalQueryEntrypoint(),
     )
 
     schemas = {schema["name"]: schema for schema in registry.export_tool_schemas()}
@@ -241,6 +284,7 @@ def test_registry_validates_missing_required_argument() -> None:
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
         retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+        personal_query_entrypoint=StubPersonalQueryEntrypoint(),
     )
 
     try:
@@ -264,6 +308,7 @@ def test_registry_validates_argument_types() -> None:
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
         retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+        personal_query_entrypoint=StubPersonalQueryEntrypoint(),
     )
 
     try:
@@ -288,6 +333,7 @@ def test_registry_validates_nested_argument_types() -> None:
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
         retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+        personal_query_entrypoint=StubPersonalQueryEntrypoint(),
     )
 
     try:
@@ -314,6 +360,7 @@ def test_registry_validates_result_contract() -> None:
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
         retrieval_read_entrypoint=BadResultRetrievalEntrypoint(),
+        personal_query_entrypoint=StubPersonalQueryEntrypoint(),
     )
 
     try:
@@ -341,6 +388,7 @@ def test_registry_returns_structured_error_envelope() -> None:
         ingestion_entrypoint=StubIngestionEntrypoint(),
         page_read_entrypoint=StubPageReadEntrypoint(),
         retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+        personal_query_entrypoint=StubPersonalQueryEntrypoint(),
     )
 
     result = registry.call_tool_with_envelope(
@@ -458,12 +506,28 @@ def test_build_server_wires_postgres_entrypoints_and_tools(
                 },
             },
         )
+        personal_query_result = server.call_tool(
+            "query_personal_knowledge",
+            {
+                "domain": "recruiting",
+                "question": "backend transition plan",
+                "scope_ref": {
+                    "scope": "user",
+                    "tenant_id": "tenant-1",
+                    "user_id": "user-1",
+                },
+            },
+        )
 
         assert isinstance(server, StrataWikiServer)
         assert result["ok"] is True
         assert result["page"]["record_id"] == "personal:plan-1"
         assert retrieval_result["ok"] is True
         assert retrieval_result["retrieval"]["personal_ids"] == ["personal:plan-1"]
+        assert personal_query_result["ok"] is True
+        assert personal_query_result["answer"]["input_bundle"]["personal_context"][0]["record_id"] == (
+            "personal:plan-1"
+        )
         assert retrieval_result["retrieval"]["personal_records"][0] == {
             "id": "personal:plan-1",
             "domain": "recruiting",

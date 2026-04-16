@@ -5,6 +5,7 @@ from typing import Any
 
 from wiki_mcp.services.ingestion_entrypoint import DefaultIngestionEntrypoint
 from wiki_mcp.services.page_read_entrypoint import DefaultPageReadEntrypoint
+from wiki_mcp.services.personal_query_entrypoint import DefaultPersonalQueryEntrypoint
 from wiki_mcp.services.retrieval_read_entrypoint import DefaultRetrievalReadEntrypoint
 from wiki_mcp.tools.registry import (
     ToolArgument,
@@ -20,6 +21,7 @@ def build_default_tool_definitions(
     ingestion_entrypoint: DefaultIngestionEntrypoint,
     page_read_entrypoint: DefaultPageReadEntrypoint,
     retrieval_read_entrypoint: DefaultRetrievalReadEntrypoint,
+    personal_query_entrypoint: DefaultPersonalQueryEntrypoint,
 ) -> list[ToolDefinition]:
     return [
         _available_tool(
@@ -462,11 +464,55 @@ def build_default_tool_definitions(
                 ),
             ),
         ),
-        _placeholder_tool(
+        _available_tool(
             name="query_personal_knowledge",
-            description="Future MCP personal retrieval tool contract.",
+            description="Assemble a thin personal answer on top of the current retrieval slice.",
             group="personal",
             entrypoint="personal.query_knowledge",
+            arguments=(
+                ToolArgument("domain", "string", "Domain key for the personal query."),
+                ToolArgument("question", "string", "Natural-language question to answer."),
+                ToolArgument(
+                    "scope_ref",
+                    "object",
+                    "Resolved scope reference used for the personal answer.",
+                    fields=(
+                        ToolArgument("scope", "string", "Scope kind."),
+                        ToolArgument("tenant_id", "string", "Tenant identifier.", required=False),
+                        ToolArgument("user_id", "string", "User identifier.", required=False),
+                    ),
+                ),
+                ToolArgument(
+                    "profile_context",
+                    "object",
+                    "Optional profile context used during answer assembly.",
+                    required=False,
+                    fields=(
+                        ToolArgument("user_id", "string", "User identifier.", required=False),
+                        ToolArgument("tenant_id", "string", "Tenant identifier.", required=False),
+                        ToolArgument("domain", "string", "Domain key.", required=False),
+                        ToolArgument(
+                            "profile_version",
+                            "string",
+                            "Profile version for the answer context.",
+                            required=False,
+                        ),
+                        ToolArgument("goals", "array", "Profile goals.", required=False),
+                        ToolArgument(
+                            "preferences",
+                            "object",
+                            "Profile preference map.",
+                            required=False,
+                        ),
+                        ToolArgument(
+                            "attributes",
+                            "object",
+                            "Profile attribute map.",
+                            required=False,
+                        ),
+                    ),
+                ),
+            ),
             result_fields=(
                 ToolResultField("ok", "boolean", "Whether personal query execution succeeded."),
                 ToolResultField(
@@ -474,11 +520,27 @@ def build_default_tool_definitions(
                     "object",
                     "User-scoped synthesized knowledge answer envelope.",
                 ),
+                ToolResultField(
+                    "retrieval",
+                    "object",
+                    "Underlying retrieval result used to assemble the answer.",
+                ),
+                ToolResultField(
+                    "read_model_state",
+                    "string",
+                    "Authoritative read-model visibility state.",
+                    required=False,
+                ),
             ),
             errors=(
                 ToolError("invalid_arguments", "Input arguments do not satisfy the tool contract."),
                 ToolError("invalid_personal_query", "The personal query is invalid."),
-                ToolError("personal_query_not_supported_yet", "The personal query tool is not wired yet."),
+                ToolError("personal_query_failed", "The personal query entrypoint failed."),
+                ToolError("invalid_result", "The tool returned a result that violated its contract."),
+            ),
+            handler=lambda arguments: _query_personal_knowledge(
+                personal_query_entrypoint,
+                arguments,
             ),
         ),
         _placeholder_tool(
@@ -508,12 +570,14 @@ def build_default_tool_registry(
     ingestion_entrypoint: DefaultIngestionEntrypoint,
     page_read_entrypoint: DefaultPageReadEntrypoint,
     retrieval_read_entrypoint: DefaultRetrievalReadEntrypoint,
+    personal_query_entrypoint: DefaultPersonalQueryEntrypoint,
 ) -> ToolRegistry:
     return ToolRegistry(
         build_default_tool_definitions(
             ingestion_entrypoint=ingestion_entrypoint,
             page_read_entrypoint=page_read_entrypoint,
             retrieval_read_entrypoint=retrieval_read_entrypoint,
+            personal_query_entrypoint=personal_query_entrypoint,
         )
     )
 
@@ -655,6 +719,18 @@ def _retrieve_for_query(
     arguments: Mapping[str, Any],
 ) -> object:
     return entrypoint.retrieve_for_query(
+        domain=arguments["domain"],
+        question=arguments["question"],
+        scope_ref=arguments["scope_ref"],
+        profile_context=arguments.get("profile_context"),
+    )
+
+
+def _query_personal_knowledge(
+    entrypoint: DefaultPersonalQueryEntrypoint,
+    arguments: Mapping[str, Any],
+) -> object:
+    return entrypoint.query_personal_knowledge(
         domain=arguments["domain"],
         question=arguments["question"],
         scope_ref=arguments["scope_ref"],

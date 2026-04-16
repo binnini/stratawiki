@@ -16,6 +16,8 @@ from wiki_mcp.services.page_read_entrypoint import (
     DefaultPageReadEntrypoint,
 )
 from wiki_mcp.services.page_reads import DefaultPageReadService
+from wiki_mcp.services.personal_query import DefaultPersonalQueryService
+from wiki_mcp.services.personal_query_entrypoint import DefaultPersonalQueryEntrypoint
 from wiki_mcp.services.retrieval import DefaultRetrievalService
 from wiki_mcp.services.retrieval_read_entrypoint import DefaultRetrievalReadEntrypoint
 from wiki_mcp.storage.postgres.repositories import (
@@ -38,6 +40,7 @@ class ApplicationEntrypoints:
     ingestion: DefaultIngestionEntrypoint
     page_reads: DefaultPageReadEntrypoint
     retrieval_reads: DefaultRetrievalReadEntrypoint
+    personal_queries: DefaultPersonalQueryEntrypoint
 
 
 @dataclass(slots=True)
@@ -74,17 +77,23 @@ def build_application_entrypoints(
             connection,
         )
     )
+    retrieval_service = DefaultRetrievalService(
+        page_read_service=page_read_service,
+        fact_repository=PostgresFactRepository(connection),
+        interpretation_repository=PostgresInterpretationRepository(connection),
+        personal_repository=PostgresPersonalRepository(connection),
+    )
     return ApplicationEntrypoints(
         ingestion=build_default_ingestion_entrypoint(connection),
         page_reads=DefaultPageReadEntrypoint(
             page_read_service=page_read_service,
         ),
         retrieval_reads=DefaultRetrievalReadEntrypoint(
-            retrieval_service=DefaultRetrievalService(
-                page_read_service=page_read_service,
-                fact_repository=PostgresFactRepository(connection),
-                interpretation_repository=PostgresInterpretationRepository(connection),
-                personal_repository=PostgresPersonalRepository(connection),
+            retrieval_service=retrieval_service
+        ),
+        personal_queries=DefaultPersonalQueryEntrypoint(
+            personal_query_service=DefaultPersonalQueryService(
+                retrieval_service=retrieval_service,
             )
         ),
     )

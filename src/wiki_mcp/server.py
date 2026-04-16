@@ -56,6 +56,7 @@ def build_server(
             ingestion_entrypoint=bootstrap.entrypoints.ingestion,
             page_read_entrypoint=bootstrap.entrypoints.page_reads,
             retrieval_read_entrypoint=bootstrap.entrypoints.retrieval_reads,
+            personal_query_entrypoint=bootstrap.entrypoints.personal_queries,
         ),
     )
 

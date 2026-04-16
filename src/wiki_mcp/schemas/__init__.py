@@ -37,6 +37,15 @@ from wiki_mcp.schemas.page_read_error import PageReadError
 from wiki_mcp.schemas.page_read_model_state import PageReadModelState
 from wiki_mcp.schemas.page_projection_ref import PageProjectionRef
 from wiki_mcp.schemas.page_read_result import PageReadResult
+from wiki_mcp.schemas.personal_query_answer import (
+    PersonalQueryAnswer,
+    PersonalQueryCitation,
+)
+from wiki_mcp.schemas.personal_query_bundle import (
+    PersonalQueryBundle,
+    PersonalQueryBundleItem,
+)
+from wiki_mcp.schemas.personal_query_read_result import PersonalQueryReadResult
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
 from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
@@ -76,6 +85,11 @@ __all__ = [
     "PageReadError",
     "PageReadModelState",
     "PageReadResult",
+    "PersonalQueryAnswer",
+    "PersonalQueryBundle",
+    "PersonalQueryBundleItem",
+    "PersonalQueryCitation",
+    "PersonalQueryReadResult",
     "PersonalRecordsMarkedStalePayload",
     "PersonalRecordsRegeneratedPayload",
     "PersonalRecord",
