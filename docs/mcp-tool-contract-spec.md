@@ -22,6 +22,19 @@ The tools are intentionally provider-agnostic. Clients should not need to know w
 - expose invalidation state without leaking internal implementation details
 - support domain plugins without redesigning the core protocol
 
+## Jobs-Wiki External Contract Note
+
+For an external WAS integration such as Jobs-Wiki, this document should be read together with [jobs-wiki-external-was-contract-draft.md](./jobs-wiki-external-was-contract-draft.md).
+
+Important interpretation rules:
+
+- the WAS read path and command path are separate
+- the external WAS should use the MCP surface for commands and command status
+- normal reads should go through a separate read authority
+- command success and read-model visibility are separate states
+
+This document remains useful as a knowledge-backend MCP surface reference, but it is broader than the minimum contract that Jobs-Wiki WAS should fix now.
+
 ## Tool Families
 
 - source tools

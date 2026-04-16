@@ -31,6 +31,13 @@ A separate WAS or product backend should own:
 - billing and organization logic
 - product-specific response shaping
 
+For external integrations such as Jobs-Wiki, the WAS should also distinguish:
+
+- a command-facing dependency used for mutation delegation
+- a read-facing dependency used for normal user-visible queries
+
+These should not be collapsed into one assumed endpoint at the contract level.
+
 StrataWiki should own:
 
 - Fact canonicalization
@@ -40,6 +47,20 @@ StrataWiki should own:
 - dependency routing
 - retrieval orchestration
 - rendered artifact generation
+
+## External Contract Naming
+
+When documenting an external WAS integration, prefer:
+
+- `MCP command facade` for the mutation-facing boundary
+- `read authority` for the read-facing boundary
+
+`read authority` means the external read-serving dependency whose responses the WAS treats as authoritative for user-visible state.
+This naming is useful because it does not assume:
+
+- the same deployment surface for reads and commands
+- direct database access from the WAS
+- schema or migration ownership by the WAS
 
 ## Database Position
 

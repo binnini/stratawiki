@@ -34,6 +34,16 @@ This architecture should be understood as:
 - keep domain-specific logic modular
 - support graph-based retrieval expansion and dependency routing
 
+## External WAS Integration Note
+
+For an external web application such as Jobs-Wiki, the safest contract model is:
+
+- WAS -> MCP command facade for mutations and command status
+- WAS -> read authority for normal reads
+
+This architecture document describes the knowledge backend side of that boundary.
+It should not be read as requiring the same externally documented endpoint for both reads and writes.
+
 ## Non-Goals
 
 - making markdown the only system of record
@@ -124,6 +134,8 @@ Examples:
 - `get_cache_status`
 - `fetch_source`
 - `list_sources`
+
+For Jobs-Wiki-style integrations, this layer should be read primarily as the mutation and status facade, not as the only required read-serving surface.
 
 ### 2. Service Layer
 
@@ -233,6 +245,21 @@ Responsibilities:
 - support selective regeneration
 
 This layer is what makes multi-user performance and explainability practical.
+
+## Projection-Oriented Read Visibility
+
+For external WAS contracts, read visibility should be tracked per projection family rather than as one global synchronized state.
+
+Useful projection families include:
+
+- `tree`
+- `document`
+- `graph`
+- `calendar`
+- `search`
+- `workspace_summary`
+
+This keeps command execution and user-visible refresh state separate without leaking worker internals into the external contract.
 
 ## Canonical Data Model
 
