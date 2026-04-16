@@ -176,6 +176,8 @@ Implementation tasks:
 Status:
 
 - rendered page metadata storage baseline now exists in PostgreSQL
+- a first thin server bootstrap now exists:
+  shared DB/bootstrap wiring -> application entrypoints -> local tool registry
 - a first internal rendered-page read slice now exists for Personal pages:
   `graph.rendered_page` metadata + filesystem markdown body ->
   `DefaultPageReadService`
