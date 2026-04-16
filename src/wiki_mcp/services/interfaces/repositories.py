@@ -43,6 +43,8 @@ class FactRepository(Protocol):
         self,
         records: list[FactRecord],
         relations: list[FactRelation],
+        *,
+        fact_snapshot_id: str,
     ) -> FactWriteResult:
         """Persist canonical Fact records and explicit relations."""
 

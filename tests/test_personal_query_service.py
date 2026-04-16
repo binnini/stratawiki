@@ -24,6 +24,7 @@ class StubRetrievalService:
                     "matched_fields": ["title"],
                     "matched_token_count": 3,
                     "profile_boost_applied": True,
+                    "has_rendered_page": True,
                 }
             ],
             "personal_records": [
@@ -50,6 +51,7 @@ class StubRetrievalService:
                     "matched_fields": ["title", "path"],
                     "matched_token_count": 2,
                     "profile_boost_applied": False,
+                    "has_rendered_page": True,
                 }
             ],
             "interpretation_records": [
@@ -74,6 +76,7 @@ class StubRetrievalService:
                     "matched_fields": ["title"],
                     "matched_token_count": 1,
                     "profile_boost_applied": False,
+                    "has_rendered_page": False,
                 }
             ],
             "fact_records": [
@@ -170,6 +173,7 @@ def test_personal_query_service_builds_answer_bundle_on_retrieval_output() -> No
         "retrieval_rank": 1,
         "retrieval_score": 100,
         "matched_token_count": 3,
+        "has_rendered_page": True,
         "match_reason": "exact match on title with profile-version preference",
         "matched_fields": ["title"],
         "path": "wiki/personal/tenant-1/user-1/plan-1.md",
@@ -230,6 +234,7 @@ def test_personal_query_service_builds_profile_gap_analysis_family_answer() -> N
                         "matched_fields": ["title"],
                         "matched_token_count": 2,
                         "profile_boost_applied": False,
+                        "has_rendered_page": True,
                     }
                 ],
                 "personal_records": [
@@ -256,6 +261,7 @@ def test_personal_query_service_builds_profile_gap_analysis_family_answer() -> N
                         "matched_fields": ["title"],
                         "matched_token_count": 1,
                         "profile_boost_applied": False,
+                        "has_rendered_page": False,
                     }
                 ],
                 "interpretation_records": [
@@ -342,6 +348,7 @@ def test_personal_query_service_builds_weekly_action_plan_family_answer() -> Non
                         "matched_fields": ["title"],
                         "matched_token_count": 2,
                         "profile_boost_applied": False,
+                        "has_rendered_page": True,
                     }
                 ],
                 "personal_records": [
@@ -368,6 +375,7 @@ def test_personal_query_service_builds_weekly_action_plan_family_answer() -> Non
                         "matched_fields": ["title"],
                         "matched_token_count": 1,
                         "profile_boost_applied": False,
+                        "has_rendered_page": False,
                     }
                 ],
                 "interpretation_records": [
@@ -392,6 +400,7 @@ def test_personal_query_service_builds_weekly_action_plan_family_answer() -> Non
                         "matched_fields": ["title"],
                         "matched_token_count": 1,
                         "profile_boost_applied": False,
+                        "has_rendered_page": False,
                     }
                 ],
                 "fact_records": [
@@ -624,8 +633,10 @@ def test_personal_query_service_uses_canonical_only_personal_candidate_for_famil
 
     assert answer["personal_family"] == "profile_gap_analysis"
     assert answer["input_bundle"]["personal_context"][0]["record_id"] == "personal:gap-1"
+    assert answer["input_bundle"]["personal_context"][0]["has_rendered_page"] is False
     assert "path" not in answer["input_bundle"]["personal_context"][0]
     assert answer["input_bundle"]["personal_context"][0]["matched_fields"] == [
         "canonical_summary"
     ]
+    assert "without rendered page" in answer["input_bundle"]["personal_context"][0]["match_reason"]
     assert answer["answer_summary"].startswith("Current profile gap focus:")

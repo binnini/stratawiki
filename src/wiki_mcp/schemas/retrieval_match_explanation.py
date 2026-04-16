@@ -14,3 +14,4 @@ class RetrievalMatchExplanation(TypedDict):
     matched_fields: list[str]
     matched_token_count: int
     profile_boost_applied: bool
+    has_rendered_page: bool

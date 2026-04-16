@@ -44,6 +44,7 @@ class StubRetrievalService:
                     "matched_fields": ["title"],
                     "matched_token_count": 3,
                     "profile_boost_applied": True,
+                    "has_rendered_page": True,
                 }
             ],
             "interpretation_records": [],
@@ -137,6 +138,7 @@ def test_retrieval_read_entrypoint_returns_authoritative_envelope() -> None:
                     "matched_fields": ["title"],
                     "matched_token_count": 3,
                     "profile_boost_applied": True,
+                    "has_rendered_page": True,
                 }
             ],
             "personal_records": [
@@ -483,6 +485,7 @@ def test_default_retrieval_read_entrypoint_discovers_canonical_only_personal_rec
     assert result["retrieval"]["personal_explanations"][0]["matched_fields"] == [
         "canonical_summary"
     ]
+    assert result["retrieval"]["personal_explanations"][0]["has_rendered_page"] is False
     assert result["retrieval"]["snapshot_ref"] == {
         "fact_snapshot_id": "fact_snap:gap",
         "interpretation_snapshot_id": "interp_snap:gap",
@@ -588,6 +591,7 @@ def test_default_retrieval_read_entrypoint_uses_lexical_canonical_search_not_rec
     assert result["retrieval"]["personal_ids"] == ["personal:gap-1"]
     assert result["retrieval"]["personal_pages"] == []
     assert result["retrieval"]["personal_explanations"][0]["match_type"] == "contains"
+    assert result["retrieval"]["personal_explanations"][0]["has_rendered_page"] is False
     assert result["retrieval"]["snapshot_ref"] == {
         "fact_snapshot_id": "fact_snap:gap",
         "interpretation_snapshot_id": "interp_snap:gap",

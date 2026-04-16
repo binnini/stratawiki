@@ -5,9 +5,9 @@
 | Area | Status | Note |
 | --- | --- | --- |
 | Overall phase | In progress | Early implementation, no longer design-only |
-| Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus family-aware personal answer slice, canonical lexical discovery |
-| Weakest | Early | Fact snapshot carry-through for canonical-only matches, broader Personal coverage, domain breadth, runtime/ops |
-| Next build | Now | Decide whether to add Fact snapshot-aware canonical retrieval and explicit no-rendered-page explainability |
+| Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus family-aware personal answer slice, canonical lexical discovery with snapshot carry-through |
+| Weakest | Early | Formal lexical/FTS retrieval, broader Personal coverage, domain breadth, runtime/ops |
+| Next build | Now | Decide whether retrieval should stay pragmatic lexical SQL or move to stronger indexed search |
 
 ## Operating Metadata
 
@@ -15,8 +15,8 @@
 | --- | --- |
 | Current branch | `feat/query-personal-knowledge-first-slice` |
 | Main worktree | `/home/yebin/projects/stratawiki` |
-| Last verified tests | `pytest -q` -> `59 passed, 19 skipped` |
-| Last verified DB-backed tests | `DATABASE_URL=postgresql+psycopg://stratawiki:stratawiki@localhost:5432/stratawiki pytest -q` -> `59 passed, 19 skipped` |
+| Last verified tests | `pytest -q` -> `60 passed, 19 skipped` |
+| Last verified DB-backed tests | `DATABASE_URL=postgresql+psycopg://stratawiki:stratawiki@localhost:5432/stratawiki pytest -q` -> `60 passed, 19 skipped` |
 | Current dashboard source | `dev-wiki/architecture/2026-04-16-project-phase-and-todo-map.md` |
 | Official roadmap | `docs/implementation-roadmap.md` |
 
@@ -44,13 +44,14 @@
 - [x] Canonical-only Personal candidates can now influence answer-family selection without synthetic rendered pages
 - [x] Canonical candidate discovery now uses query-aware lexical search instead of recent-record listing
 - [x] Canonical-only Interpretation matches now preserve `fact_snapshot_id` during retrieval snapshot merge
+- [x] Canonical-only Fact matches now preserve `fact_snapshot_id` during retrieval snapshot merge
+- [x] Retrieval explanations now explicitly expose whether a match had a rendered page
 - [x] Bootstrap/server/tool registry wiring exists
 - [x] Local and DB-backed validation are both passing on the current baseline
 
 ## Next
 
-- [ ] Decide whether canonical-only Fact matches need explicit snapshot membership carry-through
-- [ ] Decide whether retrieval should expose explicit no-rendered-page explainability
+- [ ] Decide whether retrieval should move from pragmatic lexical SQL to formal FTS or another indexed search surface
 - [ ] Decide which additional Personal family matters most after the current trio
 - [ ] Decide whether any one family now needs richer structured fields than `recommended_actions`
 
@@ -64,15 +65,14 @@
 ## One-Line Read
 
 StrataWiki now has three family-aware personal answer paths plus canonical
-lexical discovery in retrieval, but Fact snapshot carry-through and broader
-domain maturity still remain early.
+lexical retrieval with snapshot carry-through and explicit no-rendered-page
+explainability, but stronger indexed retrieval and broader domain maturity still
+remain early.
 
 ## Open Questions
 
-- Should canonical-only Fact matches now gain explicit snapshot membership so
-  retrieval snapshots stay equally strong across all layers?
-- Should retrieval expose a direct signal when a selected canonical candidate
-  had no rendered page?
+- Should retrieval now move from normalized `LIKE` matching to formal Postgres
+  FTS or another indexed lexical search surface?
 - When should answer quality move beyond deterministic summary assembly?
 - Which follow-up slice matters more now: canonical retrieval quality or another
   Personal family?

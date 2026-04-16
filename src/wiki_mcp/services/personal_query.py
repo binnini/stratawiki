@@ -134,6 +134,7 @@ class DefaultPersonalQueryService:
             "retrieval_score": explanation["score"],
             "matched_token_count": explanation["matched_token_count"],
             "matched_fields": explanation["matched_fields"],
+            "has_rendered_page": explanation["has_rendered_page"],
             "match_reason": self._match_reason(explanation),
         }
         return metadata
@@ -700,4 +701,7 @@ class DefaultPersonalQueryService:
         profile_suffix = ""
         if explanation.get("profile_boost_applied"):
             profile_suffix = " with profile-version preference"
-        return f"{match_type} match on {field_label}{profile_suffix}"
+        rendered_suffix = ""
+        if not explanation.get("has_rendered_page", True):
+            rendered_suffix = " without rendered page"
+        return f"{match_type} match on {field_label}{profile_suffix}{rendered_suffix}"

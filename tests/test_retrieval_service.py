@@ -198,6 +198,7 @@ class StubFactRepository:
                 "canonical_key": "job_posting:backend-transition-1",
                 "attributes": {"title": "Backend Transition Evidence"},
                 "scope": scope_ref["scope"],
+                "fact_snapshot_id": "fact_snap:evidence",
                 "schema_version": "v1",
                 "provenance": {"source": "test"},
             }
@@ -264,6 +265,7 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
             "matched_fields": ["title", "canonical_title"],
             "matched_token_count": 3,
             "profile_boost_applied": False,
+            "has_rendered_page": True,
         }
     ]
     assert result["interpretation_explanations"][0]["record_id"] == "interp:backend-transition-market"
@@ -313,6 +315,7 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
             "entity_type": "job_posting",
             "canonical_key": "job_posting:backend-transition-1",
             "scope": "shared",
+            "fact_snapshot_id": "fact_snap:evidence",
             "title": "Backend Transition Evidence",
         }
     ]
@@ -692,6 +695,7 @@ def test_retrieval_service_discovers_canonical_only_personal_candidate() -> None
             "matched_fields": ["canonical_summary"],
             "matched_token_count": 3,
             "profile_boost_applied": False,
+            "has_rendered_page": False,
         }
     ]
     assert result["personal_records"] == [
@@ -723,6 +727,84 @@ def test_retrieval_service_discovers_canonical_only_personal_candidate() -> None
             "method": "search_for_retrieval",
         }
     ]
+
+
+def test_retrieval_service_merges_snapshot_from_canonical_only_fact_candidate() -> None:
+    class CanonicalOnlyPageReadService:
+        def get_page(self, **kwargs: object) -> dict[str, object] | None:
+            raise AssertionError("get_page should not be called in retrieval tests")
+
+        def list_pages(self, **kwargs: object) -> list[dict[str, object]]:
+            return []
+
+    class CanonicalOnlyFactRepository:
+        def get_by_ids(self, ids: list[str], scope_ref: dict[str, str]) -> list[dict[str, object]]:
+            return []
+
+        def search_for_retrieval(
+            self,
+            *,
+            domain: str,
+            scope_ref: dict[str, str],
+            query_text: str,
+            query_tokens: list[str],
+            limit: int,
+        ) -> list[dict[str, object]]:
+            return [
+                {
+                    "id": "fact:job-1",
+                    "domain": "recruiting",
+                    "entity_type": "job_posting",
+                    "canonical_key": "job_posting:backend-1",
+                    "attributes": {
+                        "title": "Backend Engineer",
+                        "summary": "Backend Python depth and production debugging are required.",
+                    },
+                    "scope": "shared",
+                    "fact_snapshot_id": "fact_snap:fact-only",
+                    "schema_version": "v1",
+                    "provenance": {},
+                }
+            ]
+
+    service = DefaultRetrievalService(
+        page_read_service=CanonicalOnlyPageReadService(),
+        fact_repository=CanonicalOnlyFactRepository(),
+    )
+
+    result = service.retrieve_for_query(
+        domain="recruiting",
+        question="backend python depth",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+    )
+
+    assert result["fact_ids"] == ["fact:job-1"]
+    assert result["fact_pages"] == []
+    assert result["fact_records"] == [
+        {
+            "id": "fact:job-1",
+            "domain": "recruiting",
+            "entity_type": "job_posting",
+            "canonical_key": "job_posting:backend-1",
+            "scope": "shared",
+            "fact_snapshot_id": "fact_snap:fact-only",
+            "title": "Backend Engineer",
+        }
+    ]
+    assert result["fact_explanations"] == [
+        {
+            "layer": "fact",
+            "record_id": "fact:job-1",
+            "rank": 1,
+            "score": 80,
+            "match_type": "contains",
+            "matched_fields": ["canonical_summary"],
+            "matched_token_count": 3,
+            "profile_boost_applied": False,
+            "has_rendered_page": False,
+        }
+    ]
+    assert result["snapshot_ref"] == {"fact_snapshot_id": "fact_snap:fact-only"}
 
 
 class EmptyPageReadService:

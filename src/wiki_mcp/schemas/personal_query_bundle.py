@@ -19,6 +19,7 @@ class PersonalQueryBundleItem(TypedDict):
     matched_token_count: NotRequired[int]
     match_reason: NotRequired[str]
     matched_fields: NotRequired[list[str]]
+    has_rendered_page: NotRequired[bool]
     path: NotRequired[str]
 
 

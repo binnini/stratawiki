@@ -75,14 +75,16 @@ class StubPlugin:
 
 class StubFactRepository:
     def __init__(self) -> None:
-        self.calls: list[tuple[list[dict[str, object]], list[dict[str, object]]]] = []
+        self.calls: list[tuple[list[dict[str, object]], list[dict[str, object]], str]] = []
 
     def write_facts(
         self,
         records: list[dict[str, object]],
         relations: list[dict[str, object]],
+        *,
+        fact_snapshot_id: str,
     ) -> dict[str, object]:
-        self.calls.append((records, relations))
+        self.calls.append((records, relations, fact_snapshot_id))
         return {
             "facts_created": len(records),
             "facts_updated": 0,
@@ -196,6 +198,7 @@ def test_ingest_source_wires_fact_write_snapshot_and_outbox() -> None:
     assert result["fact_snapshot_id"].startswith("fact_snap:recruiting:EMP-1:")
 
     assert len(fact_repository.calls) == 1
+    assert fact_repository.calls[0][2] == result["fact_snapshot_id"]
     assert snapshot_repository.calls == [
         ("fact", "recruiting", {"fact_snapshot_id": result["fact_snapshot_id"]})
     ]

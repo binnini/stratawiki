@@ -66,11 +66,12 @@ class DefaultCoreIngestionService:
                 "Cannot ingest invalid batch: " + "; ".join(validation["errors"])
             )
 
+        fact_snapshot_id = self._new_fact_snapshot_id(batch["source"])
         write_result = self.fact_repository.write_facts(
             batch["records"],
             batch["relations"],
+            fact_snapshot_id=fact_snapshot_id,
         )
-        fact_snapshot_id = self._new_fact_snapshot_id(batch["source"])
         self.snapshot_repository.publish_snapshot(
             "fact",
             batch["source"]["domain"],

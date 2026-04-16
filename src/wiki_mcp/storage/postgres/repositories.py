@@ -81,6 +81,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
                     entity_type,
                     canonical_key,
                     scope,
+                    fact_snapshot_id,
                     tenant_id,
                     user_id,
                     schema_version,
@@ -136,6 +137,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
                     entity_type,
                     canonical_key,
                     scope,
+                    fact_snapshot_id,
                     tenant_id,
                     user_id,
                     schema_version,
@@ -154,6 +156,8 @@ class PostgresFactRepository(PostgresRepositoryBase):
         self,
         records: list[FactRecord],
         relations: list[FactRelation],
+        *,
+        fact_snapshot_id: str,
     ) -> FactWriteResult:
         facts_created = 0
         facts_updated = 0
@@ -170,19 +174,21 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         entity_type,
                         canonical_key,
                         scope,
+                        fact_snapshot_id,
                         tenant_id,
                         user_id,
                         schema_version,
                         attributes_json,
                         provenance_json
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         domain = EXCLUDED.domain,
                         entity_type = EXCLUDED.entity_type,
                         canonical_key = EXCLUDED.canonical_key,
                         scope = EXCLUDED.scope,
+                        fact_snapshot_id = EXCLUDED.fact_snapshot_id,
                         tenant_id = EXCLUDED.tenant_id,
                         user_id = EXCLUDED.user_id,
                         schema_version = EXCLUDED.schema_version,
@@ -197,6 +203,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         record["entity_type"],
                         record["canonical_key"],
                         record["scope"],
+                        fact_snapshot_id,
                         record.get("tenant_id"),
                         record.get("user_id"),
                         record["schema_version"],
@@ -260,6 +267,11 @@ class PostgresFactRepository(PostgresRepositoryBase):
             "canonical_key": data["canonical_key"],
             "attributes": self._load_json(data["attributes_json"]),
             "scope": data["scope"],
+            **(
+                {"fact_snapshot_id": data["fact_snapshot_id"]}
+                if data.get("fact_snapshot_id")
+                else {}
+            ),
             **({"tenant_id": data["tenant_id"]} if data.get("tenant_id") else {}),
             **({"user_id": data["user_id"]} if data.get("user_id") else {}),
             "schema_version": data["schema_version"],

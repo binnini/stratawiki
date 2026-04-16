@@ -314,6 +314,11 @@ class DefaultRetrievalService:
                 "entity_type": record["entity_type"],
                 "canonical_key": record["canonical_key"],
                 "scope": record["scope"],
+                **(
+                    {"fact_snapshot_id": record["fact_snapshot_id"]}
+                    if "fact_snapshot_id" in record
+                    else {}
+                ),
             }
             title = self._summarize_fact_attributes(record["attributes"])
             if title is not None:
@@ -413,6 +418,7 @@ class DefaultRetrievalService:
                     record_id=record_id,
                     match_result=match_result,
                     profile_boost_applied=False,
+                    has_rendered_page=page is not None,
                 )
                 exact_matches.append((candidate, explanation))
 
@@ -430,6 +436,7 @@ class DefaultRetrievalService:
                 record_id=record_id,
                 match_result=match_result,
                 profile_boost_applied=profile_boost_applied,
+                has_rendered_page=page is not None,
             )
             scored_candidates.append((score, profile_bonus, -index, candidate, explanation))
 
@@ -699,6 +706,7 @@ class DefaultRetrievalService:
         record_id: str,
         match_result: dict[str, Any],
         profile_boost_applied: bool,
+        has_rendered_page: bool,
     ) -> RetrievalMatchExplanation:
         return {
             "layer": cast(Any, layer),
@@ -709,6 +717,7 @@ class DefaultRetrievalService:
             "matched_fields": cast(list[str], match_result["matched_fields"]),
             "matched_token_count": int(match_result["matched_token_count"]),
             "profile_boost_applied": profile_boost_applied,
+            "has_rendered_page": has_rendered_page,
         }
 
     def _token_overlap_score(
@@ -782,6 +791,10 @@ class DefaultRetrievalService:
         if layer == "interpretation":
             return {
                 "fact_snapshot_id": cast(InterpretationRecord, record)["fact_snapshot_id"]
+            }
+        if layer == "fact" and "fact_snapshot_id" in record:
+            return {
+                "fact_snapshot_id": cast(FactRecord, record)["fact_snapshot_id"]
             }
         return None
 

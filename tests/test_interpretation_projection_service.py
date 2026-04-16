@@ -439,6 +439,7 @@ def test_project_fact_event_writes_shared_rendered_page_to_postgres_and_filesyst
             },
         ],
         [],
+        fact_snapshot_id="fact_snap:recruiting:EMP-1:123",
     )
 
     service = DefaultInterpretationProjectionService(

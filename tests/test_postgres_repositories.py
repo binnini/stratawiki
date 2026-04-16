@@ -62,7 +62,11 @@ def test_fact_repository_writes_and_updates_records_and_relations(
     records = _shared_fact_records()
     relations = [_shared_relation()]
 
-    result = repository.write_facts(records, relations)
+    result = repository.write_facts(
+        records,
+        relations,
+        fact_snapshot_id="fact_snap:1",
+    )
 
     assert result == {
         "facts_created": 2,
@@ -72,7 +76,11 @@ def test_fact_repository_writes_and_updates_records_and_relations(
     }
 
     records[0]["attributes"] = {"title": "Senior Backend Engineer"}
-    second_result = repository.write_facts(records, relations)
+    second_result = repository.write_facts(
+        records,
+        relations,
+        fact_snapshot_id="fact_snap:2",
+    )
 
     assert second_result["facts_created"] == 0
     assert second_result["facts_updated"] == 2
@@ -81,7 +89,7 @@ def test_fact_repository_writes_and_updates_records_and_relations(
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT entity_type, canonical_key, scope, attributes_json
+            SELECT entity_type, canonical_key, scope, fact_snapshot_id, attributes_json
             FROM fact.record_envelopes
             ORDER BY entity_type
             """
@@ -91,6 +99,7 @@ def test_fact_repository_writes_and_updates_records_and_relations(
         stored_relations = cursor.fetchall()
 
     assert stored_records[0]["entity_type"] == "company"
+    assert stored_records[0]["fact_snapshot_id"] == "fact_snap:2"
     assert stored_records[1]["attributes_json"]["title"] == "Senior Backend Engineer"
     assert stored_relations == [{"relation_type": "posted_by", "scope": "shared"}]
 

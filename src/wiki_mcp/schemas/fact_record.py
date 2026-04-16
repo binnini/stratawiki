@@ -12,6 +12,7 @@ class FactRecord(TypedDict):
     canonical_key: str
     attributes: dict[str, Any]
     scope: str
+    fact_snapshot_id: NotRequired[str]
     tenant_id: NotRequired[str]
     user_id: NotRequired[str]
     schema_version: str

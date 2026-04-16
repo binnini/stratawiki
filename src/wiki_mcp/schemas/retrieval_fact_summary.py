@@ -11,4 +11,5 @@ class RetrievalFactSummary(TypedDict):
     entity_type: str
     canonical_key: str
     scope: str
+    fact_snapshot_id: NotRequired[str]
     title: NotRequired[str]
