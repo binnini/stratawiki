@@ -199,21 +199,11 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
                 "kind": "career_plan",
                 "title": "Backend Transition Plan",
                 "summary": "Personal strategy summary",
-                "scope_ref": {
-                    "scope": "user",
-                    "tenant_id": "tenant-1",
-                    "user_id": "user-1",
-                },
                 "snapshot_ref": {
                     "fact_snapshot_id": "fact_snap:personal",
                     "interpretation_snapshot_id": "interp_snap:personal",
                     "profile_version": "profile-v2",
                 },
-                "profile_version": "profile-v2",
-                "body_path": "wiki/personal/tenant-1/user-1/backend-transition-plan.md",
-                "status": "active",
-                "schema_version": "v1",
-                "provenance": {"source": "test"},
             }
         ],
         "interpretation_records": [
@@ -223,15 +213,9 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
                 "kind": "market_summary",
                 "subject_type": "career_path",
                 "subject_id": "backend-transition",
-                "scope_ref": {"scope": "shared"},
-                "schema_version": "v1",
                 "status": "active",
                 "confidence": 0.9,
-                "computed_at": "2026-04-16T00:00:00Z",
-                "expires_at": None,
-                "body": {"summary": "Shared market context"},
-                "provenance": {"source": "test"},
-                "render_hints": {},
+                "summary": "Shared market context",
             }
         ],
         "fact_records": [
@@ -240,10 +224,8 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
                 "domain": "recruiting",
                 "entity_type": "job_posting",
                 "canonical_key": "job_posting:backend-transition-1",
-                "attributes": {"title": "Backend Transition Evidence"},
                 "scope": "shared",
-                "schema_version": "v1",
-                "provenance": {"source": "test"},
+                "title": "Backend Transition Evidence",
             }
         ],
         "personal_pages": [
@@ -419,6 +401,7 @@ def test_retrieval_service_orders_hydrated_records_by_matched_ids() -> None:
         "personal:b",
         "personal:a",
     ]
+    assert result["personal_records"][0]["title"] == "B"
 
 
 class EmptyPageReadService:

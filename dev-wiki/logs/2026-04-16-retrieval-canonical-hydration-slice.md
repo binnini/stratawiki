@@ -61,6 +61,14 @@ Rules for this slice:
 - `query_personal_knowledge` remains a placeholder because answer generation is
   still intentionally out of scope
 
+Follow-up tightening:
+
+- retrieval no longer exposes full canonical envelopes in these groups
+- `*_records` are now retrieval-facing summaries produced by service-level
+  mappers
+- Fact hydration now crosses an explicit retrieval mapper boundary so future
+  canonical Fact read changes do not leak straight into the retrieval contract
+
 ## Open Questions
 
 - whether future retrieval contracts should expose slimmer canonical summaries

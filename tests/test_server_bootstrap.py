@@ -249,7 +249,18 @@ def test_build_server_wires_postgres_entrypoints_and_tools(
         assert result["page"]["record_id"] == "personal:plan-1"
         assert retrieval_result["ok"] is True
         assert retrieval_result["retrieval"]["personal_ids"] == ["personal:plan-1"]
-        assert retrieval_result["retrieval"]["personal_records"][0]["id"] == "personal:plan-1"
+        assert retrieval_result["retrieval"]["personal_records"][0] == {
+            "id": "personal:plan-1",
+            "domain": "recruiting",
+            "kind": "career_plan",
+            "title": "Backend transition plan",
+            "summary": "Personal strategy summary",
+            "snapshot_ref": {
+                "fact_snapshot_id": "fact_snap:new",
+                "interpretation_snapshot_id": "interp_snap:new",
+                "profile_version": "profile-v2",
+            },
+        }
         assert "ingest_source" in {tool.name for tool in server.list_tools()}
     finally:
         server.close()

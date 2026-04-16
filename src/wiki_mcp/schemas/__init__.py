@@ -43,6 +43,11 @@ from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
 from wiki_mcp.schemas.rendered_page import RenderedPage
 from wiki_mcp.schemas.rendered_page_summary import RenderedPageSummary
 from wiki_mcp.schemas.retrieval_projection_ref import RetrievalProjectionRef
+from wiki_mcp.schemas.retrieval_fact_summary import RetrievalFactSummary
+from wiki_mcp.schemas.retrieval_interpretation_summary import (
+    RetrievalInterpretationSummary,
+)
+from wiki_mcp.schemas.retrieval_personal_summary import RetrievalPersonalSummary
 from wiki_mcp.schemas.retrieval_read_result import RetrievalReadResult
 from wiki_mcp.schemas.retrieval_result import RetrievalResult
 from wiki_mcp.schemas.scope_ref import ScopeRef
@@ -87,6 +92,9 @@ __all__ = [
     "RenderedArtifact",
     "RenderedPage",
     "RenderedPageSummary",
+    "RetrievalFactSummary",
+    "RetrievalInterpretationSummary",
+    "RetrievalPersonalSummary",
     "RetrievalProjectionRef",
     "RetrievalReadResult",
     "RetrievalResult",

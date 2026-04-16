@@ -27,21 +27,11 @@ class StubRetrievalService:
                     "kind": "career_plan",
                     "title": "Backend transition plan",
                     "summary": "Personal strategy summary",
-                    "scope_ref": {
-                        "scope": "user",
-                        "tenant_id": "tenant-1",
-                        "user_id": "user-1",
-                    },
                     "snapshot_ref": {
                         "fact_snapshot_id": "fact_snap:new",
                         "interpretation_snapshot_id": "interp_snap:new",
                         "profile_version": "profile-v2",
                     },
-                    "profile_version": "profile-v2",
-                    "body_path": "wiki/personal/tenant-1/user-1/plan-1.md",
-                    "status": "active",
-                    "schema_version": "v1",
-                    "provenance": {"source": "test"},
                 }
             ],
             "interpretation_records": [],
@@ -130,21 +120,11 @@ def test_retrieval_read_entrypoint_returns_authoritative_envelope() -> None:
                     "kind": "career_plan",
                     "title": "Backend transition plan",
                     "summary": "Personal strategy summary",
-                    "scope_ref": {
-                        "scope": "user",
-                        "tenant_id": "tenant-1",
-                        "user_id": "user-1",
-                    },
                     "snapshot_ref": {
                         "fact_snapshot_id": "fact_snap:new",
                         "interpretation_snapshot_id": "interp_snap:new",
                         "profile_version": "profile-v2",
                     },
-                    "profile_version": "profile-v2",
-                    "body_path": "wiki/personal/tenant-1/user-1/plan-1.md",
-                    "status": "active",
-                    "schema_version": "v1",
-                    "provenance": {"source": "test"},
                 }
             ],
             "interpretation_records": [],
@@ -370,8 +350,28 @@ def test_default_retrieval_read_entrypoint_loads_candidates_from_postgres(
     assert result["read_model_state"] == "applied"
     assert result["retrieval"]["personal_ids"] == ["personal:plan-1"]
     assert result["retrieval"]["interpretation_ids"] == ["interp:market-1"]
-    assert result["retrieval"]["personal_records"][0]["id"] == "personal:plan-1"
-    assert result["retrieval"]["interpretation_records"][0]["id"] == "interp:market-1"
+    assert result["retrieval"]["personal_records"][0] == {
+        "id": "personal:plan-1",
+        "domain": "recruiting",
+        "kind": "career_plan",
+        "title": "Backend transition plan",
+        "summary": "Personal strategy summary",
+        "snapshot_ref": {
+            "fact_snapshot_id": "fact_snap:new",
+            "interpretation_snapshot_id": "interp_snap:new",
+            "profile_version": "profile-v2",
+        },
+    }
+    assert result["retrieval"]["interpretation_records"][0] == {
+        "id": "interp:market-1",
+        "domain": "recruiting",
+        "kind": "market_summary",
+        "subject_type": "career_path",
+        "subject_id": "backend-transition",
+        "status": "active",
+        "confidence": 0.9,
+        "summary": "Shared market context",
+    }
     assert result["retrieval"]["personal_pages"][0]["record_id"] == "personal:plan-1"
     assert result["retrieval"]["interpretation_pages"][0]["record_id"] == "interp:market-1"
     assert result["retrieval"]["snapshot_ref"]["fact_snapshot_id"] == "fact_snap:new"

@@ -238,9 +238,10 @@ Status:
   layer as `retrieve_for_query`
 - retrieval results now also include grouped rendered-page summaries so
   consumer-facing reads do not need to resolve candidate ids blindly
-- retrieval results now also include optional grouped canonical record hydration
-  so consumers can inspect layered Personal, Interpretation, and Fact payloads
-  before answer generation exists
+- retrieval results now also include optional grouped retrieval-facing record
+  summaries so consumers can inspect layered Personal, Interpretation, and Fact
+  context before answer generation exists without binding to full storage
+  envelopes
 - richer personal generation and answer-producing retrieval behavior still
   remain to be implemented
 
