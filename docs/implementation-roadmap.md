@@ -144,10 +144,16 @@ Recommended initial interpretation families:
 Status:
 
 - interpretation canonical storage baseline now exists
-- one deterministic recruiting interpretation slice now exists:
-  `fact_ingested` outbox event -> `company_hiring_pattern` projection ->
-  interpretation snapshot publication
-- richer interpretation families and LLM-backed generation remain to be implemented
+- the deterministic recruiting interpretation slice now supports multiple
+  registered families:
+  `fact_ingested` outbox event ->
+  `company_hiring_pattern` plus `company_candidate_profile_pattern`
+  projection -> interpretation snapshot publication
+- family-specific record construction and markdown rendering now sit behind an
+  interpretation family registry so projection orchestration does not grow
+  monolithic
+- richer interpretation families and LLM-backed generation remain to be
+  implemented
 
 Exit criteria:
 
@@ -255,8 +261,8 @@ Verification:
 
 - the repository's PostgreSQL integration suite now also covers the shared
   Interpretation rendered-page write path
-- with a reachable local Postgres instance, `pytest -q` currently passes with
-  `52 passed`
+- with and without a reachable local Postgres instance, `pytest -q` currently
+  passes with `50 passed, 14 skipped`
 
 Exit criteria:
 
