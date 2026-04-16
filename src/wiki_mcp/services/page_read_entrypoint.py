@@ -34,6 +34,11 @@ class DefaultPageReadEntrypoint:
         record_id: str,
         scope_ref: ScopeRef,
     ) -> PageReadResult:
+        projection = {
+            "family": "document",
+            "layer": layer,
+            "scope": scope_ref["scope"],
+        }
         page = self.page_read_service.get_page(
             domain=domain,
             layer=layer,
@@ -43,10 +48,11 @@ class DefaultPageReadEntrypoint:
         if page is None:
             return {
                 "ok": False,
-                "read_model_state": "not_applicable",
+                "projection": projection,
+                "read_model_state": "applied",
                 "error": {
                     "code": "page_not_found",
-                    "message": "No rendered page matched the requested domain/layer/record scope.",
+                    "message": "The document projection is authoritative for this request, but no rendered page matched the requested domain/layer/record scope.",
                     "details": {
                         "domain": domain,
                         "layer": layer,
@@ -68,6 +74,7 @@ class DefaultPageReadEntrypoint:
 
         return {
             "ok": True,
+            "projection": projection,
             "read_model_state": "applied",
             "page": page,
         }
@@ -80,6 +87,12 @@ class DefaultPageReadEntrypoint:
         layer: str | None = None,
         limit: int = 20,
     ) -> PageListResult:
+        projection = {
+            "family": "document",
+            "scope": scope_ref["scope"],
+        }
+        if layer is not None:
+            projection["layer"] = layer
         pages = self.page_read_service.list_pages(
             domain=domain,
             scope_ref=scope_ref,
@@ -88,6 +101,7 @@ class DefaultPageReadEntrypoint:
         )
         return {
             "ok": True,
+            "projection": projection,
             "read_model_state": "applied",
             "pages": pages,
         }

@@ -116,6 +116,61 @@ The minimum projection families that Jobs-Wiki should recognize are:
 - `search`
 - `workspace_summary`
 
+## Current Rendered Page Read Contract
+
+The current StrataWiki page-read entrypoint is narrower than the full read
+authority space described in this draft.
+
+Today it is authoritative only for rendered `document` projection reads over:
+
+- Personal pages
+- shared Interpretation pages
+
+The minimum response contract for this slice should therefore be:
+
+```json
+{
+  "ok": true,
+  "projection": {
+    "family": "document",
+    "layer": "personal",
+    "scope": "user"
+  },
+  "read_model_state": "applied",
+  "page": {
+    "record_id": "personal:plan-1"
+  }
+}
+```
+
+For a missing page, the contract should still report the projection as
+authoritatively checked:
+
+```json
+{
+  "ok": false,
+  "projection": {
+    "family": "document",
+    "layer": "personal",
+    "scope": "user"
+  },
+  "read_model_state": "applied",
+  "error": {
+    "code": "page_not_found"
+  }
+}
+```
+
+Current rules for this slice:
+
+- `page_not_found` is not the same as `not_applicable`
+- `not_applicable` should not be emitted unless the read authority can
+  authoritatively prove that the requested projection family is outside its
+  supported surface
+- projection metadata should identify at least `family`, `layer`, and `scope`
+- richer states such as `pending`, `partial`, `unknown`, and `stale` should
+  remain out of this page-read contract until the implementation can detect them
+
 ## Recommended Refresh Scope Vocabulary
 
 Command results should return both:

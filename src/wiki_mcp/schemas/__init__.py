@@ -34,6 +34,8 @@ from wiki_mcp.schemas.outbox_event import (
 )
 from wiki_mcp.schemas.page_list_result import PageListResult
 from wiki_mcp.schemas.page_read_error import PageReadError
+from wiki_mcp.schemas.page_read_model_state import PageReadModelState
+from wiki_mcp.schemas.page_projection_ref import PageProjectionRef
 from wiki_mcp.schemas.page_read_result import PageReadResult
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
@@ -63,7 +65,9 @@ __all__ = [
     "OutboxEvent",
     "OutboxEventRecord",
     "PageListResult",
+    "PageProjectionRef",
     "PageReadError",
+    "PageReadModelState",
     "PageReadResult",
     "PersonalRecordsMarkedStalePayload",
     "PersonalRecordsRegeneratedPayload",

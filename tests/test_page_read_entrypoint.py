@@ -20,15 +20,15 @@ class StubPageReadService:
         if kwargs["record_id"] == "personal:plan-1":
             return {
                 "domain": "recruiting",
-                "layer": "personal",
+                "layer": kwargs["layer"],
                 "record_id": "personal:plan-1",
-                "path": "wiki/personal/tenant-1/user-1/plan-1.md",
+                "path": (
+                    "wiki/personal/tenant-1/user-1/plan-1.md"
+                    if kwargs["layer"] == "personal"
+                    else "wiki/shared/company-hiring-pattern.md"
+                ),
                 "title": "Backend transition plan",
-                "scope_ref": {
-                    "scope": "user",
-                    "tenant_id": "tenant-1",
-                    "user_id": "user-1",
-                },
+                "scope_ref": kwargs["scope_ref"],
                 "snapshot_ref": {
                     "fact_snapshot_id": "fact_snap:new",
                     "interpretation_snapshot_id": "interp_snap:new",
@@ -41,18 +41,20 @@ class StubPageReadService:
 
     def list_pages(self, **kwargs: object) -> list[dict[str, object]]:
         self.list_calls.append(kwargs)
+        scope_ref = kwargs["scope_ref"]
+        layer = kwargs["layer"] or "personal"
         return [
             {
                 "domain": "recruiting",
-                "layer": "personal",
+                "layer": layer,
                 "record_id": "personal:plan-1",
-                "path": "wiki/personal/tenant-1/user-1/plan-1.md",
+                "path": (
+                    "wiki/personal/tenant-1/user-1/plan-1.md"
+                    if layer == "personal"
+                    else "wiki/shared/company-hiring-pattern.md"
+                ),
                 "title": "Backend transition plan",
-                "scope_ref": {
-                    "scope": "user",
-                    "tenant_id": "tenant-1",
-                    "user_id": "user-1",
-                },
+                "scope_ref": scope_ref,
                 "snapshot_ref": {
                     "fact_snapshot_id": "fact_snap:new",
                     "interpretation_snapshot_id": "interp_snap:new",
@@ -74,6 +76,11 @@ def test_page_read_entrypoint_returns_personal_page() -> None:
     )
 
     assert result["ok"] is True
+    assert result["projection"] == {
+        "family": "document",
+        "layer": "personal",
+        "scope": "user",
+    }
     assert result["read_model_state"] == "applied"
     assert result["page"]["record_id"] == "personal:plan-1"
 
@@ -90,10 +97,15 @@ def test_page_read_entrypoint_returns_not_found_error() -> None:
 
     assert result == {
         "ok": False,
-        "read_model_state": "not_applicable",
+        "projection": {
+            "family": "document",
+            "layer": "personal",
+            "scope": "user",
+        },
+        "read_model_state": "applied",
         "error": {
             "code": "page_not_found",
-            "message": "No rendered page matched the requested domain/layer/record scope.",
+            "message": "The document projection is authoritative for this request, but no rendered page matched the requested domain/layer/record scope.",
             "details": {
                 "domain": "recruiting",
                 "layer": "personal",
@@ -117,6 +129,11 @@ def test_page_read_entrypoint_lists_personal_pages() -> None:
     )
 
     assert result["ok"] is True
+    assert result["projection"] == {
+        "family": "document",
+        "layer": "personal",
+        "scope": "user",
+    }
     assert result["read_model_state"] == "applied"
     assert [page["record_id"] for page in result["pages"]] == ["personal:plan-1"]
 
@@ -130,8 +147,14 @@ def test_page_read_entrypoint_returns_interpretation_page() -> None:
     )
 
     assert result["ok"] is True
+    assert result["projection"] == {
+        "family": "document",
+        "layer": "interpretation",
+        "scope": "shared",
+    }
     assert result["read_model_state"] == "applied"
     assert result["page"]["record_id"] == "personal:plan-1"
+    assert result["page"]["layer"] == "interpretation"
 
 
 def test_page_read_entrypoint_lists_interpretation_pages() -> None:
@@ -143,8 +166,14 @@ def test_page_read_entrypoint_lists_interpretation_pages() -> None:
     )
 
     assert result["ok"] is True
+    assert result["projection"] == {
+        "family": "document",
+        "layer": "interpretation",
+        "scope": "shared",
+    }
     assert result["read_model_state"] == "applied"
     assert [page["record_id"] for page in result["pages"]] == ["personal:plan-1"]
+    assert result["pages"][0]["layer"] == "interpretation"
 
 
 def test_default_page_read_entrypoint_loads_personal_page_from_postgres_and_filesystem(
@@ -201,6 +230,11 @@ def test_default_page_read_entrypoint_loads_personal_page_from_postgres_and_file
 
     assert result == {
         "ok": True,
+        "projection": {
+            "family": "document",
+            "layer": "personal",
+            "scope": "user",
+        },
         "read_model_state": "applied",
         "page": {
             "domain": "recruiting",
