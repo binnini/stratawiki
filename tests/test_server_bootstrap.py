@@ -83,6 +83,8 @@ class StubPersonalQueryEntrypoint:
             "ok": True,
             "method": "query_personal_knowledge",
             "answer": {
+                "answer_type": "personal_query_answer",
+                "generation_strategy": "deterministic_summary_bundle_v1",
                 "question": kwargs["question"],
                 "answer_summary": "Best current personal context: Backend transition plan.",
                 "answer_markdown": "# Personal Knowledge Answer\n",
@@ -94,6 +96,12 @@ class StubPersonalQueryEntrypoint:
                     "interpretation_context": [],
                     "fact_context": [],
                 },
+            },
+            "projection": {
+                "family": "answer",
+                "kind": "personal_query",
+                "scope": kwargs["scope_ref"]["scope"],
+                "layers": ["personal", "interpretation", "fact"],
             },
             "retrieval": {"question": kwargs["question"]},
             **kwargs,

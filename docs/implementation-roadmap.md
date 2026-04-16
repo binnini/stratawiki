@@ -258,6 +258,8 @@ Status:
   `query_personal_knowledge` now sits above `retrieve_for_query` as a thin
   orchestration layer that assembles a retrieval-owned answer input bundle and
   returns a minimal answer payload with `answer_markdown`
+- the personal query read contract now also uses its own answer projection
+  metadata rather than reusing the retrieval candidate projection family
 - richer personal generation, stronger answer quality, and more domain-shaped
   personal families still remain to be implemented
 

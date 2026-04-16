@@ -177,6 +177,8 @@ class DefaultPersonalQueryService:
             input_bundle=input_bundle,
         )
         return {
+            "answer_type": "personal_query_answer",
+            "generation_strategy": "deterministic_summary_bundle_v1",
             "question": question,
             "answer_summary": answer_summary,
             "answer_markdown": answer_markdown,

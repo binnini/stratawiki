@@ -113,6 +113,8 @@ def test_personal_query_service_builds_answer_bundle_on_retrieval_output() -> No
     )
 
     assert retrieval["personal_ids"] == ["personal:plan-1"]
+    assert answer["answer_type"] == "personal_query_answer"
+    assert answer["generation_strategy"] == "deterministic_summary_bundle_v1"
     assert answer["question"] == "How should I focus my backend transition?"
     assert answer["answer_summary"].startswith("Best current personal context:")
     assert "## Personal Context" in answer["answer_markdown"]
@@ -151,4 +153,5 @@ def test_personal_query_service_returns_no_match_answer_when_retrieval_is_empty(
     assert answer["answer_summary"] == (
         "No matching personal, interpretation, or fact context was found."
     )
+    assert answer["generation_strategy"] == "deterministic_summary_bundle_v1"
     assert answer["citations"] == []

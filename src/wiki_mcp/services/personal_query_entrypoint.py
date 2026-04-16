@@ -50,7 +50,8 @@ class DefaultPersonalQueryEntrypoint:
         return {
             "ok": True,
             "projection": {
-                "family": "retrieval",
+                "family": "answer",
+                "kind": "personal_query",
                 "scope": scope_ref["scope"],
                 "layers": self.projection_layers,
             },

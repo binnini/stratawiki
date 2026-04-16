@@ -521,6 +521,11 @@ def build_default_tool_definitions(
                     "User-scoped synthesized knowledge answer envelope.",
                 ),
                 ToolResultField(
+                    "projection",
+                    "object",
+                    "Projection metadata for the answer read slice.",
+                ),
+                ToolResultField(
                     "retrieval",
                     "object",
                     "Underlying retrieval result used to assemble the answer.",

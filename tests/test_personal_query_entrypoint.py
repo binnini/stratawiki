@@ -26,6 +26,8 @@ class StubPersonalQueryService:
                 "fact_pages": [],
             },
             {
+                "answer_type": "personal_query_answer",
+                "generation_strategy": "deterministic_summary_bundle_v1",
                 "question": kwargs["question"],
                 "answer_summary": "Best current personal context: Backend transition plan.",
                 "answer_markdown": "# Personal Knowledge Answer\n",
@@ -61,10 +63,12 @@ def test_personal_query_entrypoint_returns_authoritative_answer_envelope() -> No
     ]
     assert result["ok"] is True
     assert result["projection"] == {
-        "family": "retrieval",
+        "family": "answer",
+        "kind": "personal_query",
         "scope": "user",
         "layers": ["personal", "interpretation", "fact"],
     }
+    assert result["answer"]["answer_type"] == "personal_query_answer"
     assert result["answer"]["question"] == "How should I focus?"
     assert result["retrieval"]["personal_ids"] == ["personal:plan-1"]
 
@@ -157,6 +161,8 @@ def test_default_personal_query_entrypoint_loads_answer_from_postgres(
     )
 
     assert result["ok"] is True
+    assert result["projection"]["family"] == "answer"
+    assert result["projection"]["kind"] == "personal_query"
     assert result["answer"]["answer_summary"].startswith("Best current personal context:")
     assert result["answer"]["input_bundle"]["personal_context"][0]["record_id"] == "personal:plan-1"
     assert result["retrieval"]["personal_ids"] == ["personal:plan-1"]

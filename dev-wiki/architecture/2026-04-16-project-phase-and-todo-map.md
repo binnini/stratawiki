@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | Overall phase | In progress | Early implementation, no longer design-only |
 | Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus first personal answer slice |
-| Weakest | Early | Richer answer quality, retrieval quality, domain breadth, runtime/ops |
-| Next build | Now | Harden the first `query_personal_knowledge` slice |
+| Weakest | Early | Answer richness, retrieval explanation, domain breadth, runtime/ops |
+| Next build | Now | Improve answer bundle richness and the first real Personal family |
 
 ## Operating Metadata
 
@@ -29,12 +29,12 @@
 - [x] Page read authority exists for Personal and shared Interpretation pages
 - [x] Retrieval candidate read exists via `retrieve_for_query`
 - [x] `query_personal_knowledge` now returns a first deterministic answer payload
+- [x] Personal answer reads now use distinct answer projection metadata
 - [x] Bootstrap/server/tool registry wiring exists
 - [x] Local and DB-backed validation are both passing on the current baseline
 
 ## Next
 
-- [ ] Harden the `query_personal_knowledge` contract and projection metadata
 - [ ] Improve the answer-generation input bundle and context richness
 - [ ] Add 1-2 truly user-facing Personal families
 - [ ] Improve retrieval explanation/ranking
@@ -48,13 +48,11 @@
 
 ## One-Line Read
 
-StrataWiki now has a first retrieval-to-answer personal query path, but the
-answer quality and broader product/runtime layers still remain early.
+StrataWiki now has a distinct personal answer read contract on top of retrieval,
+but answer richness and real Personal families still remain early.
 
 ## Open Questions
 
-- Should the new answer slice keep sharing retrieval-style projection metadata,
-  or should answer reads get a distinct projection family next?
 - Should retrieval remain page-summary centric, or should canonical
   read/search become the next stronger dependency?
 - Which Personal family is the best first real consumer of answer generation?

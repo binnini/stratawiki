@@ -45,6 +45,7 @@ from wiki_mcp.schemas.personal_query_bundle import (
     PersonalQueryBundle,
     PersonalQueryBundleItem,
 )
+from wiki_mcp.schemas.personal_query_projection_ref import PersonalQueryProjectionRef
 from wiki_mcp.schemas.personal_query_read_result import PersonalQueryReadResult
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
@@ -89,6 +90,7 @@ __all__ = [
     "PersonalQueryBundle",
     "PersonalQueryBundleItem",
     "PersonalQueryCitation",
+    "PersonalQueryProjectionRef",
     "PersonalQueryReadResult",
     "PersonalRecordsMarkedStalePayload",
     "PersonalRecordsRegeneratedPayload",

@@ -237,6 +237,55 @@ Current rules for this slice:
 - these hydrated summaries strengthen the pre-generation contract but still do
   not imply synthesized answer generation
 
+## Current Personal Answer Read Contract
+
+The current StrataWiki personal query path is now wider than retrieval-candidate
+reads and should be treated as a distinct answer projection.
+
+Today this slice is authoritative for user-scoped answer assembly over the
+current retrieval/read model.
+
+The minimum response contract for this slice should therefore be:
+
+```json
+{
+  "ok": true,
+  "projection": {
+    "family": "answer",
+    "kind": "personal_query",
+    "scope": "user",
+    "layers": [
+      "personal",
+      "interpretation",
+      "fact"
+    ]
+  },
+  "read_model_state": "applied",
+  "answer": {
+    "answer_type": "personal_query_answer",
+    "generation_strategy": "deterministic_summary_bundle_v1",
+    "answer_markdown": "# Personal Knowledge Answer"
+  },
+  "retrieval": {
+    "personal_ids": [
+      "personal:plan-1"
+    ]
+  }
+}
+```
+
+Current rules for this slice:
+
+- this contract is authoritative for answer projection, not only candidate
+  retrieval
+- it is still layered on top of `retrieve_for_query` as a lower-level primitive
+- `projection.kind` should distinguish the answer slice from future non-personal
+  answer shapes
+- `generation_strategy` should make the current answer assembly mode explicit
+  when the implementation is deterministic or otherwise strategy-bound
+- the underlying `retrieval` payload may still be returned for explainability
+  and consumer debugging
+
 ## Recommended Refresh Scope Vocabulary
 
 Command results should return both:
