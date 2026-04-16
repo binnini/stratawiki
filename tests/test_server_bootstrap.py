@@ -87,6 +87,7 @@ class StubPersonalQueryEntrypoint:
                 "generation_strategy": "deterministic_summary_bundle_v1",
                 "question": kwargs["question"],
                 "answer_summary": "Best current personal context: Backend transition plan.",
+                "answer_rationale": "Selected personal context first because the current layer order is personal -> interpretation -> fact.",
                 "answer_markdown": "# Personal Knowledge Answer\n",
                 "citations": [],
                 "input_bundle": {

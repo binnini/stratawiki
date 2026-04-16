@@ -260,6 +260,10 @@ Status:
   returns a minimal answer payload with `answer_markdown`
 - the personal query read contract now also uses its own answer projection
   metadata rather than reusing the retrieval candidate projection family
+- retrieval and personal answer slices now also expose a first explanation-rich
+  bundle:
+  per-layer retrieval match metadata -> personal answer bundle
+  `retrieval_score`/`match_reason` -> answer rationale text
 - richer personal generation, stronger answer quality, and more domain-shaped
   personal families still remain to be implemented
 

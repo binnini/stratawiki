@@ -34,8 +34,20 @@ class StubRetrievalService:
                     },
                 }
             ],
+            "personal_explanations": [
+                {
+                    "layer": "personal",
+                    "record_id": "personal:plan-1",
+                    "score": 100,
+                    "match_type": "exact",
+                    "matched_fields": ["title"],
+                    "profile_boost_applied": True,
+                }
+            ],
             "interpretation_records": [],
+            "interpretation_explanations": [],
             "fact_records": [],
+            "fact_explanations": [],
             "personal_pages": [
                 {
                     "domain": "recruiting",
@@ -113,6 +125,16 @@ def test_retrieval_read_entrypoint_returns_authoritative_envelope() -> None:
             "personal_ids": ["personal:plan-1"],
             "interpretation_ids": ["interp:market-1"],
             "fact_ids": ["fact:job-1"],
+            "personal_explanations": [
+                {
+                    "layer": "personal",
+                    "record_id": "personal:plan-1",
+                    "score": 100,
+                    "match_type": "exact",
+                    "matched_fields": ["title"],
+                    "profile_boost_applied": True,
+                }
+            ],
             "personal_records": [
                 {
                     "id": "personal:plan-1",
@@ -127,7 +149,9 @@ def test_retrieval_read_entrypoint_returns_authoritative_envelope() -> None:
                     },
                 }
             ],
+            "interpretation_explanations": [],
             "interpretation_records": [],
+            "fact_explanations": [],
             "fact_records": [],
             "personal_pages": [
                 {
@@ -350,6 +374,7 @@ def test_default_retrieval_read_entrypoint_loads_candidates_from_postgres(
     assert result["read_model_state"] == "applied"
     assert result["retrieval"]["personal_ids"] == ["personal:plan-1"]
     assert result["retrieval"]["interpretation_ids"] == ["interp:market-1"]
+    assert result["retrieval"]["personal_explanations"][0]["record_id"] == "personal:plan-1"
     assert result["retrieval"]["personal_records"][0] == {
         "id": "personal:plan-1",
         "domain": "recruiting",

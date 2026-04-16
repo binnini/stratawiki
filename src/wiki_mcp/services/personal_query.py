@@ -84,19 +84,26 @@ class DefaultPersonalQueryService:
     ) -> list[PersonalQueryBundleItem]:
         pages = retrieval.get(f"{layer}_pages", [])
         records = retrieval.get(f"{layer}_records", [])
+        explanations = retrieval.get(f"{layer}_explanations", [])
         page_by_id = {
             page["record_id"]: page
             for page in pages
         }
+        explanation_by_id = {
+            explanation["record_id"]: explanation
+            for explanation in explanations
+        }
         items: list[PersonalQueryBundleItem] = []
         for record in records:
             page = page_by_id.get(record["id"])
+            explanation = explanation_by_id.get(record["id"])
             items.append(
                 {
                     "layer": layer,
                     "record_id": record["id"],
                     "title": self._record_title(layer, record, page),
                     "summary": self._record_summary(layer, record, page),
+                    **self._item_match_metadata(explanation),
                     **({"path": page["path"]} if page is not None else {}),
                 }
             )
@@ -108,10 +115,24 @@ class DefaultPersonalQueryService:
                 "record_id": page["record_id"],
                 "title": page["title"],
                 "summary": self._page_summary(page),
+                **self._item_match_metadata(explanation_by_id.get(page["record_id"])),
                 "path": page["path"],
             }
             for page in pages
         ]
+
+    def _item_match_metadata(
+        self,
+        explanation: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if explanation is None:
+            return {}
+        metadata: dict[str, Any] = {
+            "retrieval_score": explanation["score"],
+            "matched_fields": explanation["matched_fields"],
+            "match_reason": self._match_reason(explanation),
+        }
+        return metadata
 
     def _record_title(
         self,
@@ -162,6 +183,7 @@ class DefaultPersonalQueryService:
         lead_item = self._select_lead_item(input_bundle)
         if lead_item is None:
             answer_summary = "No matching personal, interpretation, or fact context was found."
+            answer_rationale = "No retrieval candidate cleared the current matching threshold."
             citations: list[PersonalQueryCitation] = []
         else:
             layer_label = lead_item["layer"]
@@ -169,11 +191,13 @@ class DefaultPersonalQueryService:
                 f"Best current {layer_label} context: {lead_item['title']}. "
                 f"{lead_item['summary']}"
             )
+            answer_rationale = self._build_answer_rationale(input_bundle, lead_item)
             citations = self._build_citations(input_bundle)
 
         answer_markdown = self._render_answer_markdown(
             question=question,
             answer_summary=answer_summary,
+            answer_rationale=answer_rationale,
             input_bundle=input_bundle,
         )
         return {
@@ -181,10 +205,39 @@ class DefaultPersonalQueryService:
             "generation_strategy": "deterministic_summary_bundle_v1",
             "question": question,
             "answer_summary": answer_summary,
+            "answer_rationale": answer_rationale,
             "answer_markdown": answer_markdown,
             "citations": citations,
             "input_bundle": input_bundle,
         }
+
+    def _build_answer_rationale(
+        self,
+        input_bundle: PersonalQueryBundle,
+        lead_item: PersonalQueryBundleItem,
+    ) -> str:
+        lines = [
+            (
+                f"Selected {lead_item['layer']} context first because the current layer order is "
+                "personal -> interpretation -> fact."
+            )
+        ]
+        if "match_reason" in lead_item:
+            rationale = f"Top match reason: {lead_item['match_reason']}."
+            if "retrieval_score" in lead_item:
+                rationale = f"{rationale[:-1]} with score {lead_item['retrieval_score']}."
+            lines.append(rationale)
+        sibling_counts = [
+            f"{len(input_bundle['personal_context'])} personal",
+            f"{len(input_bundle['interpretation_context'])} interpretation",
+            f"{len(input_bundle['fact_context'])} fact",
+        ]
+        lines.append(
+            "Context bundle includes "
+            + ", ".join(sibling_counts)
+            + " matches after layer-aware ranking."
+        )
+        return " ".join(lines)
 
     def _select_lead_item(
         self,
@@ -218,6 +271,7 @@ class DefaultPersonalQueryService:
         *,
         question: str,
         answer_summary: str,
+        answer_rationale: str,
         input_bundle: PersonalQueryBundle,
     ) -> str:
         lines = [
@@ -226,6 +280,9 @@ class DefaultPersonalQueryService:
             f"Question: {question}",
             "",
             answer_summary,
+            "",
+            "Rationale:",
+            answer_rationale,
         ]
         for key, heading in (
             ("personal_context", "Personal Context"),
@@ -237,5 +294,20 @@ class DefaultPersonalQueryService:
                 continue
             lines.extend(["", f"## {heading}"])
             for item in items:
-                lines.append(f"- {item['title']}: {item['summary']}")
+                detail = f"- {item['title']}: {item['summary']}"
+                if "match_reason" in item:
+                    detail += f" ({item['match_reason']}"
+                    if "retrieval_score" in item:
+                        detail += f", score={item['retrieval_score']}"
+                    detail += ")"
+                lines.append(detail)
         return "\n".join(lines)
+
+    def _match_reason(self, explanation: dict[str, Any]) -> str:
+        matched_fields = explanation.get("matched_fields", [])
+        field_label = ", ".join(matched_fields) if matched_fields else "no field"
+        match_type = explanation.get("match_type", "unknown")
+        profile_suffix = ""
+        if explanation.get("profile_boost_applied"):
+            profile_suffix = " with profile-version preference"
+        return f"{match_type} match on {field_label}{profile_suffix}"

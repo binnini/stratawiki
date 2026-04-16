@@ -57,6 +57,7 @@ from wiki_mcp.schemas.retrieval_fact_summary import RetrievalFactSummary
 from wiki_mcp.schemas.retrieval_interpretation_summary import (
     RetrievalInterpretationSummary,
 )
+from wiki_mcp.schemas.retrieval_match_explanation import RetrievalMatchExplanation
 from wiki_mcp.schemas.retrieval_personal_summary import RetrievalPersonalSummary
 from wiki_mcp.schemas.retrieval_read_result import RetrievalReadResult
 from wiki_mcp.schemas.retrieval_result import RetrievalResult
@@ -110,6 +111,7 @@ __all__ = [
     "RenderedPageSummary",
     "RetrievalFactSummary",
     "RetrievalInterpretationSummary",
+    "RetrievalMatchExplanation",
     "RetrievalPersonalSummary",
     "RetrievalProjectionRef",
     "RetrievalReadResult",

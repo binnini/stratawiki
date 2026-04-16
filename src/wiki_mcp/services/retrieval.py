@@ -12,6 +12,7 @@ from wiki_mcp.schemas.retrieval_fact_summary import RetrievalFactSummary
 from wiki_mcp.schemas.retrieval_interpretation_summary import (
     RetrievalInterpretationSummary,
 )
+from wiki_mcp.schemas.retrieval_match_explanation import RetrievalMatchExplanation
 from wiki_mcp.schemas.retrieval_personal_summary import RetrievalPersonalSummary
 from wiki_mcp.schemas.retrieval_result import RetrievalResult
 from wiki_mcp.schemas.scope_ref import ScopeRef
@@ -62,11 +63,15 @@ class DefaultRetrievalService:
                 "personal_pages": [],
                 "interpretation_pages": [],
                 "fact_pages": [],
+                "personal_explanations": [],
+                "interpretation_explanations": [],
+                "fact_explanations": [],
             }
 
         query_tokens = self._tokenize(question)
         structured_lookup = self._looks_structured(question)
         matches_by_layer: dict[str, list[RenderedPageSummary]] = {}
+        explanations_by_layer: dict[str, list[RetrievalMatchExplanation]] = {}
 
         for layer in self.layer_order:
             pages = self.page_read_service.list_pages(
@@ -75,13 +80,16 @@ class DefaultRetrievalService:
                 layer=layer,
                 limit=self.page_scan_limit,
             )
-            matches_by_layer[layer] = self._match_pages(
+            matched_candidates = self._match_pages(
                 pages,
+                layer=layer,
                 normalized_question=normalized_question,
                 query_tokens=query_tokens,
                 structured_lookup=structured_lookup,
                 profile_context=profile_context,
             )[: self.layer_result_limit]
+            matches_by_layer[layer] = [page for page, _ in matched_candidates]
+            explanations_by_layer[layer] = [explanation for _, explanation in matched_candidates]
 
         result: RetrievalResult = {
             "personal_ids": [page["record_id"] for page in matches_by_layer["personal"]],
@@ -92,6 +100,9 @@ class DefaultRetrievalService:
             "personal_pages": matches_by_layer["personal"],
             "interpretation_pages": matches_by_layer["interpretation"],
             "fact_pages": matches_by_layer["fact"],
+            "personal_explanations": explanations_by_layer["personal"],
+            "interpretation_explanations": explanations_by_layer["interpretation"],
+            "fact_explanations": explanations_by_layer["fact"],
         }
         hydrated_records = self._hydrate_records(matches_by_layer, requested_scope=scope_ref)
         result.update(hydrated_records)
@@ -234,25 +245,36 @@ class DefaultRetrievalService:
         self,
         pages: list[RenderedPageSummary],
         *,
+        layer: str,
         normalized_question: str,
         query_tokens: list[str],
         structured_lookup: bool,
         profile_context: ProfileContext | None,
-    ) -> list[RenderedPageSummary]:
-        exact_matches: list[RenderedPageSummary] = []
-        scored_pages: list[tuple[int, int, int, RenderedPageSummary]] = []
+    ) -> list[tuple[RenderedPageSummary, RetrievalMatchExplanation]]:
+        exact_matches: list[tuple[RenderedPageSummary, RetrievalMatchExplanation]] = []
+        scored_pages: list[
+            tuple[int, int, int, RenderedPageSummary, RetrievalMatchExplanation]
+        ] = []
 
         for index, page in enumerate(pages):
-            score = self._score_page(
+            match_result = self._score_page(
                 page,
                 normalized_question=normalized_question,
                 query_tokens=query_tokens,
                 structured_lookup=structured_lookup,
             )
+            score = match_result["score"]
             if score <= 0:
                 continue
+            profile_boost_applied = False
             if score == 100:
-                exact_matches.append(page)
+                explanation = self._build_match_explanation(
+                    layer=layer,
+                    page=page,
+                    match_result=match_result,
+                    profile_boost_applied=False,
+                )
+                exact_matches.append((page, explanation))
             profile_bonus = 0
             if (
                 profile_context is not None
@@ -260,7 +282,14 @@ class DefaultRetrievalService:
                 == profile_context["profile_version"]
             ):
                 profile_bonus = 1
-            scored_pages.append((score, profile_bonus, -index, page))
+                profile_boost_applied = True
+            explanation = self._build_match_explanation(
+                layer=layer,
+                page=page,
+                match_result=match_result,
+                profile_boost_applied=profile_boost_applied,
+            )
+            scored_pages.append((score, profile_bonus, -index, page, explanation))
 
         scored_pages.sort(
             key=lambda item: (
@@ -272,7 +301,7 @@ class DefaultRetrievalService:
         )
         if exact_matches:
             return exact_matches
-        return [page for _, _, _, page in scored_pages]
+        return [(page, explanation) for _, _, _, page, explanation in scored_pages]
 
     def _score_page(
         self,
@@ -281,31 +310,87 @@ class DefaultRetrievalService:
         normalized_question: str,
         query_tokens: list[str],
         structured_lookup: bool,
-    ) -> int:
-        fields = (
-            self._normalize(page["record_id"]),
-            self._normalize(page["title"]),
-            self._normalize(page["path"]),
-        )
+    ) -> dict[str, Any]:
+        normalized_fields = {
+            "record_id": self._normalize(page["record_id"]),
+            "title": self._normalize(page["title"]),
+            "path": self._normalize(page["path"]),
+        }
 
-        if any(field == normalized_question for field in fields):
-            return 100
+        exact_matches = [
+            field_name
+            for field_name, field_value in normalized_fields.items()
+            if field_value == normalized_question
+        ]
+        if exact_matches:
+            return {
+                "score": 100,
+                "match_type": "exact",
+                "matched_fields": exact_matches,
+            }
 
-        if any(normalized_question in field for field in fields):
-            return 80
+        contains_matches = [
+            field_name
+            for field_name, field_value in normalized_fields.items()
+            if normalized_question in field_value
+        ]
+        if contains_matches:
+            return {
+                "score": 80,
+                "match_type": "contains",
+                "matched_fields": contains_matches,
+            }
 
         if structured_lookup:
-            return 0
+            return {
+                "score": 0,
+                "match_type": "structured_miss",
+                "matched_fields": [],
+            }
 
         if not query_tokens:
-            return 0
+            return {"score": 0, "match_type": "blank_query", "matched_fields": []}
 
-        token_scores = [
-            self._token_overlap_score(query_tokens, self._tokenize(page["record_id"])),
-            self._token_overlap_score(query_tokens, self._tokenize(page["title"])),
-            self._token_overlap_score(query_tokens, self._tokenize(page["path"])),
+        token_scores = {
+            "record_id": self._token_overlap_score(
+                query_tokens,
+                self._tokenize(page["record_id"]),
+            ),
+            "title": self._token_overlap_score(
+                query_tokens,
+                self._tokenize(page["title"]),
+            ),
+            "path": self._token_overlap_score(
+                query_tokens,
+                self._tokenize(page["path"]),
+            ),
+        }
+        best_score = max(token_scores.values())
+        matched_fields = [
+            field_name for field_name, score in token_scores.items() if score == best_score and score > 0
         ]
-        return max(token_scores)
+        return {
+            "score": best_score,
+            "match_type": "token_overlap" if best_score > 0 else "no_match",
+            "matched_fields": matched_fields,
+        }
+
+    def _build_match_explanation(
+        self,
+        *,
+        layer: str,
+        page: RenderedPageSummary,
+        match_result: dict[str, Any],
+        profile_boost_applied: bool,
+    ) -> RetrievalMatchExplanation:
+        return {
+            "layer": cast(Any, layer),
+            "record_id": page["record_id"],
+            "score": int(match_result["score"]),
+            "match_type": str(match_result["match_type"]),
+            "matched_fields": cast(list[str], match_result["matched_fields"]),
+            "profile_boost_applied": profile_boost_applied,
+        }
 
     def _token_overlap_score(
         self,

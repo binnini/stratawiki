@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | Overall phase | In progress | Early implementation, no longer design-only |
 | Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus first personal answer slice |
-| Weakest | Early | Answer richness, retrieval explanation, domain breadth, runtime/ops |
-| Next build | Now | Improve answer bundle richness and the first real Personal family |
+| Weakest | Early | Real Personal families, retrieval quality, domain breadth, runtime/ops |
+| Next build | Now | Add the first real Personal family on the richer answer bundle |
 
 ## Operating Metadata
 
@@ -30,14 +30,15 @@
 - [x] Retrieval candidate read exists via `retrieve_for_query`
 - [x] `query_personal_knowledge` now returns a first deterministic answer payload
 - [x] Personal answer reads now use distinct answer projection metadata
+- [x] Personal answer bundle now carries retrieval scores and match reasons
 - [x] Bootstrap/server/tool registry wiring exists
 - [x] Local and DB-backed validation are both passing on the current baseline
 
 ## Next
 
-- [ ] Improve the answer-generation input bundle and context richness
 - [ ] Add 1-2 truly user-facing Personal families
 - [ ] Improve retrieval explanation/ranking
+- [ ] Decide whether answer rationale should become structured instead of plain text
 
 ## Later
 
@@ -48,8 +49,8 @@
 
 ## One-Line Read
 
-StrataWiki now has a distinct personal answer read contract on top of retrieval,
-but answer richness and real Personal families still remain early.
+StrataWiki now has a richer explainable personal answer bundle on top of
+retrieval, but real Personal families and stronger ranking still remain early.
 
 ## Open Questions
 
@@ -57,6 +58,7 @@ but answer richness and real Personal families still remain early.
   read/search become the next stronger dependency?
 - Which Personal family is the best first real consumer of answer generation?
 - When should answer quality move beyond deterministic summary assembly?
+- Should answer rationale stay plain text or become structured evidence blocks?
 
 ## Background
 

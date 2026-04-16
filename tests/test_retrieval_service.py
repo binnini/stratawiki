@@ -188,98 +188,74 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
         },
     )
 
-    assert result == {
-        "personal_ids": ["personal:plan-1"],
-        "interpretation_ids": ["interp:backend-transition-market"],
-        "fact_ids": ["fact:job-posting-1"],
-        "personal_records": [
-            {
-                "id": "personal:plan-1",
-                "domain": "recruiting",
-                "kind": "career_plan",
-                "title": "Backend Transition Plan",
-                "summary": "Personal strategy summary",
-                "snapshot_ref": {
-                    "fact_snapshot_id": "fact_snap:personal",
-                    "interpretation_snapshot_id": "interp_snap:personal",
-                    "profile_version": "profile-v2",
-                },
-            }
-        ],
-        "interpretation_records": [
-            {
-                "id": "interp:backend-transition-market",
-                "domain": "recruiting",
-                "kind": "market_summary",
-                "subject_type": "career_path",
-                "subject_id": "backend-transition",
-                "status": "active",
-                "confidence": 0.9,
-                "summary": "Shared market context",
-            }
-        ],
-        "fact_records": [
-            {
-                "id": "fact:job-posting-1",
-                "domain": "recruiting",
-                "entity_type": "job_posting",
-                "canonical_key": "job_posting:backend-transition-1",
-                "scope": "shared",
-                "title": "Backend Transition Evidence",
-            }
-        ],
-        "personal_pages": [
-            {
-                "domain": "recruiting",
-                "layer": "personal",
-                "record_id": "personal:plan-1",
-                "path": "wiki/personal/tenant-1/user-1/backend-transition-plan.md",
-                "title": "Backend Transition Plan",
-                "scope_ref": {
-                    "scope": "user",
-                    "tenant_id": "tenant-1",
-                    "user_id": "user-1",
-                },
-                "snapshot_ref": {
-                    "fact_snapshot_id": "fact_snap:personal",
-                    "interpretation_snapshot_id": "interp_snap:personal",
-                    "profile_version": "profile-v2",
-                },
-                "metadata": {"title": "Backend Transition Plan"},
-            }
-        ],
-        "interpretation_pages": [
-            {
-                "domain": "recruiting",
-                "layer": "interpretation",
-                "record_id": "interp:backend-transition-market",
-                "path": "wiki/shared/interpretation/backend-transition-market.md",
-                "title": "Backend Transition Market",
-                "scope_ref": {"scope": "shared"},
-                "snapshot_ref": {
-                    "fact_snapshot_id": "fact_snap:shared",
-                    "interpretation_snapshot_id": "interp_snap:shared",
-                },
-                "metadata": {"title": "Backend Transition Market"},
-            }
-        ],
-        "fact_pages": [
-            {
-                "domain": "recruiting",
-                "layer": "fact",
-                "record_id": "fact:job-posting-1",
-                "path": "wiki/shared/fact/backend-transition-evidence.md",
-                "title": "Backend Transition Evidence",
-                "scope_ref": {"scope": "shared"},
-                "snapshot_ref": {"fact_snapshot_id": "fact_snap:evidence"},
-                "metadata": {"title": "Backend Transition Evidence"},
-            }
-        ],
-        "snapshot_ref": {
-            "fact_snapshot_id": "fact_snap:personal",
-            "interpretation_snapshot_id": "interp_snap:personal",
-            "profile_version": "profile-v2",
-        },
+    assert result["personal_ids"] == ["personal:plan-1"]
+    assert result["interpretation_ids"] == ["interp:backend-transition-market"]
+    assert result["fact_ids"] == ["fact:job-posting-1"]
+    assert result["personal_explanations"] == [
+        {
+            "layer": "personal",
+            "record_id": "personal:plan-1",
+            "score": 100,
+            "match_type": "exact",
+            "matched_fields": ["title"],
+            "profile_boost_applied": False,
+        }
+    ]
+    assert result["interpretation_explanations"][0]["record_id"] == "interp:backend-transition-market"
+    assert result["interpretation_explanations"][0]["match_type"] == "token_overlap"
+    assert set(result["interpretation_explanations"][0]["matched_fields"]) == {
+        "record_id",
+        "title",
+        "path",
+    }
+    assert result["interpretation_explanations"][0]["score"] > 0
+    assert result["fact_explanations"][0]["record_id"] == "fact:job-posting-1"
+    assert result["fact_explanations"][0]["match_type"] == "token_overlap"
+    assert set(result["fact_explanations"][0]["matched_fields"]) == {"title", "path"}
+    assert result["fact_explanations"][0]["score"] > 0
+    assert result["personal_records"] == [
+        {
+            "id": "personal:plan-1",
+            "domain": "recruiting",
+            "kind": "career_plan",
+            "title": "Backend Transition Plan",
+            "summary": "Personal strategy summary",
+            "snapshot_ref": {
+                "fact_snapshot_id": "fact_snap:personal",
+                "interpretation_snapshot_id": "interp_snap:personal",
+                "profile_version": "profile-v2",
+            },
+        }
+    ]
+    assert result["interpretation_records"] == [
+        {
+            "id": "interp:backend-transition-market",
+            "domain": "recruiting",
+            "kind": "market_summary",
+            "subject_type": "career_path",
+            "subject_id": "backend-transition",
+            "status": "active",
+            "confidence": 0.9,
+            "summary": "Shared market context",
+        }
+    ]
+    assert result["fact_records"] == [
+        {
+            "id": "fact:job-posting-1",
+            "domain": "recruiting",
+            "entity_type": "job_posting",
+            "canonical_key": "job_posting:backend-transition-1",
+            "scope": "shared",
+            "title": "Backend Transition Evidence",
+        }
+    ]
+    assert result["personal_pages"][0]["record_id"] == "personal:plan-1"
+    assert result["interpretation_pages"][0]["record_id"] == "interp:backend-transition-market"
+    assert result["fact_pages"][0]["record_id"] == "fact:job-posting-1"
+    assert result["snapshot_ref"] == {
+        "fact_snapshot_id": "fact_snap:personal",
+        "interpretation_snapshot_id": "interp_snap:personal",
+        "profile_version": "profile-v2",
     }
     assert personal_repository.calls == [
         {
@@ -312,10 +288,13 @@ def test_retrieval_service_matches_exact_record_id_lookup() -> None:
 
     assert result["personal_ids"] == ["personal:plan-1"]
     assert result["personal_pages"][0]["record_id"] == "personal:plan-1"
+    assert result["personal_explanations"][0]["match_type"] == "exact"
     assert result["interpretation_ids"] == []
     assert result["interpretation_pages"] == []
+    assert result["interpretation_explanations"] == []
     assert result["fact_ids"] == []
     assert result["fact_pages"] == []
+    assert result["fact_explanations"] == []
     assert result["snapshot_ref"]["fact_snapshot_id"] == "fact_snap:personal"
 
 
@@ -397,6 +376,10 @@ def test_retrieval_service_orders_hydrated_records_by_matched_ids() -> None:
     )
 
     assert result["personal_ids"] == ["personal:b", "personal:a"]
+    assert [item["record_id"] for item in result["personal_explanations"]] == [
+        "personal:b",
+        "personal:a",
+    ]
     assert [record["id"] for record in result["personal_records"]] == [
         "personal:b",
         "personal:a",
@@ -433,6 +416,9 @@ def test_retrieval_service_returns_empty_result_without_snapshot_when_no_match()
         "personal_pages": [],
         "interpretation_pages": [],
         "fact_pages": [],
+        "personal_explanations": [],
+        "interpretation_explanations": [],
+        "fact_explanations": [],
     }
     assert page_read_service.calls == [
         {
@@ -473,5 +459,8 @@ def test_retrieval_service_returns_empty_result_for_blank_query() -> None:
         "personal_pages": [],
         "interpretation_pages": [],
         "fact_pages": [],
+        "personal_explanations": [],
+        "interpretation_explanations": [],
+        "fact_explanations": [],
     }
     assert page_read_service.calls == []

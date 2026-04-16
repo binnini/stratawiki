@@ -233,6 +233,9 @@ Current rules for this slice:
   title/path/snapshot metadata without a second lookup
 - grouped retrieval-facing record summaries may also be included per layer as
   optional `personal_records`, `interpretation_records`, and `fact_records`
+- grouped retrieval explanations may also be included per layer as optional
+  `personal_explanations`, `interpretation_explanations`, and
+  `fact_explanations`
 - these are intentionally narrower than full canonical storage envelopes
 - these hydrated summaries strengthen the pre-generation contract but still do
   not imply synthesized answer generation
@@ -283,6 +286,8 @@ Current rules for this slice:
   answer shapes
 - `generation_strategy` should make the current answer assembly mode explicit
   when the implementation is deterministic or otherwise strategy-bound
+- `answer_rationale` may be included as a user-facing explanation of why the
+  current context bundle was selected
 - the underlying `retrieval` payload may still be returned for explainability
   and consumer debugging
 

@@ -21,6 +21,7 @@ class PersonalQueryAnswer(TypedDict):
     generation_strategy: Literal["deterministic_summary_bundle_v1"]
     question: str
     answer_summary: str
+    answer_rationale: str
     answer_markdown: str
     citations: list[PersonalQueryCitation]
     input_bundle: PersonalQueryBundle
