@@ -20,6 +20,32 @@ class StubRetrievalService:
             "personal_ids": ["personal:plan-1"],
             "interpretation_ids": ["interp:market-1"],
             "fact_ids": ["fact:job-1"],
+            "personal_records": [
+                {
+                    "id": "personal:plan-1",
+                    "domain": "recruiting",
+                    "kind": "career_plan",
+                    "title": "Backend transition plan",
+                    "summary": "Personal strategy summary",
+                    "scope_ref": {
+                        "scope": "user",
+                        "tenant_id": "tenant-1",
+                        "user_id": "user-1",
+                    },
+                    "snapshot_ref": {
+                        "fact_snapshot_id": "fact_snap:new",
+                        "interpretation_snapshot_id": "interp_snap:new",
+                        "profile_version": "profile-v2",
+                    },
+                    "profile_version": "profile-v2",
+                    "body_path": "wiki/personal/tenant-1/user-1/plan-1.md",
+                    "status": "active",
+                    "schema_version": "v1",
+                    "provenance": {"source": "test"},
+                }
+            ],
+            "interpretation_records": [],
+            "fact_records": [],
             "personal_pages": [
                 {
                     "domain": "recruiting",
@@ -97,6 +123,32 @@ def test_retrieval_read_entrypoint_returns_authoritative_envelope() -> None:
             "personal_ids": ["personal:plan-1"],
             "interpretation_ids": ["interp:market-1"],
             "fact_ids": ["fact:job-1"],
+            "personal_records": [
+                {
+                    "id": "personal:plan-1",
+                    "domain": "recruiting",
+                    "kind": "career_plan",
+                    "title": "Backend transition plan",
+                    "summary": "Personal strategy summary",
+                    "scope_ref": {
+                        "scope": "user",
+                        "tenant_id": "tenant-1",
+                        "user_id": "user-1",
+                    },
+                    "snapshot_ref": {
+                        "fact_snapshot_id": "fact_snap:new",
+                        "interpretation_snapshot_id": "interp_snap:new",
+                        "profile_version": "profile-v2",
+                    },
+                    "profile_version": "profile-v2",
+                    "body_path": "wiki/personal/tenant-1/user-1/plan-1.md",
+                    "status": "active",
+                    "schema_version": "v1",
+                    "provenance": {"source": "test"},
+                }
+            ],
+            "interpretation_records": [],
+            "fact_records": [],
             "personal_pages": [
                 {
                     "domain": "recruiting",
@@ -152,6 +204,89 @@ def test_default_retrieval_read_entrypoint_loads_candidates_from_postgres(
     tmp_path: Path,
 ) -> None:
     with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO personal.record (
+                id,
+                domain,
+                kind,
+                title,
+                summary,
+                scope,
+                tenant_id,
+                user_id,
+                fact_snapshot_id,
+                interpretation_snapshot_id,
+                profile_version,
+                body_path,
+                status,
+                schema_version,
+                provenance_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            """,
+            (
+                "personal:plan-1",
+                "recruiting",
+                "career_plan",
+                "Backend transition plan",
+                "Personal strategy summary",
+                "user",
+                "tenant-1",
+                "user-1",
+                "fact_snap:new",
+                "interp_snap:new",
+                "profile-v2",
+                "wiki/personal/tenant-1/user-1/plan-1.md",
+                "active",
+                "v1",
+                '{"source": "test"}',
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO interp.record (
+                id,
+                domain,
+                kind,
+                subject_type,
+                subject_id,
+                scope,
+                tenant_id,
+                user_id,
+                schema_version,
+                status,
+                confidence,
+                computed_at,
+                expires_at,
+                body_json,
+                provenance_json,
+                render_hints_json,
+                fact_snapshot_id
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                %s::jsonb, %s::jsonb, %s::jsonb, %s
+            )
+            """,
+            (
+                "interp:market-1",
+                "recruiting",
+                "market_summary",
+                "career_path",
+                "backend-transition",
+                "shared",
+                None,
+                None,
+                "v1",
+                "active",
+                0.9,
+                "2026-04-16T00:00:00Z",
+                None,
+                '{"summary": "Shared market context"}',
+                '{"source": "test"}',
+                '{}',
+                "fact_snap:shared",
+            ),
+        )
         cursor.execute(
             """
             INSERT INTO graph.rendered_page (
@@ -235,6 +370,8 @@ def test_default_retrieval_read_entrypoint_loads_candidates_from_postgres(
     assert result["read_model_state"] == "applied"
     assert result["retrieval"]["personal_ids"] == ["personal:plan-1"]
     assert result["retrieval"]["interpretation_ids"] == ["interp:market-1"]
+    assert result["retrieval"]["personal_records"][0]["id"] == "personal:plan-1"
+    assert result["retrieval"]["interpretation_records"][0]["id"] == "interp:market-1"
     assert result["retrieval"]["personal_pages"][0]["record_id"] == "personal:plan-1"
     assert result["retrieval"]["interpretation_pages"][0]["record_id"] == "interp:market-1"
     assert result["retrieval"]["snapshot_ref"]["fact_snapshot_id"] == "fact_snap:new"

@@ -88,8 +88,90 @@ class StubPageReadService:
         raise AssertionError(f"Unexpected layer {layer!r}")
 
 
+class StubPersonalRepository:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def get_by_ids(self, ids: list[str], scope_ref: dict[str, str]) -> list[dict[str, object]]:
+        self.calls.append({"ids": ids, "scope_ref": scope_ref})
+        return [
+            {
+                "id": "personal:plan-1",
+                "domain": "recruiting",
+                "kind": "career_plan",
+                "title": "Backend Transition Plan",
+                "summary": "Personal strategy summary",
+                "scope_ref": scope_ref,
+                "snapshot_ref": {
+                    "fact_snapshot_id": "fact_snap:personal",
+                    "interpretation_snapshot_id": "interp_snap:personal",
+                    "profile_version": "profile-v2",
+                },
+                "profile_version": "profile-v2",
+                "body_path": "wiki/personal/tenant-1/user-1/backend-transition-plan.md",
+                "status": "active",
+                "schema_version": "v1",
+                "provenance": {"source": "test"},
+            }
+        ]
+
+
+class StubInterpretationRepository:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def get_by_ids(self, ids: list[str], scope_ref: dict[str, str]) -> list[dict[str, object]]:
+        self.calls.append({"ids": ids, "scope_ref": scope_ref})
+        return [
+            {
+                "id": "interp:backend-transition-market",
+                "domain": "recruiting",
+                "kind": "market_summary",
+                "subject_type": "career_path",
+                "subject_id": "backend-transition",
+                "scope_ref": scope_ref,
+                "schema_version": "v1",
+                "status": "active",
+                "confidence": 0.9,
+                "computed_at": "2026-04-16T00:00:00Z",
+                "expires_at": None,
+                "body": {"summary": "Shared market context"},
+                "provenance": {"source": "test"},
+                "render_hints": {},
+            }
+        ]
+
+
+class StubFactRepository:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def get_by_ids(self, ids: list[str], scope_ref: dict[str, str]) -> list[dict[str, object]]:
+        self.calls.append({"ids": ids, "scope_ref": scope_ref})
+        return [
+            {
+                "id": "fact:job-posting-1",
+                "domain": "recruiting",
+                "entity_type": "job_posting",
+                "canonical_key": "job_posting:backend-transition-1",
+                "attributes": {"title": "Backend Transition Evidence"},
+                "scope": scope_ref["scope"],
+                "schema_version": "v1",
+                "provenance": {"source": "test"},
+            }
+        ]
+
+
 def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal() -> None:
-    service = DefaultRetrievalService(page_read_service=StubPageReadService())
+    personal_repository = StubPersonalRepository()
+    interpretation_repository = StubInterpretationRepository()
+    fact_repository = StubFactRepository()
+    service = DefaultRetrievalService(
+        page_read_service=StubPageReadService(),
+        personal_repository=personal_repository,
+        interpretation_repository=interpretation_repository,
+        fact_repository=fact_repository,
+    )
 
     result = service.retrieve_for_query(
         domain="recruiting",
@@ -110,6 +192,60 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
         "personal_ids": ["personal:plan-1"],
         "interpretation_ids": ["interp:backend-transition-market"],
         "fact_ids": ["fact:job-posting-1"],
+        "personal_records": [
+            {
+                "id": "personal:plan-1",
+                "domain": "recruiting",
+                "kind": "career_plan",
+                "title": "Backend Transition Plan",
+                "summary": "Personal strategy summary",
+                "scope_ref": {
+                    "scope": "user",
+                    "tenant_id": "tenant-1",
+                    "user_id": "user-1",
+                },
+                "snapshot_ref": {
+                    "fact_snapshot_id": "fact_snap:personal",
+                    "interpretation_snapshot_id": "interp_snap:personal",
+                    "profile_version": "profile-v2",
+                },
+                "profile_version": "profile-v2",
+                "body_path": "wiki/personal/tenant-1/user-1/backend-transition-plan.md",
+                "status": "active",
+                "schema_version": "v1",
+                "provenance": {"source": "test"},
+            }
+        ],
+        "interpretation_records": [
+            {
+                "id": "interp:backend-transition-market",
+                "domain": "recruiting",
+                "kind": "market_summary",
+                "subject_type": "career_path",
+                "subject_id": "backend-transition",
+                "scope_ref": {"scope": "shared"},
+                "schema_version": "v1",
+                "status": "active",
+                "confidence": 0.9,
+                "computed_at": "2026-04-16T00:00:00Z",
+                "expires_at": None,
+                "body": {"summary": "Shared market context"},
+                "provenance": {"source": "test"},
+                "render_hints": {},
+            }
+        ],
+        "fact_records": [
+            {
+                "id": "fact:job-posting-1",
+                "domain": "recruiting",
+                "entity_type": "job_posting",
+                "canonical_key": "job_posting:backend-transition-1",
+                "attributes": {"title": "Backend Transition Evidence"},
+                "scope": "shared",
+                "schema_version": "v1",
+                "provenance": {"source": "test"},
+            }
+        ],
         "personal_pages": [
             {
                 "domain": "recruiting",
@@ -163,6 +299,24 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
             "profile_version": "profile-v2",
         },
     }
+    assert personal_repository.calls == [
+        {
+            "ids": ["personal:plan-1"],
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+        }
+    ]
+    assert interpretation_repository.calls == [
+        {
+            "ids": ["interp:backend-transition-market"],
+            "scope_ref": {"scope": "shared"},
+        }
+    ]
+    assert fact_repository.calls == [
+        {
+            "ids": ["fact:job-posting-1"],
+            "scope_ref": {"scope": "shared"},
+        }
+    ]
 
 
 def test_retrieval_service_matches_exact_record_id_lookup() -> None:
@@ -181,6 +335,90 @@ def test_retrieval_service_matches_exact_record_id_lookup() -> None:
     assert result["fact_ids"] == []
     assert result["fact_pages"] == []
     assert result["snapshot_ref"]["fact_snapshot_id"] == "fact_snap:personal"
+
+
+def test_retrieval_service_orders_hydrated_records_by_matched_ids() -> None:
+    class OrderedPageReadService:
+        def get_page(self, **kwargs: object) -> dict[str, object] | None:
+            raise AssertionError("get_page should not be called in retrieval tests")
+
+        def list_pages(self, **kwargs: object) -> list[dict[str, object]]:
+            layer = kwargs["layer"]
+            if layer != "personal":
+                return []
+            return [
+                {
+                    "domain": "recruiting",
+                    "layer": "personal",
+                    "record_id": "personal:b",
+                    "path": "wiki/personal/b.md",
+                    "title": "Backend plan beta",
+                    "scope_ref": kwargs["scope_ref"],
+                    "snapshot_ref": {"fact_snapshot_id": "fact_snap:new"},
+                    "metadata": {"title": "Backend plan beta"},
+                },
+                {
+                    "domain": "recruiting",
+                    "layer": "personal",
+                    "record_id": "personal:a",
+                    "path": "wiki/personal/a.md",
+                    "title": "Backend plan alpha",
+                    "scope_ref": kwargs["scope_ref"],
+                    "snapshot_ref": {"fact_snapshot_id": "fact_snap:new"},
+                    "metadata": {"title": "Backend plan alpha"},
+                },
+            ]
+
+    class OutOfOrderPersonalRepository:
+        def get_by_ids(self, ids: list[str], scope_ref: dict[str, str]) -> list[dict[str, object]]:
+            return [
+                {
+                    "id": "personal:a",
+                    "domain": "recruiting",
+                    "kind": "notes",
+                    "title": "A",
+                    "summary": "A",
+                    "scope_ref": scope_ref,
+                    "snapshot_ref": {"fact_snapshot_id": "fact_snap:new"},
+                    "profile_version": "profile-v1",
+                    "body_path": "wiki/personal/a.md",
+                    "status": "active",
+                    "schema_version": "v1",
+                    "provenance": {},
+                },
+                {
+                    "id": "personal:b",
+                    "domain": "recruiting",
+                    "kind": "notes",
+                    "title": "B",
+                    "summary": "B",
+                    "scope_ref": scope_ref,
+                    "snapshot_ref": {"fact_snapshot_id": "fact_snap:new"},
+                    "profile_version": "profile-v1",
+                    "body_path": "wiki/personal/b.md",
+                    "status": "active",
+                    "schema_version": "v1",
+                    "provenance": {},
+                },
+            ]
+
+    service = DefaultRetrievalService(
+        page_read_service=OrderedPageReadService(),
+        personal_repository=OutOfOrderPersonalRepository(),
+        layer_result_limit=2,
+    )
+
+    result = service.retrieve_for_query(
+        domain="recruiting",
+        question="backend plan",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+    )
+
+    assert result["personal_ids"] == ["personal:b", "personal:a"]
+    assert [record["id"] for record in result["personal_records"]] == [
+        "personal:b",
+        "personal:a",
+    ]
 
 
 class EmptyPageReadService:

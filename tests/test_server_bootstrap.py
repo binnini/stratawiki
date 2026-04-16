@@ -148,6 +148,44 @@ def test_build_server_wires_postgres_entrypoints_and_tools(
     with postgres_connection.cursor() as cursor:
         cursor.execute(
             """
+            INSERT INTO personal.record (
+                id,
+                domain,
+                kind,
+                title,
+                summary,
+                scope,
+                tenant_id,
+                user_id,
+                fact_snapshot_id,
+                interpretation_snapshot_id,
+                profile_version,
+                body_path,
+                status,
+                schema_version,
+                provenance_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            """,
+            (
+                "personal:plan-1",
+                "recruiting",
+                "career_plan",
+                "Backend transition plan",
+                "Personal strategy summary",
+                "user",
+                "tenant-1",
+                "user-1",
+                "fact_snap:new",
+                "interp_snap:new",
+                "profile-v2",
+                "wiki/personal/tenant-1/user-1/plan-1.md",
+                "active",
+                "v1",
+                '{"source": "test"}',
+            ),
+        )
+        cursor.execute(
+            """
             INSERT INTO graph.rendered_page (
                 domain,
                 layer,
@@ -211,6 +249,7 @@ def test_build_server_wires_postgres_entrypoints_and_tools(
         assert result["page"]["record_id"] == "personal:plan-1"
         assert retrieval_result["ok"] is True
         assert retrieval_result["retrieval"]["personal_ids"] == ["personal:plan-1"]
+        assert retrieval_result["retrieval"]["personal_records"][0]["id"] == "personal:plan-1"
         assert "ingest_source" in {tool.name for tool in server.list_tools()}
     finally:
         server.close()

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import re
-from typing import cast
+from typing import Any, cast
 
 from wiki_mcp.schemas.profile_context import ProfileContext
 from wiki_mcp.schemas.rendered_page_summary import RenderedPageSummary
 from wiki_mcp.schemas.retrieval_result import RetrievalResult
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
+from wiki_mcp.services.interfaces.repositories import (
+    FactRepository,
+    InterpretationRepository,
+    PersonalRepository,
+)
 from wiki_mcp.services.interfaces.page_reads import PageReadService
 
 
@@ -20,10 +25,16 @@ class DefaultRetrievalService:
         self,
         *,
         page_read_service: PageReadService,
+        fact_repository: FactRepository | None = None,
+        interpretation_repository: InterpretationRepository | None = None,
+        personal_repository: PersonalRepository | None = None,
         page_scan_limit: int = 50,
         layer_result_limit: int = 5,
     ) -> None:
         self.page_read_service = page_read_service
+        self.fact_repository = fact_repository
+        self.interpretation_repository = interpretation_repository
+        self.personal_repository = personal_repository
         self.page_scan_limit = page_scan_limit
         self.layer_result_limit = layer_result_limit
 
@@ -74,12 +85,61 @@ class DefaultRetrievalService:
             "interpretation_pages": matches_by_layer["interpretation"],
             "fact_pages": matches_by_layer["fact"],
         }
+        hydrated_records = self._hydrate_records(matches_by_layer, requested_scope=scope_ref)
+        result.update(hydrated_records)
 
         snapshot_ref = self._merge_snapshot_ref(matches_by_layer)
         if snapshot_ref is not None:
             result["snapshot_ref"] = snapshot_ref
 
         return result
+
+    def _hydrate_records(
+        self,
+        matches_by_layer: dict[str, list[RenderedPageSummary]],
+        *,
+        requested_scope: ScopeRef,
+    ) -> RetrievalResult:
+        hydrated: dict[str, Any] = {}
+
+        personal_ids = [page["record_id"] for page in matches_by_layer["personal"]]
+        if personal_ids and self.personal_repository is not None:
+            hydrated["personal_records"] = self._ordered_records(
+                personal_ids,
+                self.personal_repository.get_by_ids(personal_ids, requested_scope),
+            )
+
+        interpretation_ids = [
+            page["record_id"] for page in matches_by_layer["interpretation"]
+        ]
+        if interpretation_ids and self.interpretation_repository is not None:
+            hydrated["interpretation_records"] = self._ordered_records(
+                interpretation_ids,
+                self.interpretation_repository.get_by_ids(
+                    interpretation_ids,
+                    self._scope_for_layer("interpretation", requested_scope),
+                ),
+            )
+
+        fact_ids = [page["record_id"] for page in matches_by_layer["fact"]]
+        if fact_ids and self.fact_repository is not None:
+            hydrated["fact_records"] = self._ordered_records(
+                fact_ids,
+                self.fact_repository.get_by_ids(
+                    fact_ids,
+                    self._scope_for_layer("fact", requested_scope),
+                ),
+            )
+
+        return cast(RetrievalResult, hydrated)
+
+    def _ordered_records(
+        self,
+        expected_ids: list[str],
+        records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        records_by_id = {record["id"]: record for record in records}
+        return [records_by_id[record_id] for record_id in expected_ids if record_id in records_by_id]
 
     def _scope_for_layer(self, layer: str, requested_scope: ScopeRef) -> ScopeRef:
         if layer == "personal":

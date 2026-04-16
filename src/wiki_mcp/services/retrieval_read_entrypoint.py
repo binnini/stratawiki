@@ -10,6 +10,11 @@ from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.services.page_read_entrypoint import DEFAULT_RENDER_ROOT
 from wiki_mcp.services.page_reads import DefaultPageReadService
 from wiki_mcp.services.retrieval import DefaultRetrievalService
+from wiki_mcp.storage.postgres.repositories import (
+    PostgresFactRepository,
+    PostgresInterpretationRepository,
+    PostgresPersonalRepository,
+)
 from wiki_mcp.storage.filesystem.rendering import (
     FilesystemAndPostgresRenderingRepository,
 )
@@ -84,5 +89,10 @@ def build_default_retrieval_read_entrypoint(
             connection,
         )
     )
-    retrieval_service = DefaultRetrievalService(page_read_service=page_read_service)
+    retrieval_service = DefaultRetrievalService(
+        page_read_service=page_read_service,
+        fact_repository=PostgresFactRepository(connection),
+        interpretation_repository=PostgresInterpretationRepository(connection),
+        personal_repository=PostgresPersonalRepository(connection),
+    )
     return DefaultRetrievalReadEntrypoint(retrieval_service=retrieval_service)

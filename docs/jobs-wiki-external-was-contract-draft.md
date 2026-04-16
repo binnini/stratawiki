@@ -231,6 +231,10 @@ Current rules for this slice:
 - grouped ids remain the stable identity output
 - grouped page summaries are also available for direct consumer hydration of
   title/path/snapshot metadata without a second lookup
+- grouped canonical records may also be included per layer as optional
+  `personal_records`, `interpretation_records`, and `fact_records`
+- these hydrated records strengthen the pre-generation contract but still do not
+  imply synthesized answer generation
 
 ## Recommended Refresh Scope Vocabulary
 
