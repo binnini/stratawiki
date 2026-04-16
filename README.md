@@ -108,7 +108,76 @@ This repository currently contains:
 - initial package scaffolding under `src/`
 - empty data directories under `data/`
 
-Implementation is still in the design-to-build transition.
+Implementation is now far enough along that the current tool surface can be
+invoked directly through a local CLI, but the full MCP transport/runtime is
+still not implemented.
+
+## Direct Try Path
+
+The simplest way to understand the current system is to call the wired tool
+surface directly.
+
+### 1. Prepare the local database
+
+```bash
+scripts/bootstrap_db.sh
+```
+
+This starts the default local PostgreSQL when needed and runs Alembic upgrades.
+
+### 2. Inspect the currently wired tools
+
+```bash
+PYTHONPATH=src python3 -m wiki_mcp.cli list-tools
+PYTHONPATH=src python3 -m wiki_mcp.cli show-tool retrieve_for_query
+```
+
+If the package is installed in editable mode, the same commands can be run as:
+
+```bash
+stratawiki list-tools
+stratawiki show-tool retrieve_for_query
+```
+
+### 3. Call retrieval directly
+
+```bash
+PYTHONPATH=src python3 -m wiki_mcp.cli call retrieve_for_query --args '{
+  "domain": "recruiting",
+  "question": "backend transition plan",
+  "scope_ref": {
+    "scope": "user",
+    "tenant_id": "tenant-1",
+    "user_id": "user-1"
+  }
+}'
+```
+
+### 4. Call personal answer projection directly
+
+```bash
+PYTHONPATH=src python3 -m wiki_mcp.cli call query_personal_knowledge --args '{
+  "domain": "recruiting",
+  "question": "what should I do this week?",
+  "scope_ref": {
+    "scope": "user",
+    "tenant_id": "tenant-1",
+    "user_id": "user-1"
+  }
+}'
+```
+
+### 5. Use JSON files for larger requests
+
+```bash
+PYTHONPATH=src python3 -m wiki_mcp.cli call query_personal_knowledge \
+  --args-file examples/query-personal.json \
+  --envelope
+```
+
+The CLI is intentionally thin.
+It does not redefine contracts or add product-specific orchestration.
+It just exposes the same bootstrap server and tool registry that tests use today.
 
 ## Documentation Guide
 

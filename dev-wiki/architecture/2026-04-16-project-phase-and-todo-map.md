@@ -5,9 +5,9 @@
 | Area | Status | Note |
 | --- | --- | --- |
 | Overall phase | In progress | Early implementation, no longer design-only |
-| Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus family-aware personal answer slice, indexed Postgres FTS retrieval |
-| Weakest | Early | Weighted/domain-tuned retrieval quality, broader Personal coverage, domain breadth, runtime/ops |
-| Next build | Now | Decide whether retrieval now needs weighted FTS, domain synonyms, or a hybrid search path |
+| Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus family-aware personal answer slice, indexed Postgres FTS retrieval, direct local CLI invocation |
+| Weakest | Early | Broader Personal coverage, domain breadth, full MCP transport/runtime, richer operator flows |
+| Next build | Now | Decide whether the next completion slice is worker/runtime operation, scripted end-to-end walkthroughs, or the real MCP transport |
 
 ## Operating Metadata
 
@@ -48,13 +48,14 @@
 - [x] Retrieval explanations now explicitly expose whether a match had a rendered page
 - [x] Canonical retrieval search now uses indexed Postgres FTS instead of pragmatic normalized `LIKE`
 - [x] Bootstrap/server/tool registry wiring exists
+- [x] Local CLI now exposes the wired tool surface for direct inspection and invocation
 - [x] Local and DB-backed validation are both passing on the current baseline
 
 ## Next
 
-- [ ] Decide whether retrieval now needs weighted FTS, domain synonym expansion, or hybrid search
-- [ ] Decide which additional Personal family matters most after the current trio
-- [ ] Decide whether any one family now needs richer structured fields than `recommended_actions`
+- [ ] Decide whether the next system-completion slice should expose projection workers or other runtime operations directly
+- [ ] Decide whether to add a scripted end-to-end walkthrough on top of the new local CLI
+- [ ] Decide when the real MCP transport/runtime should replace the current local bootstrap path
 
 ## Later
 
@@ -66,17 +67,17 @@
 ## One-Line Read
 
 StrataWiki now has three family-aware personal answer paths plus indexed
-canonical FTS retrieval with snapshot carry-through and explicit no-rendered-page
-explainability, but domain-tuned retrieval quality and broader domain maturity
-still remain early.
+canonical FTS retrieval with snapshot carry-through, explicit no-rendered-page
+explainability, and a direct local CLI for trying the wired tool surface, but
+runtime/transport maturity still remains early.
 
 ## Open Questions
 
-- Should retrieval now add weighted FTS fields, domain synonym expansion, or a
-  hybrid search path on top of the current indexed Postgres FTS baseline?
+- Should the next operator-facing slice expose projection workers and admin flows
+  directly, or wait for the real MCP transport?
+- How much scripted guidance should sit on top of the local CLI before the
+  transport exists?
 - When should answer quality move beyond deterministic summary assembly?
-- Which follow-up slice matters more now: canonical retrieval quality or another
-  Personal family?
 
 ## Background
 

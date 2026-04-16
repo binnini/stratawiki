@@ -1,0 +1,9 @@
+{
+  "domain": "recruiting",
+  "question": "backend transition plan",
+  "scope_ref": {
+    "scope": "user",
+    "tenant_id": "tenant-1",
+    "user_id": "user-1"
+  }
+}

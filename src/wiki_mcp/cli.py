@@ -1,0 +1,203 @@
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import TextIO
+
+from wiki_mcp.server import StrataWikiServer, build_server
+
+
+ServerFactory = Callable[..., StrataWikiServer]
+
+
+def build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="stratawiki",
+        description="Local CLI for directly invoking the current StrataWiki tool surface.",
+    )
+    parser.add_argument(
+        "--database-url",
+        help="Optional PostgreSQL connection string. Defaults to DATABASE_URL or the local default.",
+    )
+    parser.add_argument(
+        "--render-root",
+        default="data",
+        help="Render root passed into the StrataWiki bootstrap.",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    list_tools = subparsers.add_parser(
+        "list-tools",
+        help="List the currently registered tools.",
+    )
+    list_tools.add_argument(
+        "--group",
+        help="Optional tool group filter.",
+    )
+    list_tools.add_argument(
+        "--schemas",
+        action="store_true",
+        help="Emit the full exported schemas instead of the compact tool list.",
+    )
+
+    show_tool = subparsers.add_parser(
+        "show-tool",
+        help="Show one exported tool schema.",
+    )
+    show_tool.add_argument("name", help="Tool name to inspect.")
+
+    call_tool = subparsers.add_parser(
+        "call",
+        help="Call one tool with JSON arguments.",
+    )
+    call_tool.add_argument("name", help="Tool name to invoke.")
+    call_tool.add_argument(
+        "--args",
+        default="{}",
+        help="Inline JSON object of tool arguments.",
+    )
+    call_tool.add_argument(
+        "--args-file",
+        help="Path to a JSON file containing tool arguments.",
+    )
+    call_tool.add_argument(
+        "--envelope",
+        action="store_true",
+        help="Wrap the response in the registry ok/error envelope.",
+    )
+
+    return parser
+
+
+def run_cli(
+    argv: Sequence[str] | None = None,
+    *,
+    server_factory: ServerFactory = build_server,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+) -> int:
+    parser = build_argument_parser()
+    args = parser.parse_args(list(argv) if argv is not None else None)
+    resolved_stdout = stdout or sys.stdout
+    resolved_stderr = stderr or sys.stderr
+
+    try:
+        tool_arguments = _load_tool_arguments(args)
+    except ValueError as exc:
+        parser.exit(2, f"{parser.prog}: error: {exc}\n")
+        return 2
+
+    server = server_factory(
+        database_url=args.database_url,
+        render_root=Path(args.render_root),
+    )
+    try:
+        result: object
+        if args.command == "list-tools":
+            result = _list_tools(server, group=args.group, full_schemas=args.schemas)
+        elif args.command == "show-tool":
+            result = _show_tool(server, args.name)
+        elif args.command == "call":
+            if args.envelope:
+                result = server.call_tool_with_envelope(args.name, tool_arguments)
+            else:
+                result = server.call_tool(args.name, tool_arguments)
+        else:
+            raise ValueError(f"Unsupported command: {args.command}")
+    except KeyError as exc:
+        resolved_stderr.write(json.dumps({"ok": False, "error": str(exc)}) + "\n")
+        return 1
+    except Exception as exc:
+        resolved_stderr.write(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": exc.__class__.__name__,
+                    "message": str(exc),
+                }
+            )
+            + "\n"
+        )
+        return 1
+    finally:
+        server.close()
+
+    _write_json(resolved_stdout, result)
+    return 0
+
+
+def main() -> None:
+    raise SystemExit(run_cli())
+
+
+def _load_tool_arguments(args: argparse.Namespace) -> dict[str, object] | None:
+    if args.command != "call":
+        return None
+    if args.args_file:
+        return _load_json_file(args.args_file)
+    return _load_json_text(args.args)
+
+
+def _load_json_file(path_text: str) -> dict[str, object]:
+    try:
+        raw_text = Path(path_text).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"Failed to read JSON file {path_text!r}: {exc}") from exc
+    return _parse_json_object(raw_text, source=path_text)
+
+
+def _load_json_text(raw_text: str) -> dict[str, object]:
+    return _parse_json_object(raw_text, source="--args")
+
+
+def _parse_json_object(raw_text: str, *, source: str) -> dict[str, object]:
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Failed to parse JSON from {source}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"JSON arguments from {source} must decode to an object.")
+    return payload
+
+
+def _list_tools(
+    server: StrataWikiServer,
+    *,
+    group: str | None,
+    full_schemas: bool,
+) -> object:
+    if full_schemas:
+        schemas = server.export_tool_schemas()
+        if group is None:
+            return schemas
+        return [schema for schema in schemas if schema["group"] == group]
+
+    tools = [
+        {
+            "name": tool.name,
+            "group": tool.group,
+            "status": tool.status,
+            "description": tool.description,
+            "entrypoint": tool.entrypoint,
+        }
+        for tool in server.list_tools()
+    ]
+    if group is None:
+        return tools
+    return [tool for tool in tools if tool["group"] == group]
+
+
+def _show_tool(server: StrataWikiServer, name: str) -> dict[str, object]:
+    for schema in server.export_tool_schemas():
+        if schema["name"] == name:
+            return schema
+    raise KeyError(f"Unknown tool: {name}")
+
+
+def _write_json(stream: TextIO, payload: object) -> None:
+    json.dump(payload, stream, indent=2, sort_keys=True)
+    stream.write("\n")
