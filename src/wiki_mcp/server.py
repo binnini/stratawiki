@@ -22,6 +22,9 @@ class StrataWikiServer:
     def list_tools_by_group(self) -> dict[str, list[ToolDefinition]]:
         return self.tools.list_tools_by_group()
 
+    def export_tool_schemas(self) -> list[dict[str, object]]:
+        return self.tools.export_tool_schemas()
+
     def call_tool(self, name: str, arguments: dict[str, object] | None = None) -> object:
         return self.tools.call_tool(name, arguments)
 
@@ -61,6 +64,7 @@ def main() -> None:
                 for tool in definitions
             )
             print(f"{group}: {tool_summary}")
+        print(f"Public tool schemas: {len(server.export_tool_schemas())}")
         print("MCP transport/runtime remains unimplemented in this slice.")
     finally:
         server.close()

@@ -6,7 +6,12 @@ from typing import Any
 from wiki_mcp.services.ingestion_entrypoint import DefaultIngestionEntrypoint
 from wiki_mcp.services.page_read_entrypoint import DefaultPageReadEntrypoint
 from wiki_mcp.services.retrieval_read_entrypoint import DefaultRetrievalReadEntrypoint
-from wiki_mcp.tools.registry import ToolArgument, ToolDefinition, ToolRegistry
+from wiki_mcp.tools.registry import (
+    ToolArgument,
+    ToolDefinition,
+    ToolRegistry,
+    ToolResultField,
+)
 
 
 def build_default_tool_definitions(
@@ -28,6 +33,15 @@ def build_default_tool_definitions(
                     description="Normalized source payload to persist and project.",
                 ),
             ),
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether ingestion succeeded."),
+                ToolResultField(
+                    "source_record_id",
+                    "string",
+                    "Canonical source record identifier when available.",
+                ),
+            ),
+            error_codes=("invalid_source", "ingestion_failed"),
             handler=lambda arguments: _ingest_source(
                 ingestion_entrypoint,
                 arguments,
@@ -62,6 +76,15 @@ def build_default_tool_definitions(
                     required=False,
                 ),
             ),
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether ingestion succeeded."),
+                ToolResultField(
+                    "source_id",
+                    "string",
+                    "Provider-native source identifier that was ingested.",
+                ),
+            ),
+            error_codes=("invalid_request", "source_fetch_failed", "ingestion_failed"),
             handler=lambda arguments: _ingest_worknet_source(
                 ingestion_entrypoint,
                 arguments,
@@ -82,6 +105,20 @@ def build_default_tool_definitions(
                     "Resolved scope reference for the requested page.",
                 ),
             ),
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether the page read succeeded."),
+                ToolResultField(
+                    "page",
+                    "object",
+                    "Rendered page envelope when the page exists.",
+                ),
+                ToolResultField(
+                    "read_model_state",
+                    "string",
+                    "Authoritative read-model visibility state.",
+                ),
+            ),
+            error_codes=("page_not_found", "invalid_scope_ref"),
             handler=lambda arguments: _get_page(
                 page_read_entrypoint,
                 arguments,
@@ -112,6 +149,20 @@ def build_default_tool_definitions(
                     required=False,
                 ),
             ),
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether the list read succeeded."),
+                ToolResultField(
+                    "pages",
+                    "array",
+                    "Rendered page summaries returned by the listing.",
+                ),
+                ToolResultField(
+                    "read_model_state",
+                    "string",
+                    "Authoritative read-model visibility state.",
+                ),
+            ),
+            error_codes=("invalid_scope_ref",),
             handler=lambda arguments: _list_pages(
                 page_read_entrypoint,
                 arguments,
@@ -128,6 +179,20 @@ def build_default_tool_definitions(
                 ToolArgument("user_id", "string", "User scope for the page."),
                 ToolArgument("record_id", "string", "Personal record identifier."),
             ),
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether the page read succeeded."),
+                ToolResultField(
+                    "page",
+                    "object",
+                    "Rendered personal page envelope when the page exists.",
+                ),
+                ToolResultField(
+                    "read_model_state",
+                    "string",
+                    "Authoritative read-model visibility state.",
+                ),
+            ),
+            error_codes=("page_not_found",),
             handler=lambda arguments: _get_personal_page(
                 page_read_entrypoint,
                 arguments,
@@ -149,6 +214,20 @@ def build_default_tool_definitions(
                     required=False,
                 ),
             ),
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether the list read succeeded."),
+                ToolResultField(
+                    "pages",
+                    "array",
+                    "Rendered personal page summaries returned by the listing.",
+                ),
+                ToolResultField(
+                    "read_model_state",
+                    "string",
+                    "Authoritative read-model visibility state.",
+                ),
+            ),
+            error_codes=(),
             handler=lambda arguments: _list_personal_pages(
                 page_read_entrypoint,
                 arguments,
@@ -167,6 +246,20 @@ def build_default_tool_definitions(
                     "Shared interpretation record identifier.",
                 ),
             ),
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether the page read succeeded."),
+                ToolResultField(
+                    "page",
+                    "object",
+                    "Rendered interpretation page envelope when the page exists.",
+                ),
+                ToolResultField(
+                    "read_model_state",
+                    "string",
+                    "Authoritative read-model visibility state.",
+                ),
+            ),
+            error_codes=("page_not_found",),
             handler=lambda arguments: _get_interpretation_page(
                 page_read_entrypoint,
                 arguments,
@@ -186,6 +279,20 @@ def build_default_tool_definitions(
                     required=False,
                 ),
             ),
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether the list read succeeded."),
+                ToolResultField(
+                    "pages",
+                    "array",
+                    "Rendered shared interpretation page summaries returned by the listing.",
+                ),
+                ToolResultField(
+                    "read_model_state",
+                    "string",
+                    "Authoritative read-model visibility state.",
+                ),
+            ),
+            error_codes=(),
             handler=lambda arguments: _list_interpretation_pages(
                 page_read_entrypoint,
                 arguments,
@@ -211,6 +318,20 @@ def build_default_tool_definitions(
                     required=False,
                 ),
             ),
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether retrieval succeeded."),
+                ToolResultField(
+                    "retrieval",
+                    "object",
+                    "Layered retrieval envelope for the question.",
+                ),
+                ToolResultField(
+                    "read_model_state",
+                    "string",
+                    "Authoritative read-model visibility state.",
+                ),
+            ),
+            error_codes=("invalid_scope_ref", "retrieval_failed"),
             handler=lambda arguments: _retrieve_for_query(
                 retrieval_read_entrypoint,
                 arguments,
@@ -221,24 +342,63 @@ def build_default_tool_definitions(
             description="Future MCP fact-ingestion tool contract.",
             group="fact",
             entrypoint="fact.ingest_batch",
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether the batch ingestion succeeded."),
+                ToolResultField(
+                    "command_id",
+                    "string",
+                    "Command identifier for tracking asynchronous batch work.",
+                ),
+            ),
+            error_codes=("invalid_fact_batch", "fact_batch_not_supported_yet"),
         ),
         _placeholder_tool(
             name="build_interpretation_snapshot",
             description="Future MCP interpretation projection tool contract.",
             group="interpretation",
             entrypoint="interpretation.build_snapshot",
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether projection submission succeeded."),
+                ToolResultField(
+                    "command_id",
+                    "string",
+                    "Command identifier for snapshot build tracking.",
+                ),
+            ),
+            error_codes=(
+                "invalid_interpretation_request",
+                "interpretation_snapshot_not_supported_yet",
+            ),
         ),
         _placeholder_tool(
             name="query_personal_knowledge",
             description="Future MCP personal retrieval tool contract.",
             group="personal",
             entrypoint="personal.query_knowledge",
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether personal query execution succeeded."),
+                ToolResultField(
+                    "answer",
+                    "object",
+                    "User-scoped synthesized knowledge answer envelope.",
+                ),
+            ),
+            error_codes=("invalid_personal_query", "personal_query_not_supported_yet"),
         ),
         _placeholder_tool(
             name="create_personal_plan",
             description="Future MCP personal generation tool contract.",
             group="personal",
             entrypoint="personal.create_plan",
+            result_fields=(
+                ToolResultField("ok", "boolean", "Whether plan creation submission succeeded."),
+                ToolResultField(
+                    "command_id",
+                    "string",
+                    "Command identifier for plan generation tracking.",
+                ),
+            ),
+            error_codes=("invalid_plan_request", "personal_plan_not_supported_yet"),
         ),
     ]
 
@@ -265,6 +425,8 @@ def _available_tool(
     group: str,
     entrypoint: str,
     arguments: tuple[ToolArgument, ...] = (),
+    result_fields: tuple[ToolResultField, ...] = (),
+    error_codes: tuple[str, ...] = (),
     handler: Any,
 ) -> ToolDefinition:
     return ToolDefinition(
@@ -273,6 +435,8 @@ def _available_tool(
         group=group,
         entrypoint=entrypoint,
         arguments=arguments,
+        result_fields=result_fields,
+        error_codes=error_codes,
         handler=handler,
     )
 
@@ -284,6 +448,8 @@ def _placeholder_tool(
     group: str,
     entrypoint: str,
     arguments: tuple[ToolArgument, ...] = (),
+    result_fields: tuple[ToolResultField, ...] = (),
+    error_codes: tuple[str, ...] = (),
 ) -> ToolDefinition:
     return ToolDefinition(
         name=name,
@@ -291,6 +457,8 @@ def _placeholder_tool(
         group=group,
         entrypoint=entrypoint,
         arguments=arguments,
+        result_fields=result_fields,
+        error_codes=error_codes,
         status="placeholder",
     )
 

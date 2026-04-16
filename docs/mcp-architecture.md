@@ -142,6 +142,8 @@ Near-term implementation note:
   local tool registry as long as it stays honest about what is real
 - that registry should make current tool family grouping, handler ownership, and
   argument contract intent visible
+- it may also expose thin result and error metadata plus lightweight input
+  validation, as long as this stays clearly below a full transport/schema layer
 - it should not invent fake session, protocol, or transport abstractions
 
 For Jobs-Wiki-style integrations, this layer should be read primarily as the mutation and status facade, not as the only required read-serving surface.

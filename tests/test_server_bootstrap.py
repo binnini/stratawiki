@@ -5,7 +5,11 @@ from pathlib import Path
 from psycopg import Connection
 
 from wiki_mcp.server import StrataWikiServer, build_server
-from wiki_mcp.tools import build_default_tool_definitions, build_default_tool_registry
+from wiki_mcp.tools import (
+    ToolValidationError,
+    build_default_tool_definitions,
+    build_default_tool_registry,
+)
 
 
 class StubIngestionEntrypoint:
@@ -71,10 +75,13 @@ def test_default_tool_registry_exposes_wired_and_placeholder_tools() -> None:
     assert definitions["ingest_source"].group == "ingestion"
     assert definitions["ingest_source"].entrypoint == "ingestion.ingest_source"
     assert definitions["ingest_source"].arguments[0].name == "source"
+    assert definitions["ingest_source"].result_fields[0].name == "ok"
+    assert "ingestion_failed" in definitions["ingest_source"].error_codes
     assert definitions["get_personal_page"].status == "available"
     assert definitions["retrieve_for_query"].status == "available"
     assert definitions["ingest_fact_batch"].status == "placeholder"
     assert definitions["ingest_fact_batch"].group == "fact"
+    assert "fact_batch_not_supported_yet" in definitions["ingest_fact_batch"].error_codes
     assert definitions["query_personal_knowledge"].handler is None
     assert definitions["query_personal_knowledge"].entrypoint == "personal.query_knowledge"
 
@@ -92,6 +99,7 @@ def test_default_tool_definitions_are_grouped_for_contract_visibility() -> None:
     assert by_name["retrieve_for_query"].group == "retrieval"
     assert by_name["create_personal_plan"].status == "placeholder"
     assert any(argument.name == "scope_ref" for argument in by_name["get_page"].arguments)
+    assert any(field.name == "retrieval" for field in by_name["retrieve_for_query"].result_fields)
 
 
 def test_default_tool_registry_dispatches_to_entrypoints() -> None:
@@ -181,6 +189,67 @@ def test_registry_lists_tools_by_group() -> None:
     ]
 
 
+def test_registry_exports_public_tool_schema() -> None:
+    registry = build_default_tool_registry(
+        ingestion_entrypoint=StubIngestionEntrypoint(),
+        page_read_entrypoint=StubPageReadEntrypoint(),
+        retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+    )
+
+    schemas = {schema["name"]: schema for schema in registry.export_tool_schemas()}
+
+    assert schemas["ingest_source"]["group"] == "ingestion"
+    assert schemas["ingest_source"]["arguments"][0]["name"] == "source"
+    assert schemas["ingest_source"]["result"][0]["name"] == "ok"
+    assert "ingestion_failed" in schemas["ingest_source"]["error_codes"]
+    assert schemas["create_personal_plan"]["status"] == "placeholder"
+
+
+def test_registry_validates_missing_required_argument() -> None:
+    registry = build_default_tool_registry(
+        ingestion_entrypoint=StubIngestionEntrypoint(),
+        page_read_entrypoint=StubPageReadEntrypoint(),
+        retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+    )
+
+    try:
+        registry.call_tool(
+            "get_personal_page",
+            {
+                "domain": "recruiting",
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+            },
+        )
+    except ToolValidationError as exc:
+        assert "record_id" in str(exc)
+    else:
+        raise AssertionError("Expected missing required argument to fail.")
+
+
+def test_registry_validates_argument_types() -> None:
+    registry = build_default_tool_registry(
+        ingestion_entrypoint=StubIngestionEntrypoint(),
+        page_read_entrypoint=StubPageReadEntrypoint(),
+        retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+    )
+
+    try:
+        registry.call_tool(
+            "list_personal_pages",
+            {
+                "domain": "recruiting",
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+                "limit": "20",
+            },
+        )
+    except ToolValidationError as exc:
+        assert "integer" in str(exc)
+    else:
+        raise AssertionError("Expected invalid argument type to fail.")
+
+
 def test_build_server_wires_postgres_entrypoints_and_tools(
     postgres_connection: Connection[dict],
     tmp_path: Path,
@@ -253,5 +322,6 @@ def test_build_server_wires_postgres_entrypoints_and_tools(
         assert retrieval_result["retrieval"]["personal_ids"] == ["personal:plan-1"]
         assert "ingest_source" in {tool.name for tool in server.list_tools()}
         assert "page_reads" in server.list_tools_by_group()
+        assert any(schema["name"] == "retrieve_for_query" for schema in server.export_tool_schemas())
     finally:
         server.close()
