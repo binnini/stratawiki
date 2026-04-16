@@ -21,6 +21,8 @@ What is the smallest server bootstrap structure that makes the existing internal
 - `server.py` had no runtime object, no bundled dependencies, and no place to mount an eventual tool layer.
 - The docs consistently separate MCP/tool interface concerns from internal service interfaces, so the next layer should stay thin and orchestration-focused.
 - Current real capabilities are still limited to ingestion and rendered page reads.
+- The first local tool registry shape exposed names and placeholder status, but it did not yet make tool grouping, entrypoint ownership, or argument-level contract intent visible.
+- For the next MCP-facing slice, the useful preparation work is contract clarity, not a fake session/transport/runtime abstraction.
 
 ## Options
 
@@ -45,12 +47,45 @@ The implemented shape is:
   - `ToolRegistry`
   - default wired tools for current ingestion/page-read entrypoints
   - explicit placeholder tool registrations for future MCP contracts
+  - grouped tool metadata with entrypoint ownership and thin argument contracts
 
 This keeps the transport boundary honest:
 
 - current internal entrypoints are actually wired
 - future MCP tool families are visible as placeholders
+- local tool registration now exposes enough metadata to map present tools to future MCP contracts
 - no fake JSON-RPC/session/protocol runtime is introduced yet
+
+## Implementation Update
+
+The current bootstrap/tool slice is now a bit more contract-oriented:
+
+- `ToolDefinition` now carries:
+  - `group`
+  - `entrypoint`
+  - `arguments`
+  - `result_fields`
+  - `errors`
+  - `status`
+- `ToolRegistry` now:
+  - rejects duplicate registrations
+  - returns a stable grouped listing for server/bootstrap inspection
+  - validates required arguments and thin primitive/object types before dispatch
+  - exports a public schema shape that a future MCP adapter can reuse
+  - validates nested object fields for selected argument families such as `source`, `scope_ref`, and `profile_context`
+  - validates returned mapping results against declared result contracts
+  - can emit a structured bootstrap error envelope with `code`, `message`, and `details`
+- `build_default_tool_definitions(...)` now expresses the default tool layer as an explicit registration list before registry construction
+- `server.main()` now reports tools grouped by contract family instead of only printing one flat available/placeholder split
+
+This is still intentionally thin:
+
+- no MCP transport
+- no fake runtime/session abstraction
+- no full schema-validator framework
+- no attempt to hide that most future tool families are still placeholders
+
+The current public schema export is now versioned as `bootstrap.v1`.
 
 ## Open Questions
 
@@ -63,3 +98,29 @@ This keeps the transport boundary honest:
 - Add the first real MCP transport/runtime adapter only after more tool families are backed by real services.
 - Decide whether tool metadata should expose richer schemas once external callers depend on it.
 - Fold additional internal entrypoints into the same bootstrap context as new vertical slices land.
+- When the MCP adapter is introduced, reuse the grouped tool definitions and metadata, but keep request validation and transport concerns outside the internal entrypoint layer.
+
+## Verification
+
+- `pytest -q tests/test_server_bootstrap.py`
+  - final follow-up state: `11 passed, 1 skipped`
+- `pytest -q`
+  - final follow-up state: `46 passed, 14 skipped`
+- `DATABASE_URL=postgresql+psycopg://stratawiki:stratawiki@localhost:5432/stratawiki pytest -q`
+  - final follow-up state: `46 passed, 14 skipped`
+
+## Session Checkpoint
+
+- bootstrap/tool layer was kept transport-free on purpose
+- local registry now behaves like a thin pre-MCP contract layer rather than only a name-to-handler table
+- the remaining material risk is no longer basic tool-shape drift inside bootstrap
+- the remaining material risk is mostly at later boundaries:
+  - transport adaptation
+  - auth and ACL enforcement
+  - authoritative read-model-state semantics for richer projections
+
+## Commits
+
+- `e80c5c766fb0b02745b705a0305e292e7553d275` `Refine bootstrap tool contracts`
+- `5a864a9827d3cc4c8f3aa1ba4d7e72369fea4095` `Add thin tool schema validation`
+- `a4677263b3517f6c5115b9dc5d6cdbfe656b3af2` `Enforce nested tool contracts`

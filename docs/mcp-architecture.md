@@ -122,6 +122,7 @@ Responsibilities:
 - validate inputs
 - dispatch to services
 - return structured outputs
+- expose stable tool metadata such as grouping, entrypoint ownership, and input contracts
 - avoid embedding provider-specific behavior in tool definitions
 
 Examples:
@@ -134,6 +135,18 @@ Examples:
 - `get_cache_status`
 - `fetch_source`
 - `list_sources`
+
+Near-term implementation note:
+
+- before a full MCP transport/runtime exists, the server bootstrap may use a thin
+  local tool registry as long as it stays honest about what is real
+- that registry should make current tool family grouping, handler ownership, and
+  argument contract intent visible
+- it may also expose thin result and error metadata plus lightweight input
+  validation, as long as this stays clearly below a full transport/schema layer
+- if it exports a temporary public schema before the full adapter exists, that
+  schema should be explicitly versioned and include a structured error envelope
+- it should not invent fake session, protocol, or transport abstractions
 
 For Jobs-Wiki-style integrations, this layer should be read primarily as the mutation and status facade, not as the only required read-serving surface.
 
