@@ -156,6 +156,9 @@ class DefaultPersonalStaleMarkingService:
             "personal_record_ids": personal_record_ids,
             "triggering_interpretation_ids": payload["interpretation_ids"],
             "source_event_id": source_event_id,
+            "scope": payload["scope"],
+            **({"tenant_id": payload["tenant_id"]} if "tenant_id" in payload else {}),
+            **({"user_id": payload["user_id"]} if "user_id" in payload else {}),
         }
         return {
             "event_type": "personal_records_marked_stale",

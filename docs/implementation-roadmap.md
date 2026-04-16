@@ -213,7 +213,9 @@ Status:
 
 - profile context and personal metadata storage baseline now exist
 - personal stale marking now exists for the interpretation -> personal path
-- personal generation and richer stale-state behavior still remain to be implemented
+- a first deterministic personal regeneration path now exists:
+  stale personal event -> profile plus interpretation refresh -> markdown rewrite
+- richer personal generation and read-path behavior still remain to be implemented
 
 Exit criteria:
 

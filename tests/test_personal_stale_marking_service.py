@@ -121,6 +121,7 @@ def test_mark_from_interpretation_event_marks_personal_records_stale() -> None:
     assert saved_record["snapshot_ref"]["interpretation_snapshot_id"] == "interp_snap:old"
     assert saved_record["provenance"]["stale_marker"]["interpretation_snapshot_id"] == "interp_snap:new"
     assert outbox_repository.calls[0][0]["event_type"] == "personal_records_marked_stale"
+    assert outbox_repository.calls[0][0]["payload"]["scope"] == "user"
 
 
 def test_mark_from_interpretation_event_rejects_incomplete_payload() -> None:

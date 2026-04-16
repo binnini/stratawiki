@@ -298,6 +298,8 @@ The first concrete projection contract is:
 5. worker emits `interpretation_snapshot_published`
 6. Personal stale worker claims `interpretation_snapshot_published`
 7. worker marks dependent Personal records `stale`
+8. Personal regeneration worker claims `personal_records_marked_stale`
+9. worker refreshes Personal metadata and rewrites markdown artifacts
 
 Worker failure policy in v1:
 
@@ -332,9 +334,12 @@ The `interpretation_snapshot_published` payload should carry:
 - `source_event_id`
 - `scope` plus optional `tenant_id` / `user_id`
 
-The first implemented Personal downstream action does not regenerate personal
-content yet. It marks dependent Personal records `stale` while preserving the
-original snapshot tuple and storing the fresher upstream snapshot in provenance.
+The first implemented Personal downstream path now has two steps:
+
+- stale marking preserves the original snapshot tuple and records fresher
+  upstream snapshot ids in provenance
+- regeneration refreshes the Personal record to the new snapshot tuple and
+  rewrites a readable markdown artifact from profile plus interpretation state
 
 ### Personal Retrieval and Generation Flow
 

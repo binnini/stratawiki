@@ -43,6 +43,23 @@ class PersonalRecordsMarkedStalePayload(TypedDict):
     personal_record_ids: list[str]
     triggering_interpretation_ids: list[str]
     source_event_id: str
+    scope: str
+    tenant_id: NotRequired[str]
+    user_id: NotRequired[str]
+
+
+class PersonalRecordsRegeneratedPayload(TypedDict):
+    """Payload emitted after stale Personal records are regenerated."""
+
+    domain: str
+    fact_snapshot_id: str
+    interpretation_snapshot_id: str
+    profile_version: str
+    personal_record_ids: list[str]
+    source_event_id: str
+    scope: str
+    tenant_id: NotRequired[str]
+    user_id: NotRequired[str]
 
 
 class OutboxEventRecord(TypedDict):

@@ -384,6 +384,14 @@ Examples:
 - projects to polish
 - interview practice milestones
 
+A first deterministic baseline now exists for `career_transition_plan` refresh:
+
+- upstream interpretation change marks the plan `stale`
+- regeneration reloads current profile context
+- regeneration reloads the triggering shared interpretations
+- Personal metadata is refreshed to the new snapshot tuple
+- markdown is rewritten as a readable artifact
+
 ### Personal Anchors
 
 Personal records should anchor to:

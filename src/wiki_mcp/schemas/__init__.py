@@ -30,6 +30,7 @@ from wiki_mcp.schemas.outbox_event import (
     OutboxEvent,
     OutboxEventRecord,
     PersonalRecordsMarkedStalePayload,
+    PersonalRecordsRegeneratedPayload,
 )
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
@@ -57,6 +58,7 @@ __all__ = [
     "OutboxEvent",
     "OutboxEventRecord",
     "PersonalRecordsMarkedStalePayload",
+    "PersonalRecordsRegeneratedPayload",
     "PersonalRecord",
     "ProfileContext",
     "RecruitingAttachmentPayload",

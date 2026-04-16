@@ -10,6 +10,10 @@ from wiki_mcp.services.interpretation_projection import (
     DefaultInterpretationProjectionService,
     DefaultOutboxProjectionWorker,
 )
+from wiki_mcp.services.personal_regeneration import (
+    DefaultPersonalRegenerationService,
+    DefaultPersonalRegenerationWorker,
+)
 from wiki_mcp.services.personal_stale_marking import (
     DefaultPersonalStaleMarkingService,
     DefaultPersonalStaleWorker,
@@ -20,6 +24,8 @@ __all__ = [
     "DefaultIngestionEntrypoint",
     "DefaultInterpretationProjectionService",
     "DefaultOutboxProjectionWorker",
+    "DefaultPersonalRegenerationService",
+    "DefaultPersonalRegenerationWorker",
     "DefaultPersonalStaleMarkingService",
     "DefaultPersonalStaleWorker",
     "build_default_ingestion_entrypoint",
