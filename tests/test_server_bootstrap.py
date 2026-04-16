@@ -5,7 +5,7 @@ from pathlib import Path
 from psycopg import Connection
 
 from wiki_mcp.server import StrataWikiServer, build_server
-from wiki_mcp.tools import build_default_tool_registry
+from wiki_mcp.tools import build_default_tool_definitions, build_default_tool_registry
 
 
 class StubIngestionEntrypoint:
@@ -68,10 +68,30 @@ def test_default_tool_registry_exposes_wired_and_placeholder_tools() -> None:
     definitions = {definition.name: definition for definition in registry.list_tools()}
 
     assert definitions["ingest_source"].status == "available"
+    assert definitions["ingest_source"].group == "ingestion"
+    assert definitions["ingest_source"].entrypoint == "ingestion.ingest_source"
+    assert definitions["ingest_source"].arguments[0].name == "source"
     assert definitions["get_personal_page"].status == "available"
     assert definitions["retrieve_for_query"].status == "available"
     assert definitions["ingest_fact_batch"].status == "placeholder"
+    assert definitions["ingest_fact_batch"].group == "fact"
     assert definitions["query_personal_knowledge"].handler is None
+    assert definitions["query_personal_knowledge"].entrypoint == "personal.query_knowledge"
+
+
+def test_default_tool_definitions_are_grouped_for_contract_visibility() -> None:
+    definitions = build_default_tool_definitions(
+        ingestion_entrypoint=StubIngestionEntrypoint(),
+        page_read_entrypoint=StubPageReadEntrypoint(),
+        retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+    )
+
+    by_name = {definition.name: definition for definition in definitions}
+
+    assert by_name["list_pages"].group == "page_reads"
+    assert by_name["retrieve_for_query"].group == "retrieval"
+    assert by_name["create_personal_plan"].status == "placeholder"
+    assert any(argument.name == "scope_ref" for argument in by_name["get_page"].arguments)
 
 
 def test_default_tool_registry_dispatches_to_entrypoints() -> None:
@@ -139,6 +159,26 @@ def test_placeholder_tool_cannot_be_called() -> None:
         assert "placeholder" in str(exc)
     else:
         raise AssertionError("Expected placeholder tool call to fail.")
+
+
+def test_registry_lists_tools_by_group() -> None:
+    registry = build_default_tool_registry(
+        ingestion_entrypoint=StubIngestionEntrypoint(),
+        page_read_entrypoint=StubPageReadEntrypoint(),
+        retrieval_read_entrypoint=StubRetrievalReadEntrypoint(),
+    )
+
+    grouped = registry.list_tools_by_group()
+
+    assert [tool.name for tool in grouped["ingestion"]] == [
+        "ingest_source",
+        "ingest_worknet_source",
+    ]
+    assert [tool.name for tool in grouped["retrieval"]] == ["retrieve_for_query"]
+    assert [tool.name for tool in grouped["personal"]] == [
+        "create_personal_plan",
+        "query_personal_knowledge",
+    ]
 
 
 def test_build_server_wires_postgres_entrypoints_and_tools(
@@ -212,5 +252,6 @@ def test_build_server_wires_postgres_entrypoints_and_tools(
         assert retrieval_result["ok"] is True
         assert retrieval_result["retrieval"]["personal_ids"] == ["personal:plan-1"]
         assert "ingest_source" in {tool.name for tool in server.list_tools()}
+        assert "page_reads" in server.list_tools_by_group()
     finally:
         server.close()

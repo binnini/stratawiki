@@ -19,6 +19,9 @@ class StrataWikiServer:
     def list_tools(self) -> list[ToolDefinition]:
         return self.tools.list_tools()
 
+    def list_tools_by_group(self) -> dict[str, list[ToolDefinition]]:
+        return self.tools.list_tools_by_group()
+
     def call_tool(self, name: str, arguments: dict[str, object] | None = None) -> object:
         return self.tools.call_tool(name, arguments)
 
@@ -51,13 +54,13 @@ def main() -> None:
     """Build the thin server runtime and report what is wired today."""
     server = build_server()
     try:
-        available = [tool.name for tool in server.list_tools() if tool.status == "available"]
-        placeholders = [
-            tool.name for tool in server.list_tools() if tool.status == "placeholder"
-        ]
         print("StrataWiki server bootstrap ready.")
-        print(f"Wired tools: {', '.join(available)}")
-        print(f"Placeholder tool contracts: {', '.join(placeholders)}")
+        for group, definitions in server.list_tools_by_group().items():
+            tool_summary = ", ".join(
+                f"{tool.name}[{tool.status}]"
+                for tool in definitions
+            )
+            print(f"{group}: {tool_summary}")
         print("MCP transport/runtime remains unimplemented in this slice.")
     finally:
         server.close()

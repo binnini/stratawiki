@@ -7,6 +7,24 @@ from typing import Any, Literal
 
 ToolHandler = Callable[[Mapping[str, Any]], object]
 ToolStatus = Literal["available", "placeholder"]
+ToolGroup = Literal[
+    "ingestion",
+    "page_reads",
+    "retrieval",
+    "fact",
+    "interpretation",
+    "personal",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class ToolArgument:
+    """Thin input contract metadata for one tool argument."""
+
+    name: str
+    value_type: str
+    description: str
+    required: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +33,9 @@ class ToolDefinition:
 
     name: str
     description: str
+    group: ToolGroup
+    entrypoint: str | None = None
+    arguments: tuple[ToolArgument, ...] = ()
     status: ToolStatus = "available"
     handler: ToolHandler | None = None
 
@@ -23,10 +44,23 @@ class ToolRegistry:
     """Local tool registry for wiring entrypoints before MCP transport exists."""
 
     def __init__(self, definitions: list[ToolDefinition]) -> None:
-        self._definitions = {definition.name: definition for definition in definitions}
+        self._definitions: dict[str, ToolDefinition] = {}
+        for definition in definitions:
+            if definition.name in self._definitions:
+                raise ValueError(f"Duplicate tool registration: {definition.name}")
+            self._definitions[definition.name] = definition
 
     def list_tools(self) -> list[ToolDefinition]:
-        return list(self._definitions.values())
+        return sorted(
+            self._definitions.values(),
+            key=lambda definition: (definition.group, definition.name),
+        )
+
+    def list_tools_by_group(self) -> dict[ToolGroup, list[ToolDefinition]]:
+        grouped: dict[ToolGroup, list[ToolDefinition]] = {}
+        for definition in self.list_tools():
+            grouped.setdefault(definition.group, []).append(definition)
+        return grouped
 
     def call_tool(
         self,
