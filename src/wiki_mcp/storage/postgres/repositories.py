@@ -17,6 +17,49 @@ from wiki_mcp.schemas.snapshot_ref import SnapshotRef
 from wiki_mcp.storage.postgres.base import PostgresRepositoryBase, managed_cursor
 
 
+def _normalized_text_sql(*parts: str) -> str:
+    joined = ", ".join(f"COALESCE({part}, '')" for part in parts)
+    return (
+        "regexp_replace(lower(concat_ws(' ', "
+        + joined
+        + ")), '[^a-z0-9]+', ' ', 'g')"
+    )
+
+
+def _search_filter_sql(
+    *,
+    search_expr: str,
+    query_text: str,
+    query_tokens: list[str],
+) -> tuple[str, list[Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if query_text:
+        clauses.append(f"{search_expr} LIKE %s")
+        params.append(f"%{query_text}%")
+    for token in query_tokens:
+        clauses.append(f"{search_expr} LIKE %s")
+        params.append(f"%{token}%")
+    return " OR ".join(clauses) if clauses else "FALSE", params
+
+
+def _search_score_sql(
+    *,
+    search_expr: str,
+    query_text: str,
+    query_tokens: list[str],
+) -> tuple[str, list[Any]]:
+    score_terms: list[str] = []
+    params: list[Any] = []
+    if query_text:
+        score_terms.append(f"CASE WHEN {search_expr} LIKE %s THEN 100 ELSE 0 END")
+        params.append(f"%{query_text}%")
+    for token in query_tokens:
+        score_terms.append(f"CASE WHEN {search_expr} LIKE %s THEN 1 ELSE 0 END")
+        params.append(f"%{token}%")
+    return " + ".join(score_terms) if score_terms else "0", params
+
+
 class PostgresFactRepository(PostgresRepositoryBase):
     """Persist generic fact envelopes into early Postgres staging tables."""
 
@@ -50,17 +93,40 @@ class PostgresFactRepository(PostgresRepositoryBase):
             )
             return [self._row_to_fact_record(row) for row in cursor.fetchall()]
 
-    def list_for_retrieval(
+    def search_for_retrieval(
         self,
         *,
         domain: str,
         scope_ref: ScopeRef,
+        query_text: str,
+        query_tokens: list[str],
         limit: int,
     ) -> list[FactRecord]:
-        if limit <= 0:
+        if limit <= 0 or (not query_text and not query_tokens):
             return []
 
         scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        search_expr = _normalized_text_sql(
+            "id",
+            "entity_type",
+            "canonical_key",
+            "attributes_json->>'title'",
+            "attributes_json->>'name'",
+            "attributes_json->>'label'",
+            "attributes_json->>'summary'",
+            "attributes_json->>'description'",
+            "attributes_json->>'headline'",
+        )
+        search_where, search_params = _search_filter_sql(
+            search_expr=search_expr,
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
+        score_sql, score_params = _search_score_sql(
+            search_expr=search_expr,
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -76,11 +142,11 @@ class PostgresFactRepository(PostgresRepositoryBase):
                     attributes_json,
                     provenance_json
                 FROM fact.record_envelopes
-                WHERE domain = %s AND {scope_sql}
-                ORDER BY updated_at DESC, id ASC
+                WHERE domain = %s AND {scope_sql} AND ({search_where})
+                ORDER BY {score_sql} DESC, updated_at DESC, id ASC
                 LIMIT %s
                 """,
-                [domain, *scope_params, limit],
+                [domain, *scope_params, *search_params, *score_params, limit],
             )
             return [self._row_to_fact_record(row) for row in cursor.fetchall()]
 
@@ -233,6 +299,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     schema_version,
                     status,
                     confidence,
+                    fact_snapshot_id,
                     computed_at,
                     expires_at,
                     body_json,
@@ -245,17 +312,39 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             )
             return [self._row_to_interpretation_record(row) for row in cursor.fetchall()]
 
-    def list_for_retrieval(
+    def search_for_retrieval(
         self,
         *,
         domain: str,
         scope_ref: ScopeRef,
+        query_text: str,
+        query_tokens: list[str],
         limit: int,
     ) -> list[InterpretationRecord]:
-        if limit <= 0:
+        if limit <= 0 or (not query_text and not query_tokens):
             return []
 
         scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        search_expr = _normalized_text_sql(
+            "id",
+            "kind",
+            "subject_type",
+            "subject_id",
+            "body_json->>'summary'",
+            "body_json->>'thesis'",
+            "body_json->>'headline'",
+            "body_json->>'title'",
+        )
+        search_where, search_params = _search_filter_sql(
+            search_expr=search_expr,
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
+        score_sql, score_params = _search_score_sql(
+            search_expr=search_expr,
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -271,17 +360,18 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     schema_version,
                     status,
                     confidence,
+                    fact_snapshot_id,
                     computed_at,
                     expires_at,
                     body_json,
                     provenance_json,
                     render_hints_json
                 FROM interp.record
-                WHERE domain = %s AND {scope_sql}
-                ORDER BY updated_at DESC, id ASC
+                WHERE domain = %s AND {scope_sql} AND ({search_where})
+                ORDER BY {score_sql} DESC, updated_at DESC, id ASC
                 LIMIT %s
                 """,
-                [domain, *scope_params, limit],
+                [domain, *scope_params, *search_params, *score_params, limit],
             )
             return [self._row_to_interpretation_record(row) for row in cursor.fetchall()]
 
@@ -375,6 +465,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             "schema_version": data["schema_version"],
             "status": data["status"],
             "confidence": data["confidence"],
+            "fact_snapshot_id": data["fact_snapshot_id"],
             "computed_at": data["computed_at"],
             "expires_at": data["expires_at"],
             "body": self._load_json(data["body_json"]),
@@ -426,17 +517,36 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             )
             return [self._row_to_personal_record(row) for row in cursor.fetchall()]
 
-    def list_for_retrieval(
+    def search_for_retrieval(
         self,
         *,
         domain: str,
         scope_ref: ScopeRef,
+        query_text: str,
+        query_tokens: list[str],
         limit: int,
     ) -> list[PersonalRecord]:
-        if limit <= 0:
+        if limit <= 0 or (not query_text and not query_tokens):
             return []
 
         scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        search_expr = _normalized_text_sql(
+            "id",
+            "kind",
+            "title",
+            "summary",
+            "body_path",
+        )
+        search_where, search_params = _search_filter_sql(
+            search_expr=search_expr,
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
+        score_sql, score_params = _search_score_sql(
+            search_expr=search_expr,
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -457,11 +567,11 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     schema_version,
                     provenance_json
                 FROM personal.record
-                WHERE domain = %s AND {scope_sql}
-                ORDER BY updated_at DESC, id ASC
+                WHERE domain = %s AND {scope_sql} AND ({search_where})
+                ORDER BY {score_sql} DESC, updated_at DESC, id ASC
                 LIMIT %s
                 """,
-                [domain, *scope_params, limit],
+                [domain, *scope_params, *search_params, *score_params, limit],
             )
             return [self._row_to_personal_record(row) for row in cursor.fetchall()]
 

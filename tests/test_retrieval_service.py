@@ -115,19 +115,23 @@ class StubPersonalRepository:
             }
         ]
 
-    def list_for_retrieval(
+    def search_for_retrieval(
         self,
         *,
         domain: str,
         scope_ref: dict[str, str],
+        query_text: str,
+        query_tokens: list[str],
         limit: int,
     ) -> list[dict[str, object]]:
         self.calls.append(
             {
                 "domain": domain,
                 "scope_ref": scope_ref,
+                "query_text": query_text,
+                "query_tokens": query_tokens,
                 "limit": limit,
-                "method": "list_for_retrieval",
+                "method": "search_for_retrieval",
             }
         )
         return []
@@ -158,19 +162,23 @@ class StubInterpretationRepository:
             }
         ]
 
-    def list_for_retrieval(
+    def search_for_retrieval(
         self,
         *,
         domain: str,
         scope_ref: dict[str, str],
+        query_text: str,
+        query_tokens: list[str],
         limit: int,
     ) -> list[dict[str, object]]:
         self.calls.append(
             {
                 "domain": domain,
                 "scope_ref": scope_ref,
+                "query_text": query_text,
+                "query_tokens": query_tokens,
                 "limit": limit,
-                "method": "list_for_retrieval",
+                "method": "search_for_retrieval",
             }
         )
         return []
@@ -195,19 +203,23 @@ class StubFactRepository:
             }
         ]
 
-    def list_for_retrieval(
+    def search_for_retrieval(
         self,
         *,
         domain: str,
         scope_ref: dict[str, str],
+        query_text: str,
+        query_tokens: list[str],
         limit: int,
     ) -> list[dict[str, object]]:
         self.calls.append(
             {
                 "domain": domain,
                 "scope_ref": scope_ref,
+                "query_text": query_text,
+                "query_tokens": query_tokens,
                 "limit": limit,
-                "method": "list_for_retrieval",
+                "method": "search_for_retrieval",
             }
         )
         return []
@@ -320,8 +332,10 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
         {
             "domain": "recruiting",
             "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "query_text": "backend transition plan",
+            "query_tokens": ["backend", "transition", "plan"],
             "limit": 50,
-            "method": "list_for_retrieval",
+            "method": "search_for_retrieval",
         },
     ]
     assert interpretation_repository.calls == [
@@ -332,8 +346,10 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
         {
             "domain": "recruiting",
             "scope_ref": {"scope": "shared"},
+            "query_text": "backend transition plan",
+            "query_tokens": ["backend", "transition", "plan"],
             "limit": 50,
-            "method": "list_for_retrieval",
+            "method": "search_for_retrieval",
         },
     ]
     assert fact_repository.calls == [
@@ -344,8 +360,10 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
         {
             "domain": "recruiting",
             "scope_ref": {"scope": "shared"},
+            "query_text": "backend transition plan",
+            "query_tokens": ["backend", "transition", "plan"],
             "limit": 50,
-            "method": "list_for_retrieval",
+            "method": "search_for_retrieval",
         },
     ]
 
@@ -437,11 +455,13 @@ def test_retrieval_service_orders_hydrated_records_by_matched_ids() -> None:
                 },
             ]
 
-        def list_for_retrieval(
+        def search_for_retrieval(
             self,
             *,
             domain: str,
             scope_ref: dict[str, str],
+            query_text: str,
+            query_tokens: list[str],
             limit: int,
         ) -> list[dict[str, object]]:
             return []
@@ -538,19 +558,23 @@ def test_retrieval_service_uses_canonical_summary_for_candidate_matching() -> No
                 },
             ]
 
-        def list_for_retrieval(
+        def search_for_retrieval(
             self,
             *,
             domain: str,
             scope_ref: dict[str, str],
+            query_text: str,
+            query_tokens: list[str],
             limit: int,
         ) -> list[dict[str, object]]:
             self.calls.append(
                 {
                     "domain": domain,
                     "scope_ref": scope_ref,
+                    "query_text": query_text,
+                    "query_tokens": query_tokens,
                     "limit": limit,
-                    "method": "list_for_retrieval",
+                    "method": "search_for_retrieval",
                 }
             )
             return []
@@ -580,8 +604,10 @@ def test_retrieval_service_uses_canonical_summary_for_candidate_matching() -> No
         {
             "domain": "recruiting",
             "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "query_text": "backend python gaps",
+            "query_tokens": ["backend", "python", "gaps"],
             "limit": 50,
-            "method": "list_for_retrieval",
+            "method": "search_for_retrieval",
         },
     ]
 
@@ -602,19 +628,23 @@ def test_retrieval_service_discovers_canonical_only_personal_candidate() -> None
             self.calls.append({"ids": ids, "scope_ref": scope_ref, "method": "get_by_ids"})
             return []
 
-        def list_for_retrieval(
+        def search_for_retrieval(
             self,
             *,
             domain: str,
             scope_ref: dict[str, str],
+            query_text: str,
+            query_tokens: list[str],
             limit: int,
         ) -> list[dict[str, object]]:
             self.calls.append(
                 {
                     "domain": domain,
                     "scope_ref": scope_ref,
+                    "query_text": query_text,
+                    "query_tokens": query_tokens,
                     "limit": limit,
-                    "method": "list_for_retrieval",
+                    "method": "search_for_retrieval",
                 }
             )
             return [
@@ -687,8 +717,10 @@ def test_retrieval_service_discovers_canonical_only_personal_candidate() -> None
         {
             "domain": "recruiting",
             "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "query_text": "backend python depth",
+            "query_tokens": ["backend", "python", "depth"],
             "limit": 50,
-            "method": "list_for_retrieval",
+            "method": "search_for_retrieval",
         }
     ]
 

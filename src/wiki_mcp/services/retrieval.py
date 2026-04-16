@@ -86,6 +86,8 @@ class DefaultRetrievalService:
                 layer=layer,
                 domain=domain,
                 pages=pages,
+                normalized_question=normalized_question,
+                query_tokens=query_tokens,
                 requested_scope=scope_ref,
             )
             prefetched_records_by_layer[layer] = records_by_id
@@ -153,6 +155,8 @@ class DefaultRetrievalService:
         layer: str,
         domain: str,
         pages: list[RenderedPageSummary],
+        normalized_question: str,
+        query_tokens: list[str],
         requested_scope: ScopeRef,
     ) -> dict[str, dict[str, Any]]:
         records_by_id = {
@@ -166,6 +170,8 @@ class DefaultRetrievalService:
         for record in self._list_records_for_retrieval(
             layer=layer,
             domain=domain,
+            query_text=normalized_question,
+            query_tokens=query_tokens,
             requested_scope=requested_scope,
         ):
             records_by_id.setdefault(record["id"], record)
@@ -583,14 +589,18 @@ class DefaultRetrievalService:
         *,
         layer: str,
         domain: str,
+        query_text: str,
+        query_tokens: list[str],
         requested_scope: ScopeRef,
     ) -> list[dict[str, Any]]:
         if layer == "personal" and self.personal_repository is not None:
             return cast(
                 list[dict[str, Any]],
-                self.personal_repository.list_for_retrieval(
+                self.personal_repository.search_for_retrieval(
                     domain=domain,
                     scope_ref=requested_scope,
+                    query_text=query_text,
+                    query_tokens=query_tokens,
                     limit=self.page_scan_limit,
                 ),
             )
@@ -598,18 +608,22 @@ class DefaultRetrievalService:
         if layer == "interpretation" and self.interpretation_repository is not None:
             return cast(
                 list[dict[str, Any]],
-                self.interpretation_repository.list_for_retrieval(
+                self.interpretation_repository.search_for_retrieval(
                     domain=domain,
                     scope_ref=shared_scope,
+                    query_text=query_text,
+                    query_tokens=query_tokens,
                     limit=self.page_scan_limit,
                 ),
             )
         if layer == "fact" and self.fact_repository is not None:
             return cast(
                 list[dict[str, Any]],
-                self.fact_repository.list_for_retrieval(
+                self.fact_repository.search_for_retrieval(
                     domain=domain,
                     scope_ref=shared_scope,
+                    query_text=query_text,
+                    query_tokens=query_tokens,
                     limit=self.page_scan_limit,
                 ),
             )
@@ -765,6 +779,10 @@ class DefaultRetrievalService:
             return None
         if layer == "personal":
             return cast(PersonalRecord, record)["snapshot_ref"]
+        if layer == "interpretation":
+            return {
+                "fact_snapshot_id": cast(InterpretationRecord, record)["fact_snapshot_id"]
+            }
         return None
 
     def _normalize(self, value: str) -> str:

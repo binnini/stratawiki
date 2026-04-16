@@ -12,6 +12,7 @@ from wiki_mcp.storage.postgres.repositories import (
     PostgresFactRepository,
     PostgresInterpretationRepository,
     PostgresOutboxRepository,
+    PostgresPersonalRepository,
     PostgresSnapshotRepository,
 )
 
@@ -259,6 +260,104 @@ def test_interpretation_repository_saves_records_with_fact_snapshot(
 
     assert stored_ids == ["interp:company_hiring_pattern:company-name:jobswiki"]
     assert loaded[0]["body"]["summary"] == "JobsWiki is actively hiring."
+    assert loaded[0]["fact_snapshot_id"] == "fact_snap:1"
+
+
+def test_personal_repository_search_for_retrieval_prefers_lexical_match_over_recency(
+    postgres_connection: Connection[dict],
+) -> None:
+    repository = PostgresPersonalRepository(postgres_connection)
+
+    repository.save_record(
+        {
+            "id": "personal:recent-1",
+            "domain": "recruiting",
+            "kind": "weekly_action_plan",
+            "title": "Weekly admin notes",
+            "summary": "Follow up on generic admin tasks and inbox cleanup.",
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "snapshot_ref": {
+                "fact_snapshot_id": "fact_snap:recent",
+                "interpretation_snapshot_id": "interp_snap:recent",
+                "profile_version": "profile-v3",
+            },
+            "profile_version": "profile-v3",
+            "body_path": "wiki/personal/tenant-1/user-1/recent.md",
+            "status": "active",
+            "schema_version": "v1",
+            "provenance": {"source": "test"},
+        }
+    )
+    repository.save_record(
+        {
+            "id": "personal:gap-1",
+            "domain": "recruiting",
+            "kind": "profile_gap_analysis",
+            "title": "Backend gap analysis",
+            "summary": "Your strongest gaps are backend Python depth and production debugging evidence.",
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "snapshot_ref": {
+                "fact_snapshot_id": "fact_snap:gap",
+                "interpretation_snapshot_id": "interp_snap:gap",
+                "profile_version": "profile-v3",
+            },
+            "profile_version": "profile-v3",
+            "body_path": "wiki/personal/tenant-1/user-1/gap.md",
+            "status": "active",
+            "schema_version": "v1",
+            "provenance": {"source": "test"},
+        }
+    )
+
+    results = repository.search_for_retrieval(
+        domain="recruiting",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+        query_text="backend python depth",
+        query_tokens=["backend", "python", "depth"],
+        limit=5,
+    )
+
+    assert [record["id"] for record in results] == ["personal:gap-1"]
+
+
+def test_interpretation_repository_search_for_retrieval_matches_canonical_summary(
+    postgres_connection: Connection[dict],
+) -> None:
+    repository = PostgresInterpretationRepository(postgres_connection)
+
+    repository.save_records(
+        [
+            {
+                "id": "interp:market-1",
+                "domain": "recruiting",
+                "kind": "market_summary",
+                "subject_type": "career_path",
+                "subject_id": "backend-transition",
+                "scope_ref": {"scope": "shared"},
+                "schema_version": "v1",
+                "status": "active",
+                "confidence": 0.8,
+                "fact_snapshot_id": "fact_snap:search",
+                "computed_at": "2026-04-16T00:00:00Z",
+                "expires_at": None,
+                "body": {"summary": "Backend Python hiring remains active in Seoul."},
+                "provenance": {"source": "test"},
+                "render_hints": {},
+            }
+        ],
+        {"fact_snapshot_id": "fact_snap:search"},
+    )
+
+    results = repository.search_for_retrieval(
+        domain="recruiting",
+        scope_ref={"scope": "shared"},
+        query_text="backend python hiring",
+        query_tokens=["backend", "python", "hiring"],
+        limit=5,
+    )
+
+    assert [record["id"] for record in results] == ["interp:market-1"]
+    assert results[0]["fact_snapshot_id"] == "fact_snap:search"
 
 
 def test_dependency_repository_matches_rendered_pages_by_scope(

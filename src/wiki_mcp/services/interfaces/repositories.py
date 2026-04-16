@@ -28,14 +28,16 @@ class FactRepository(Protocol):
     ) -> list[FactRecord]:
         """Load Fact records by id with scope filtering."""
 
-    def list_for_retrieval(
+    def search_for_retrieval(
         self,
         *,
         domain: str,
         scope_ref: ScopeRef,
+        query_text: str,
+        query_tokens: list[str],
         limit: int,
     ) -> list[FactRecord]:
-        """List recent Fact records as bounded retrieval candidates."""
+        """Search Fact records as bounded retrieval candidates."""
 
     def write_facts(
         self,
@@ -55,14 +57,16 @@ class InterpretationRepository(Protocol):
     ) -> list[InterpretationRecord]:
         """Load interpretation records by id with scope filtering."""
 
-    def list_for_retrieval(
+    def search_for_retrieval(
         self,
         *,
         domain: str,
         scope_ref: ScopeRef,
+        query_text: str,
+        query_tokens: list[str],
         limit: int,
     ) -> list[InterpretationRecord]:
-        """List recent Interpretation records as bounded retrieval candidates."""
+        """Search Interpretation records as bounded retrieval candidates."""
 
     def save_records(
         self,
@@ -82,14 +86,16 @@ class PersonalRepository(Protocol):
     ) -> list[PersonalRecord]:
         """Load personal records by id with scope filtering."""
 
-    def list_for_retrieval(
+    def search_for_retrieval(
         self,
         *,
         domain: str,
         scope_ref: ScopeRef,
+        query_text: str,
+        query_tokens: list[str],
         limit: int,
     ) -> list[PersonalRecord]:
-        """List recent Personal records as bounded retrieval candidates."""
+        """Search Personal records as bounded retrieval candidates."""
 
     def save_record(self, record: PersonalRecord) -> str:
         """Persist one Personal metadata record and return its id."""

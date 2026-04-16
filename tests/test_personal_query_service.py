@@ -528,11 +528,13 @@ def test_personal_query_service_selection_reflects_canonical_retrieval_ranking()
                 },
             ]
 
-        def list_for_retrieval(
+        def search_for_retrieval(
             self,
             *,
             domain: str,
             scope_ref: dict[str, str],
+            query_text: str,
+            query_tokens: list[str],
             limit: int,
         ) -> list[dict[str, object]]:
             return []
@@ -578,11 +580,13 @@ def test_personal_query_service_uses_canonical_only_personal_candidate_for_famil
         def get_by_ids(self, ids: list[str], scope_ref: dict[str, str]) -> list[dict[str, object]]:
             return []
 
-        def list_for_retrieval(
+        def search_for_retrieval(
             self,
             *,
             domain: str,
             scope_ref: dict[str, str],
+            query_text: str,
+            query_tokens: list[str],
             limit: int,
         ) -> list[dict[str, object]]:
             return [

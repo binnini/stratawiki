@@ -17,6 +17,7 @@ class InterpretationRecord(TypedDict):
     schema_version: str
     status: str
     confidence: float
+    fact_snapshot_id: str
     computed_at: str
     expires_at: str | None
     body: dict[str, Any]

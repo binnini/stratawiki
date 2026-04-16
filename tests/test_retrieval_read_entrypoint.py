@@ -488,3 +488,108 @@ def test_default_retrieval_read_entrypoint_discovers_canonical_only_personal_rec
         "interpretation_snapshot_id": "interp_snap:gap",
         "profile_version": "profile-v3",
     }
+
+
+def test_default_retrieval_read_entrypoint_uses_lexical_canonical_search_not_recent_only(
+    postgres_connection: Connection[dict],
+    tmp_path: Path,
+) -> None:
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO personal.record (
+                id,
+                domain,
+                kind,
+                title,
+                summary,
+                scope,
+                tenant_id,
+                user_id,
+                fact_snapshot_id,
+                interpretation_snapshot_id,
+                profile_version,
+                body_path,
+                status,
+                schema_version,
+                provenance_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            """,
+            (
+                "personal:recent-1",
+                "recruiting",
+                "weekly_action_plan",
+                "Weekly admin notes",
+                "Follow up on generic admin tasks and inbox cleanup.",
+                "user",
+                "tenant-1",
+                "user-1",
+                "fact_snap:recent",
+                "interp_snap:recent",
+                "profile-v4",
+                "wiki/personal/tenant-1/user-1/recent.md",
+                "active",
+                "v1",
+                '{"source": "test"}',
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO personal.record (
+                id,
+                domain,
+                kind,
+                title,
+                summary,
+                scope,
+                tenant_id,
+                user_id,
+                fact_snapshot_id,
+                interpretation_snapshot_id,
+                profile_version,
+                body_path,
+                status,
+                schema_version,
+                provenance_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            """,
+            (
+                "personal:gap-1",
+                "recruiting",
+                "profile_gap_analysis",
+                "Backend gap analysis",
+                "Your strongest gaps are backend Python depth and production debugging evidence.",
+                "user",
+                "tenant-1",
+                "user-1",
+                "fact_snap:gap",
+                "interp_snap:gap",
+                "profile-v4",
+                "wiki/personal/tenant-1/user-1/gap.md",
+                "active",
+                "v1",
+                '{"source": "test"}',
+            ),
+        )
+    postgres_connection.commit()
+
+    entrypoint = build_default_retrieval_read_entrypoint(
+        postgres_connection,
+        render_root=tmp_path,
+    )
+
+    result = entrypoint.retrieve_personal_context(
+        domain="recruiting",
+        tenant_id="tenant-1",
+        user_id="user-1",
+        question="backend python depth",
+    )
+
+    assert result["retrieval"]["personal_ids"] == ["personal:gap-1"]
+    assert result["retrieval"]["personal_pages"] == []
+    assert result["retrieval"]["personal_explanations"][0]["match_type"] == "contains"
+    assert result["retrieval"]["snapshot_ref"] == {
+        "fact_snapshot_id": "fact_snap:gap",
+        "interpretation_snapshot_id": "interp_snap:gap",
+        "profile_version": "profile-v4",
+    }
