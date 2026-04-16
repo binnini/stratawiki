@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import os
 from typing import Sequence
 
 import psycopg
-from psycopg.rows import dict_row
 
 from wiki_mcp.adapters.sources.worknet import (
     WorknetRecruitingExternalAdapter,
@@ -21,9 +19,6 @@ from wiki_mcp.storage.postgres import (
     PostgresOutboxRepository,
     PostgresSnapshotRepository,
 )
-
-
-DEFAULT_DATABASE_URL = "postgresql://stratawiki:stratawiki@localhost:5432/stratawiki"
 
 
 class DefaultIngestionEntrypoint:
@@ -154,9 +149,9 @@ class DefaultIngestionEntrypoint:
 
 
 def connect_postgres(database_url: str | None = None) -> psycopg.Connection[dict]:
-    resolved_url = database_url or os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
-    psycopg_url = resolved_url.replace("+psycopg", "", 1)
-    return psycopg.connect(psycopg_url, row_factory=dict_row)
+    from wiki_mcp.bootstrap import connect_postgres as bootstrap_connect_postgres
+
+    return bootstrap_connect_postgres(database_url)
 
 
 def build_default_ingestion_entrypoint(
