@@ -32,6 +32,18 @@ Current implementation assets:
 
 This means the structural schema approach is no longer only conceptual. A concrete initial migration now defines the version-one storage baseline.
 
+For the default local developer workflow, the repository now also treats the
+local PostgreSQL path as an executable baseline rather than a manual checklist:
+
+- `scripts/bootstrap_db.sh` starts Docker Compose Postgres, waits for readiness,
+  reuses the shared local `stratawiki-postgres` container when present, and
+  applies Alembic migrations
+- `tests/conftest.py` auto-bootstraps that same default local database when DB
+  integration fixtures are requested and `DATABASE_URL` is unset
+
+This keeps `pytest -q` closer to the documented happy path for local DB-backed
+verification instead of silently drifting toward skipped integration coverage.
+
 ## Guiding Principle
 
 StrataWiki uses:
