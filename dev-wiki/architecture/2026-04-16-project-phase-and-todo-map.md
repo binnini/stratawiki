@@ -5,9 +5,9 @@
 | Area | Status | Note |
 | --- | --- | --- |
 | Overall phase | In progress | Early implementation, no longer design-only |
-| Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus family-aware personal answer slice, canonical lexical discovery with snapshot carry-through |
-| Weakest | Early | Formal lexical/FTS retrieval, broader Personal coverage, domain breadth, runtime/ops |
-| Next build | Now | Decide whether retrieval should stay pragmatic lexical SQL or move to stronger indexed search |
+| Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus family-aware personal answer slice, indexed Postgres FTS retrieval |
+| Weakest | Early | Weighted/domain-tuned retrieval quality, broader Personal coverage, domain breadth, runtime/ops |
+| Next build | Now | Decide whether retrieval now needs weighted FTS, domain synonyms, or a hybrid search path |
 
 ## Operating Metadata
 
@@ -46,12 +46,13 @@
 - [x] Canonical-only Interpretation matches now preserve `fact_snapshot_id` during retrieval snapshot merge
 - [x] Canonical-only Fact matches now preserve `fact_snapshot_id` during retrieval snapshot merge
 - [x] Retrieval explanations now explicitly expose whether a match had a rendered page
+- [x] Canonical retrieval search now uses indexed Postgres FTS instead of pragmatic normalized `LIKE`
 - [x] Bootstrap/server/tool registry wiring exists
 - [x] Local and DB-backed validation are both passing on the current baseline
 
 ## Next
 
-- [ ] Decide whether retrieval should move from pragmatic lexical SQL to formal FTS or another indexed search surface
+- [ ] Decide whether retrieval now needs weighted FTS, domain synonym expansion, or hybrid search
 - [ ] Decide which additional Personal family matters most after the current trio
 - [ ] Decide whether any one family now needs richer structured fields than `recommended_actions`
 
@@ -64,15 +65,15 @@
 
 ## One-Line Read
 
-StrataWiki now has three family-aware personal answer paths plus canonical
-lexical retrieval with snapshot carry-through and explicit no-rendered-page
-explainability, but stronger indexed retrieval and broader domain maturity still
-remain early.
+StrataWiki now has three family-aware personal answer paths plus indexed
+canonical FTS retrieval with snapshot carry-through and explicit no-rendered-page
+explainability, but domain-tuned retrieval quality and broader domain maturity
+still remain early.
 
 ## Open Questions
 
-- Should retrieval now move from normalized `LIKE` matching to formal Postgres
-  FTS or another indexed lexical search surface?
+- Should retrieval now add weighted FTS fields, domain synonym expansion, or a
+  hybrid search path on top of the current indexed Postgres FTS baseline?
 - When should answer quality move beyond deterministic summary assembly?
 - Which follow-up slice matters more now: canonical retrieval quality or another
   Personal family?

@@ -26,38 +26,18 @@ def _normalized_text_sql(*parts: str) -> str:
     )
 
 
-def _search_filter_sql(
+def _fts_query_sql(
     *,
-    search_expr: str,
     query_text: str,
-    query_tokens: list[str],
 ) -> tuple[str, list[Any]]:
-    clauses: list[str] = []
-    params: list[Any] = []
-    if query_text:
-        clauses.append(f"{search_expr} LIKE %s")
-        params.append(f"%{query_text}%")
-    for token in query_tokens:
-        clauses.append(f"{search_expr} LIKE %s")
-        params.append(f"%{token}%")
-    return " OR ".join(clauses) if clauses else "FALSE", params
+    return "websearch_to_tsquery('simple', %s)", [query_text]
 
 
-def _search_score_sql(
+def _fts_vector_sql(
     *,
     search_expr: str,
-    query_text: str,
-    query_tokens: list[str],
-) -> tuple[str, list[Any]]:
-    score_terms: list[str] = []
-    params: list[Any] = []
-    if query_text:
-        score_terms.append(f"CASE WHEN {search_expr} LIKE %s THEN 100 ELSE 0 END")
-        params.append(f"%{query_text}%")
-    for token in query_tokens:
-        score_terms.append(f"CASE WHEN {search_expr} LIKE %s THEN 1 ELSE 0 END")
-        params.append(f"%{token}%")
-    return " + ".join(score_terms) if score_terms else "0", params
+) -> str:
+    return f"to_tsvector('simple', {search_expr})"
 
 
 class PostgresFactRepository(PostgresRepositoryBase):
@@ -118,16 +98,8 @@ class PostgresFactRepository(PostgresRepositoryBase):
             "attributes_json->>'description'",
             "attributes_json->>'headline'",
         )
-        search_where, search_params = _search_filter_sql(
-            search_expr=search_expr,
-            query_text=query_text,
-            query_tokens=query_tokens,
-        )
-        score_sql, score_params = _search_score_sql(
-            search_expr=search_expr,
-            query_text=query_text,
-            query_tokens=query_tokens,
-        )
+        vector_sql = _fts_vector_sql(search_expr=search_expr)
+        query_sql, query_params = _fts_query_sql(query_text=query_text)
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -144,11 +116,11 @@ class PostgresFactRepository(PostgresRepositoryBase):
                     attributes_json,
                     provenance_json
                 FROM fact.record_envelopes
-                WHERE domain = %s AND {scope_sql} AND ({search_where})
-                ORDER BY {score_sql} DESC, updated_at DESC, id ASC
+                WHERE domain = %s AND {scope_sql} AND {vector_sql} @@ {query_sql}
+                ORDER BY ts_rank_cd({vector_sql}, {query_sql}) DESC, updated_at DESC, id ASC
                 LIMIT %s
                 """,
-                [domain, *scope_params, *search_params, *score_params, limit],
+                [domain, *scope_params, *query_params, *query_params, limit],
             )
             return [self._row_to_fact_record(row) for row in cursor.fetchall()]
 
@@ -347,16 +319,8 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             "body_json->>'headline'",
             "body_json->>'title'",
         )
-        search_where, search_params = _search_filter_sql(
-            search_expr=search_expr,
-            query_text=query_text,
-            query_tokens=query_tokens,
-        )
-        score_sql, score_params = _search_score_sql(
-            search_expr=search_expr,
-            query_text=query_text,
-            query_tokens=query_tokens,
-        )
+        vector_sql = _fts_vector_sql(search_expr=search_expr)
+        query_sql, query_params = _fts_query_sql(query_text=query_text)
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -379,11 +343,11 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     provenance_json,
                     render_hints_json
                 FROM interp.record
-                WHERE domain = %s AND {scope_sql} AND ({search_where})
-                ORDER BY {score_sql} DESC, updated_at DESC, id ASC
+                WHERE domain = %s AND {scope_sql} AND {vector_sql} @@ {query_sql}
+                ORDER BY ts_rank_cd({vector_sql}, {query_sql}) DESC, updated_at DESC, id ASC
                 LIMIT %s
                 """,
-                [domain, *scope_params, *search_params, *score_params, limit],
+                [domain, *scope_params, *query_params, *query_params, limit],
             )
             return [self._row_to_interpretation_record(row) for row in cursor.fetchall()]
 
@@ -549,16 +513,8 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             "summary",
             "body_path",
         )
-        search_where, search_params = _search_filter_sql(
-            search_expr=search_expr,
-            query_text=query_text,
-            query_tokens=query_tokens,
-        )
-        score_sql, score_params = _search_score_sql(
-            search_expr=search_expr,
-            query_text=query_text,
-            query_tokens=query_tokens,
-        )
+        vector_sql = _fts_vector_sql(search_expr=search_expr)
+        query_sql, query_params = _fts_query_sql(query_text=query_text)
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -579,11 +535,11 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     schema_version,
                     provenance_json
                 FROM personal.record
-                WHERE domain = %s AND {scope_sql} AND ({search_where})
-                ORDER BY {score_sql} DESC, updated_at DESC, id ASC
+                WHERE domain = %s AND {scope_sql} AND {vector_sql} @@ {query_sql}
+                ORDER BY ts_rank_cd({vector_sql}, {query_sql}) DESC, updated_at DESC, id ASC
                 LIMIT %s
                 """,
-                [domain, *scope_params, *search_params, *score_params, limit],
+                [domain, *scope_params, *query_params, *query_params, limit],
             )
             return [self._row_to_personal_record(row) for row in cursor.fetchall()]
 
