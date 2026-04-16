@@ -234,6 +234,15 @@ The `ops` schema stores operational state required for asynchronous projection a
 - `attempt_count`
 - scheduling and processing timestamps
 - `last_error`
+- retry state derived from `status`, `attempt_count`, and `available_at`
+
+The current repository behavior uses:
+
+- `pending` for ready or requeued work
+- `claimed` while one worker owns the event
+- `processed` after successful completion
+- `failed` for terminal failures
+- exponential backoff for retryable failures until the max-attempt limit
 
 ### Notes
 

@@ -193,6 +193,13 @@ class DefaultPersonalStaleWorker:
                 result = self.personal_stale_marking_service.mark_from_interpretation_event(
                     event
                 )
+            except ValueError as exc:
+                self.outbox_repository.mark_failed(
+                    event["id"],
+                    str(exc),
+                    retryable=False,
+                )
+                continue
             except Exception as exc:
                 self.outbox_repository.mark_failed(event["id"], str(exc))
                 continue

@@ -114,8 +114,14 @@ class OutboxRepository(Protocol):
     def mark_processed(self, event_id: str) -> None:
         """Mark a claimed outbox event as processed."""
 
-    def mark_failed(self, event_id: str, error_message: str) -> None:
-        """Mark a claimed outbox event as failed."""
+    def mark_failed(
+        self,
+        event_id: str,
+        error_message: str,
+        *,
+        retryable: bool = True,
+    ) -> None:
+        """Requeue or terminally fail a claimed outbox event."""
 
 
 class DependencyRepository(Protocol):

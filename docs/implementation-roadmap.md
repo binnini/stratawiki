@@ -282,8 +282,10 @@ Status:
   source event processed
 - a second worker path now claims `interpretation_snapshot_published` events
   and marks dependent Personal records `stale`
-- broader stale-marking, retry policy, cache policies, and inspection tools
-  remain to be implemented
+- outbox retry policy now exists: retryable failures are requeued with
+  exponential backoff and terminal failures stop after the max-attempt limit
+- broader stale-marking, cache policies, and inspection tools remain to be
+  implemented
 
 Exit criteria:
 

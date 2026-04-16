@@ -342,6 +342,13 @@ class DefaultOutboxProjectionWorker:
         for event in claimed_events:
             try:
                 result = self.interpretation_projection_service.project_fact_event(event)
+            except ValueError as exc:
+                self.outbox_repository.mark_failed(
+                    event["id"],
+                    str(exc),
+                    retryable=False,
+                )
+                continue
             except Exception as exc:
                 self.outbox_repository.mark_failed(event["id"], str(exc))
                 continue

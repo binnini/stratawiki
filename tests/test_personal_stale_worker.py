@@ -7,7 +7,7 @@ class StubOutboxRepository:
     def __init__(self) -> None:
         self.claim_calls: list[tuple[int, list[str] | None]] = []
         self.processed_ids: list[str] = []
-        self.failed: list[tuple[str, str]] = []
+        self.failed: list[tuple[str, str, bool]] = []
         self.events = [
             {
                 "id": "evt-2",
@@ -51,8 +51,14 @@ class StubOutboxRepository:
     def mark_processed(self, event_id: str) -> None:
         self.processed_ids.append(event_id)
 
-    def mark_failed(self, event_id: str, error_message: str) -> None:
-        self.failed.append((event_id, error_message))
+    def mark_failed(
+        self,
+        event_id: str,
+        error_message: str,
+        *,
+        retryable: bool = True,
+    ) -> None:
+        self.failed.append((event_id, error_message, retryable))
 
 
 class StubPersonalStaleMarkingService:
@@ -62,7 +68,7 @@ class StubPersonalStaleMarkingService:
     def mark_from_interpretation_event(self, event: dict[str, object]) -> list[str]:
         self.calls.append(event["id"])
         if event["id"] == "evt-3":
-            raise ValueError("cannot mark stale")
+            raise RuntimeError("temporary outage")
         return ["personal:plan-1"]
 
 
@@ -79,5 +85,24 @@ def test_worker_claims_interpretation_events_and_marks_results() -> None:
     assert outbox_repository.claim_calls == [(2, ["interpretation_snapshot_published"])]
     assert stale_service.calls == ["evt-2", "evt-3"]
     assert outbox_repository.processed_ids == ["evt-2"]
-    assert outbox_repository.failed == [("evt-3", "cannot mark stale")]
+    assert outbox_repository.failed == [("evt-3", "temporary outage", True)]
     assert results == [["personal:plan-1"]]
+
+
+def test_worker_marks_value_errors_as_terminal_failures() -> None:
+    outbox_repository = StubOutboxRepository()
+
+    class ValueErrorStaleService:
+        def mark_from_interpretation_event(self, event: dict[str, object]) -> list[str]:
+            raise ValueError("bad payload")
+
+    worker = DefaultPersonalStaleWorker(
+        outbox_repository=outbox_repository,
+        personal_stale_marking_service=ValueErrorStaleService(),
+    )
+
+    results = worker.run_once(limit=1)
+
+    assert outbox_repository.processed_ids == []
+    assert outbox_repository.failed == [("evt-2", "bad payload", False)]
+    assert results == []

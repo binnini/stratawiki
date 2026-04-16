@@ -691,17 +691,52 @@ class PostgresOutboxRepository(PostgresRepositoryBase):
                 (event_id,),
             )
 
-    def mark_failed(self, event_id: str, error_message: str) -> None:
+    def mark_failed(
+        self,
+        event_id: str,
+        error_message: str,
+        *,
+        retryable: bool = True,
+    ) -> None:
+        max_attempts = 3
+        base_delay_seconds = 30
+
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 """
                 UPDATE ops.outbox_event
                 SET
-                    status = 'failed',
+                    status = CASE
+                        WHEN %s AND attempt_count < %s THEN 'pending'
+                        ELSE 'failed'
+                    END,
+                    available_at = CASE
+                        WHEN %s AND attempt_count < %s THEN
+                            NOW()
+                            + (
+                                (%s * POWER(2, GREATEST(attempt_count - 1, 0)))
+                                * INTERVAL '1 second'
+                            )
+                        ELSE available_at
+                    END,
+                    claimed_at = CASE
+                        WHEN %s AND attempt_count < %s THEN NULL
+                        ELSE claimed_at
+                    END,
                     last_error = %s
                 WHERE id = %s
                 """,
-                (error_message, event_id),
+                (
+                    retryable,
+                    max_attempts,
+                    retryable,
+                    max_attempts,
+                    base_delay_seconds,
+                    retryable,
+                    max_attempts,
+                    error_message,
+                    event_id,
+                ),
             )
 
     def _row_to_outbox_event_record(self, row: Any) -> OutboxEventRecord:

@@ -299,6 +299,13 @@ The first concrete projection contract is:
 6. Personal stale worker claims `interpretation_snapshot_published`
 7. worker marks dependent Personal records `stale`
 
+Worker failure policy in v1:
+
+- `ValueError` is treated as terminal and marks the event `failed`
+- other exceptions are treated as retryable and requeue the event
+- retryable failures use exponential backoff
+- events stop retrying after the max-attempt threshold
+
 The `fact_ingested` payload should carry enough context for downstream
 projection without re-reading the original source envelope:
 

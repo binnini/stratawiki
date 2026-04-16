@@ -360,3 +360,93 @@ def test_dependency_repository_matches_rendered_pages_by_scope(
         "affected_rendered_paths": ["wiki/personal/tenant-1/user-1/plan-1.md"],
         "affected_personal_ids": ["personal:plan-1"],
     }
+
+
+def test_outbox_repository_requeues_retryable_failures(
+    postgres_connection: Connection[dict],
+) -> None:
+    repository = PostgresOutboxRepository(postgres_connection)
+    [event_id] = repository.append_events(
+        [
+            {
+                "event_type": "fact_ingested",
+                "aggregate_layer": "fact",
+                "aggregate_id": "fact_snap:retry-1",
+                "payload": {"fact_snapshot_id": "fact_snap:retry-1"},
+            }
+        ]
+    )
+
+    repository.claim_pending(limit=1, event_types=["fact_ingested"])
+    repository.mark_failed(event_id, "temporary outage")
+
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT status, attempt_count, last_error, claimed_at IS NULL AS unclaimed,
+                   available_at > NOW() AS delayed
+            FROM ops.outbox_event
+            WHERE id = %s
+            """,
+            (event_id,),
+        )
+        row = cursor.fetchone()
+
+    assert row == {
+        "status": "pending",
+        "attempt_count": 1,
+        "last_error": "temporary outage",
+        "unclaimed": True,
+        "delayed": True,
+    }
+
+
+def test_outbox_repository_terminally_fails_non_retryable_or_exhausted_events(
+    postgres_connection: Connection[dict],
+) -> None:
+    repository = PostgresOutboxRepository(postgres_connection)
+    [event_id] = repository.append_events(
+        [
+            {
+                "event_type": "fact_ingested",
+                "aggregate_layer": "fact",
+                "aggregate_id": "fact_snap:retry-2",
+                "payload": {"fact_snapshot_id": "fact_snap:retry-2"},
+            }
+        ]
+    )
+
+    repository.claim_pending(limit=1, event_types=["fact_ingested"])
+    repository.mark_failed(event_id, "bad payload", retryable=False)
+
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT status, last_error FROM ops.outbox_event WHERE id = %s",
+            (event_id,),
+        )
+        non_retryable_row = cursor.fetchone()
+        cursor.execute(
+            """
+            UPDATE ops.outbox_event
+            SET status = 'claimed', attempt_count = 3, claimed_at = NOW()
+            WHERE id = %s
+            """,
+            (event_id,),
+        )
+    postgres_connection.commit()
+
+    repository.mark_failed(event_id, "still broken")
+
+    with postgres_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT status, attempt_count, last_error FROM ops.outbox_event WHERE id = %s",
+            (event_id,),
+        )
+        exhausted_row = cursor.fetchone()
+
+    assert non_retryable_row == {"status": "failed", "last_error": "bad payload"}
+    assert exhausted_row == {
+        "status": "failed",
+        "attempt_count": 3,
+        "last_error": "still broken",
+    }
