@@ -85,3 +85,29 @@ Separation rule:
   than canonical interpretation-family count.
 - Re-run the Postgres-backed suite when a reachable DB is available to confirm
   the refactor preserved rendered-page writes and snapshot publication.
+
+## Verification
+
+- `pytest -q`
+  - `41 passed, 14 skipped, 1 warning`
+- `DATABASE_URL=postgresql+psycopg://stratawiki:stratawiki@localhost:5432/stratawiki pytest -q`
+  - `41 passed, 14 skipped, 1 warning`
+
+## Final State
+
+- `DefaultInterpretationProjectionService` now remains a batch coordinator only.
+- Shared interpretation family logic now lives under
+  `src/wiki_mcp/services/interpretation_families/`.
+- Current package split:
+  - `base.py`
+  - `common.py`
+  - `registry.py`
+  - `company_hiring_pattern.py`
+  - `company_candidate_profile_pattern.py`
+- Renderer splitting was intentionally deferred because current families still
+  have a 1:1 relationship between canonical record shape and markdown layout.
+
+## Commits
+
+- `793efb4` `Refactor interpretation family builders`
+- `0f62451` `Split interpretation family modules`
