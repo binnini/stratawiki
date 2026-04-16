@@ -5,9 +5,9 @@
 | Area | Status | Note |
 | --- | --- | --- |
 | Overall phase | In progress | Early implementation, no longer design-only |
-| Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus first personal answer slice |
-| Weakest | Early | Retrieval quality, broader Personal coverage, domain breadth, runtime/ops |
-| Next build | Now | Open a dedicated canonical retrieval strengthening slice |
+| Strongest | Good | Storage/contracts, projection, rendered reads, Personal regen, retrieval plus family-aware personal answer slice |
+| Weakest | Early | Canonical candidate discovery breadth, broader Personal coverage, domain breadth, runtime/ops |
+| Next build | Now | Decide whether to widen retrieval from canonical ranking strengthening into canonical candidate discovery |
 
 ## Operating Metadata
 
@@ -15,8 +15,8 @@
 | --- | --- |
 | Current branch | `feat/query-personal-knowledge-first-slice` |
 | Main worktree | `/home/yebin/projects/stratawiki` |
-| Last verified tests | `pytest -q` -> `55 passed, 15 skipped` |
-| Last verified DB-backed tests | `DATABASE_URL=postgresql+psycopg://stratawiki:stratawiki@localhost:5432/stratawiki pytest -q` -> `54 passed, 15 skipped` |
+| Last verified tests | `pytest -q` -> `57 passed, 15 skipped` |
+| Last verified DB-backed tests | `DATABASE_URL=postgresql+psycopg://stratawiki:stratawiki@localhost:5432/stratawiki pytest -q` -> `57 passed, 15 skipped` |
 | Current dashboard source | `dev-wiki/architecture/2026-04-16-project-phase-and-todo-map.md` |
 | Official roadmap | `docs/implementation-roadmap.md` |
 
@@ -38,12 +38,14 @@
 - [x] Personal answers now return structured rationale items
 - [x] Current decision: retrieval remains page-summary-first for now
 - [x] Current decision: structured answer fields stay at `recommended_actions` plus rationale items
+- [x] Retrieval ranking now uses canonical summaries/titles in addition to rendered page metadata
+- [x] Stronger retrieval ranking now affects personal answer lead-item selection without changing the answer contract
 - [x] Bootstrap/server/tool registry wiring exists
 - [x] Local and DB-backed validation are both passing on the current baseline
 
 ## Next
 
-- [ ] Strengthen canonical retrieval without breaking the current answer bundle contract
+- [ ] Decide whether retrieval should move from canonical ranking strengthening to canonical candidate discovery
 - [ ] Decide which additional Personal family matters most after the current trio
 - [ ] Decide whether any one family now needs richer structured fields than `recommended_actions`
 
@@ -56,14 +58,14 @@
 
 ## One-Line Read
 
-StrataWiki now has three family-aware personal answer paths plus structured
-rationale, but stronger retrieval quality and broader domain maturity still
-remain early.
+StrataWiki now has three family-aware personal answer paths plus canonical-aware
+retrieval ranking, but broader canonical retrieval discovery and domain maturity
+still remain early.
 
 ## Open Questions
 
-- Should retrieval remain page-summary centric, or should canonical
-  read/search become the next stronger dependency?
+- Should retrieval now move beyond rendered page enumeration entirely, or is
+  canonical-aware ranking sufficient for one more slice?
 - When should answer quality move beyond deterministic summary assembly?
 - Which follow-up slice matters more now: canonical retrieval quality or another
   Personal family?

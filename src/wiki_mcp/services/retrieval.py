@@ -72,6 +72,7 @@ class DefaultRetrievalService:
         structured_lookup = self._looks_structured(question)
         matches_by_layer: dict[str, list[RenderedPageSummary]] = {}
         explanations_by_layer: dict[str, list[RetrievalMatchExplanation]] = {}
+        prefetched_records_by_layer: dict[str, list[dict[str, Any]]] = {}
 
         for layer in self.layer_order:
             pages = self.page_read_service.list_pages(
@@ -80,6 +81,16 @@ class DefaultRetrievalService:
                 layer=layer,
                 limit=self.page_scan_limit,
             )
+            prefetched_records = self._prefetch_records(
+                layer=layer,
+                pages=pages,
+                requested_scope=scope_ref,
+            )
+            prefetched_records_by_layer[layer] = prefetched_records
+            record_summaries = self._record_summaries_for_layer(
+                layer=layer,
+                records=prefetched_records,
+            )
             matched_candidates = self._match_pages(
                 pages,
                 layer=layer,
@@ -87,6 +98,7 @@ class DefaultRetrievalService:
                 query_tokens=query_tokens,
                 structured_lookup=structured_lookup,
                 profile_context=profile_context,
+                record_summaries=record_summaries,
             )[: self.layer_result_limit]
             matches_by_layer[layer] = [page for page, _ in matched_candidates]
             explanations_by_layer[layer] = [
@@ -110,7 +122,11 @@ class DefaultRetrievalService:
             "interpretation_explanations": explanations_by_layer["interpretation"],
             "fact_explanations": explanations_by_layer["fact"],
         }
-        hydrated_records = self._hydrate_records(matches_by_layer, requested_scope=scope_ref)
+        hydrated_records = self._hydrate_records(
+            matches_by_layer,
+            requested_scope=scope_ref,
+            prefetched_records_by_layer=prefetched_records_by_layer,
+        )
         result.update(hydrated_records)
 
         snapshot_ref = self._merge_snapshot_ref(matches_by_layer)
@@ -124,42 +140,56 @@ class DefaultRetrievalService:
         matches_by_layer: dict[str, list[RenderedPageSummary]],
         *,
         requested_scope: ScopeRef,
+        prefetched_records_by_layer: dict[str, list[dict[str, Any]]] | None = None,
     ) -> RetrievalResult:
         hydrated: dict[str, Any] = {}
+        prefetched_records_by_layer = prefetched_records_by_layer or {}
 
         personal_ids = [page["record_id"] for page in matches_by_layer["personal"]]
         if personal_ids and self.personal_repository is not None:
+            personal_records = cast(
+                list[PersonalRecord] | None,
+                prefetched_records_by_layer.get("personal"),
+            )
+            if personal_records is None:
+                personal_records = self.personal_repository.get_by_ids(personal_ids, requested_scope)
             hydrated["personal_records"] = self._ordered_records(
                 personal_ids,
-                self._map_personal_records(
-                    self.personal_repository.get_by_ids(personal_ids, requested_scope)
-                ),
+                self._map_personal_records(personal_records),
             )
 
         interpretation_ids = [
             page["record_id"] for page in matches_by_layer["interpretation"]
         ]
         if interpretation_ids and self.interpretation_repository is not None:
+            interpretation_records = cast(
+                list[InterpretationRecord] | None,
+                prefetched_records_by_layer.get("interpretation"),
+            )
+            if interpretation_records is None:
+                interpretation_records = self.interpretation_repository.get_by_ids(
+                    interpretation_ids,
+                    self._scope_for_layer("interpretation", requested_scope),
+                )
             hydrated["interpretation_records"] = self._ordered_records(
                 interpretation_ids,
-                self._map_interpretation_records(
-                    self.interpretation_repository.get_by_ids(
-                        interpretation_ids,
-                        self._scope_for_layer("interpretation", requested_scope),
-                    )
-                ),
+                self._map_interpretation_records(interpretation_records),
             )
 
         fact_ids = [page["record_id"] for page in matches_by_layer["fact"]]
         if fact_ids and self.fact_repository is not None:
+            fact_records = cast(
+                list[FactRecord] | None,
+                prefetched_records_by_layer.get("fact"),
+            )
+            if fact_records is None:
+                fact_records = self.fact_repository.get_by_ids(
+                    fact_ids,
+                    self._scope_for_layer("fact", requested_scope),
+                )
             hydrated["fact_records"] = self._ordered_records(
                 fact_ids,
-                self._map_fact_records(
-                    self.fact_repository.get_by_ids(
-                        fact_ids,
-                        self._scope_for_layer("fact", requested_scope),
-                    )
-                ),
+                self._map_fact_records(fact_records),
             )
 
         return cast(RetrievalResult, hydrated)
@@ -242,6 +272,13 @@ class DefaultRetrievalService:
                 return value.strip()
         return None
 
+    def _summarize_fact_summary(self, attributes: dict[str, Any]) -> str | None:
+        for key in ("summary", "description", "headline"):
+            value = attributes.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
     def _scope_for_layer(self, layer: str, requested_scope: ScopeRef) -> ScopeRef:
         if layer == "personal":
             return requested_scope
@@ -256,6 +293,7 @@ class DefaultRetrievalService:
         query_tokens: list[str],
         structured_lookup: bool,
         profile_context: ProfileContext | None,
+        record_summaries: dict[str, dict[str, str]],
     ) -> list[tuple[RenderedPageSummary, RetrievalMatchExplanation]]:
         exact_matches: list[tuple[RenderedPageSummary, RetrievalMatchExplanation]] = []
         scored_pages: list[
@@ -268,6 +306,7 @@ class DefaultRetrievalService:
                 normalized_question=normalized_question,
                 query_tokens=query_tokens,
                 structured_lookup=structured_lookup,
+                record_summary=record_summaries.get(page["record_id"]),
             )
             score = match_result["score"]
             if score <= 0:
@@ -316,12 +355,9 @@ class DefaultRetrievalService:
         normalized_question: str,
         query_tokens: list[str],
         structured_lookup: bool,
+        record_summary: dict[str, str] | None,
     ) -> dict[str, Any]:
-        normalized_fields = {
-            "record_id": self._normalize(page["record_id"]),
-            "title": self._normalize(page["title"]),
-            "path": self._normalize(page["path"]),
-        }
+        normalized_fields = self._normalized_search_fields(page, record_summary)
 
         exact_matches = [
             field_name
@@ -366,20 +402,10 @@ class DefaultRetrievalService:
             }
 
         token_scores = {
-            "record_id": self._token_overlap_score(
-                query_tokens,
-                self._tokenize(page["record_id"]),
-            ),
-            "title": self._token_overlap_score(
-                query_tokens,
-                self._tokenize(page["title"]),
-            ),
-            "path": self._token_overlap_score(
-                query_tokens,
-                self._tokenize(page["path"]),
-            ),
+            field_name: self._token_overlap_score(query_tokens, self._tokenize(field_value))
+            for field_name, field_value in normalized_fields.items()
         }
-        best_score = max(token_scores.values())
+        best_score = max(token_scores.values(), default=0)
         matched_fields = [
             field_name for field_name, score in token_scores.items() if score == best_score and score > 0
         ]
@@ -389,16 +415,126 @@ class DefaultRetrievalService:
             "matched_fields": matched_fields,
             "matched_token_count": max(
                 (
-                    len(set(query_tokens) & set(self._tokenize(getattr_value)))
-                    for getattr_value in (
-                        page["record_id"],
-                        page["title"],
-                        page["path"],
-                    )
+                    len(set(query_tokens) & set(self._tokenize(field_value)))
+                    for field_value in normalized_fields.values()
                 ),
                 default=0,
             ),
         }
+
+    def _normalized_search_fields(
+        self,
+        page: RenderedPageSummary,
+        record_summary: dict[str, str] | None,
+    ) -> dict[str, str]:
+        fields = {
+            "record_id": self._normalize(page["record_id"]),
+            "title": self._normalize(page["title"]),
+            "path": self._normalize(page["path"]),
+        }
+        page_summary = self._page_summary(page)
+        if page_summary:
+            fields["page_summary"] = self._normalize(page_summary)
+        if record_summary is not None:
+            for field_name, field_value in record_summary.items():
+                normalized_value = self._normalize(field_value)
+                if normalized_value:
+                    fields[field_name] = normalized_value
+        return fields
+
+    def _page_summary(self, page: RenderedPageSummary) -> str:
+        summary = page["metadata"].get("summary")
+        if isinstance(summary, str) and summary.strip():
+            return summary.strip()
+        return ""
+
+    def _prefetch_records(
+        self,
+        *,
+        layer: str,
+        pages: list[RenderedPageSummary],
+        requested_scope: ScopeRef,
+    ) -> list[dict[str, Any]]:
+        page_ids = [page["record_id"] for page in pages]
+        if not page_ids:
+            return []
+
+        if layer == "personal" and self.personal_repository is not None:
+            return cast(list[dict[str, Any]], self.personal_repository.get_by_ids(page_ids, requested_scope))
+        if layer == "interpretation" and self.interpretation_repository is not None:
+            return cast(list[dict[str, Any]], self.interpretation_repository.get_by_ids(
+                page_ids,
+                self._scope_for_layer(layer, requested_scope),
+            ))
+        if layer == "fact" and self.fact_repository is not None:
+            return cast(list[dict[str, Any]], self.fact_repository.get_by_ids(
+                page_ids,
+                self._scope_for_layer(layer, requested_scope),
+            ))
+        return []
+
+    def _record_summaries_for_layer(
+        self,
+        *,
+        layer: str,
+        records: list[dict[str, Any]],
+    ) -> dict[str, dict[str, str]]:
+        if layer == "personal":
+            return {
+                record["id"]: self._personal_record_search_fields(cast(PersonalRecord, record))
+                for record in records
+            }
+        if layer == "interpretation":
+            return {
+                record["id"]: self._interpretation_record_search_fields(
+                    cast(InterpretationRecord, record)
+                )
+                for record in records
+            }
+        if layer == "fact":
+            return {
+                record["id"]: self._fact_record_search_fields(cast(FactRecord, record))
+                for record in records
+            }
+        return {}
+
+    def _personal_record_search_fields(self, record: PersonalRecord) -> dict[str, str]:
+        fields: dict[str, str] = {}
+        if record["title"].strip():
+            fields["canonical_title"] = record["title"].strip()
+        if record["summary"].strip():
+            fields["canonical_summary"] = record["summary"].strip()
+        if record["kind"].strip():
+            fields["kind"] = record["kind"].strip()
+        return fields
+
+    def _interpretation_record_search_fields(
+        self,
+        record: InterpretationRecord,
+    ) -> dict[str, str]:
+        fields: dict[str, str] = {}
+        summary = self._summarize_interpretation_body(record["body"])
+        if summary is not None:
+            fields["canonical_summary"] = summary
+        if record["subject_id"].strip():
+            fields["subject_id"] = record["subject_id"].strip()
+        if record["kind"].strip():
+            fields["kind"] = record["kind"].strip()
+        return fields
+
+    def _fact_record_search_fields(self, record: FactRecord) -> dict[str, str]:
+        fields: dict[str, str] = {}
+        title = self._summarize_fact_attributes(record["attributes"])
+        if title is not None:
+            fields["canonical_title"] = title
+        summary = self._summarize_fact_summary(record["attributes"])
+        if summary is not None:
+            fields["canonical_summary"] = summary
+        if record["canonical_key"].strip():
+            fields["canonical_key"] = record["canonical_key"].strip()
+        if record["entity_type"].strip():
+            fields["entity_type"] = record["entity_type"].strip()
+        return fields
 
     def _build_match_explanation(
         self,

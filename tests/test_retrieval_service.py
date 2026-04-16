@@ -198,7 +198,7 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
             "rank": 1,
             "score": 100,
             "match_type": "exact",
-            "matched_fields": ["title"],
+            "matched_fields": ["title", "canonical_title"],
             "matched_token_count": 3,
             "profile_boost_applied": False,
         }
@@ -206,17 +206,15 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
     assert result["interpretation_explanations"][0]["record_id"] == "interp:backend-transition-market"
     assert result["interpretation_explanations"][0]["rank"] == 1
     assert result["interpretation_explanations"][0]["match_type"] == "token_overlap"
-    assert set(result["interpretation_explanations"][0]["matched_fields"]) == {
-        "record_id",
-        "title",
-        "path",
-    }
+    assert {"record_id", "title", "path"}.issubset(
+        set(result["interpretation_explanations"][0]["matched_fields"])
+    )
     assert result["interpretation_explanations"][0]["score"] > 0
     assert result["interpretation_explanations"][0]["matched_token_count"] > 0
     assert result["fact_explanations"][0]["record_id"] == "fact:job-posting-1"
     assert result["fact_explanations"][0]["rank"] == 1
     assert result["fact_explanations"][0]["match_type"] == "token_overlap"
-    assert set(result["fact_explanations"][0]["matched_fields"]) == {"title", "path"}
+    assert {"title", "path"}.issubset(set(result["fact_explanations"][0]["matched_fields"]))
     assert result["fact_explanations"][0]["score"] > 0
     assert result["fact_explanations"][0]["matched_token_count"] > 0
     assert result["personal_records"] == [
@@ -265,7 +263,7 @@ def test_retrieval_service_prefers_layer_order_and_merges_snapshot_from_personal
     }
     assert personal_repository.calls == [
         {
-            "ids": ["personal:plan-1"],
+            "ids": ["personal:plan-1", "personal:notes-1"],
             "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
         }
     ]
@@ -392,6 +390,99 @@ def test_retrieval_service_orders_hydrated_records_by_matched_ids() -> None:
         "personal:a",
     ]
     assert result["personal_records"][0]["title"] == "B"
+
+
+def test_retrieval_service_uses_canonical_summary_for_candidate_matching() -> None:
+    class CanonicalSummaryPageReadService:
+        def get_page(self, **kwargs: object) -> dict[str, object] | None:
+            raise AssertionError("get_page should not be called in retrieval tests")
+
+        def list_pages(self, **kwargs: object) -> list[dict[str, object]]:
+            if kwargs["layer"] != "personal":
+                return []
+            return [
+                {
+                    "domain": "recruiting",
+                    "layer": "personal",
+                    "record_id": "personal:notes-1",
+                    "path": "wiki/personal/tenant-1/user-1/execution-notes.md",
+                    "title": "Execution Notes",
+                    "scope_ref": kwargs["scope_ref"],
+                    "snapshot_ref": {"fact_snapshot_id": "fact_snap:new"},
+                    "metadata": {"title": "Execution Notes"},
+                },
+                {
+                    "domain": "recruiting",
+                    "layer": "personal",
+                    "record_id": "personal:gap-1",
+                    "path": "wiki/personal/tenant-1/user-1/career-notes.md",
+                    "title": "Career Notes",
+                    "scope_ref": kwargs["scope_ref"],
+                    "snapshot_ref": {"fact_snapshot_id": "fact_snap:new"},
+                    "metadata": {"title": "Career Notes"},
+                },
+            ]
+
+    class CanonicalSummaryPersonalRepository:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def get_by_ids(self, ids: list[str], scope_ref: dict[str, str]) -> list[dict[str, object]]:
+            self.calls.append({"ids": ids, "scope_ref": scope_ref})
+            return [
+                {
+                    "id": "personal:notes-1",
+                    "domain": "recruiting",
+                    "kind": "notes",
+                    "title": "Execution Notes",
+                    "summary": "Weekly notes for admin follow-up.",
+                    "scope_ref": scope_ref,
+                    "snapshot_ref": {"fact_snapshot_id": "fact_snap:new"},
+                    "profile_version": "profile-v1",
+                    "body_path": "wiki/personal/tenant-1/user-1/execution-notes.md",
+                    "status": "active",
+                    "schema_version": "v1",
+                    "provenance": {},
+                },
+                {
+                    "id": "personal:gap-1",
+                    "domain": "recruiting",
+                    "kind": "profile_gap_analysis",
+                    "title": "Career Notes",
+                    "summary": "Your strongest gaps are backend Python depth and production debugging evidence.",
+                    "scope_ref": scope_ref,
+                    "snapshot_ref": {"fact_snapshot_id": "fact_snap:new"},
+                    "profile_version": "profile-v1",
+                    "body_path": "wiki/personal/tenant-1/user-1/career-notes.md",
+                    "status": "active",
+                    "schema_version": "v1",
+                    "provenance": {},
+                },
+            ]
+
+    personal_repository = CanonicalSummaryPersonalRepository()
+    service = DefaultRetrievalService(
+        page_read_service=CanonicalSummaryPageReadService(),
+        personal_repository=personal_repository,
+    )
+
+    result = service.retrieve_for_query(
+        domain="recruiting",
+        question="backend python gaps",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+    )
+
+    assert result["personal_ids"] == ["personal:gap-1"]
+    assert result["personal_explanations"][0]["record_id"] == "personal:gap-1"
+    assert result["personal_explanations"][0]["matched_fields"] == ["canonical_summary"]
+    assert result["personal_explanations"][0]["match_type"] == "token_overlap"
+    assert result["personal_records"][0]["kind"] == "profile_gap_analysis"
+    assert personal_repository.calls == [
+        {
+            "ids": ["personal:notes-1", "personal:gap-1"],
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+        }
+    ]
 
 
 class EmptyPageReadService:

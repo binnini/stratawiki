@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from wiki_mcp.services.retrieval import DefaultRetrievalService
 from wiki_mcp.services.personal_query import DefaultPersonalQueryService
 
 
@@ -445,3 +446,112 @@ def test_personal_query_service_builds_weekly_action_plan_family_answer() -> Non
     assert answer["recommended_actions"][0].startswith("Execute the top weekly priority")
     assert "## This Week" in answer["answer_markdown"]
     assert answer["answer_rationale_items"][1]["category"] == "ranking"
+
+
+def test_personal_query_service_selection_reflects_canonical_retrieval_ranking() -> None:
+    class CanonicalSummaryPageReadService:
+        def get_page(self, **kwargs: object) -> dict[str, object] | None:
+            raise AssertionError("get_page should not be called in personal query tests")
+
+        def list_pages(self, **kwargs: object) -> list[dict[str, object]]:
+            if kwargs["layer"] == "personal":
+                return [
+                    {
+                        "domain": "recruiting",
+                        "layer": "personal",
+                        "record_id": "personal:weekly-1",
+                        "path": "wiki/personal/tenant-1/user-1/execution-notes.md",
+                        "title": "Execution Notes",
+                        "scope_ref": kwargs["scope_ref"],
+                        "snapshot_ref": {
+                            "fact_snapshot_id": "fact_snap:new",
+                            "interpretation_snapshot_id": "interp_snap:new",
+                            "profile_version": "profile-v2",
+                        },
+                        "metadata": {"title": "Execution Notes"},
+                    },
+                    {
+                        "domain": "recruiting",
+                        "layer": "personal",
+                        "record_id": "personal:gap-1",
+                        "path": "wiki/personal/tenant-1/user-1/career-notes.md",
+                        "title": "Career Notes",
+                        "scope_ref": kwargs["scope_ref"],
+                        "snapshot_ref": {
+                            "fact_snapshot_id": "fact_snap:new",
+                            "interpretation_snapshot_id": "interp_snap:new",
+                            "profile_version": "profile-v2",
+                        },
+                        "metadata": {"title": "Career Notes"},
+                    },
+                ]
+            return []
+
+    class CanonicalSummaryPersonalRepository:
+        def get_by_ids(self, ids: list[str], scope_ref: dict[str, str]) -> list[dict[str, object]]:
+            return [
+                {
+                    "id": "personal:weekly-1",
+                    "domain": "recruiting",
+                    "kind": "weekly_action_plan",
+                    "title": "Execution Notes",
+                    "summary": "Weekly admin follow-up and generic applications.",
+                    "scope_ref": scope_ref,
+                    "snapshot_ref": {
+                        "fact_snapshot_id": "fact_snap:new",
+                        "interpretation_snapshot_id": "interp_snap:new",
+                        "profile_version": "profile-v2",
+                    },
+                    "profile_version": "profile-v2",
+                    "body_path": "wiki/personal/tenant-1/user-1/execution-notes.md",
+                    "status": "active",
+                    "schema_version": "v1",
+                    "provenance": {},
+                },
+                {
+                    "id": "personal:gap-1",
+                    "domain": "recruiting",
+                    "kind": "profile_gap_analysis",
+                    "title": "Career Notes",
+                    "summary": "Your strongest gaps are backend Python depth and production debugging evidence.",
+                    "scope_ref": scope_ref,
+                    "snapshot_ref": {
+                        "fact_snapshot_id": "fact_snap:new",
+                        "interpretation_snapshot_id": "interp_snap:new",
+                        "profile_version": "profile-v2",
+                    },
+                    "profile_version": "profile-v2",
+                    "body_path": "wiki/personal/tenant-1/user-1/career-notes.md",
+                    "status": "active",
+                    "schema_version": "v1",
+                    "provenance": {},
+                },
+            ]
+
+    retrieval_service = DefaultRetrievalService(
+        page_read_service=CanonicalSummaryPageReadService(),
+        personal_repository=CanonicalSummaryPersonalRepository(),
+    )
+    service = DefaultPersonalQueryService(retrieval_service=retrieval_service)
+
+    _, answer = service.query_personal_knowledge(
+        domain="recruiting",
+        question="backend python depth",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+        profile_context={
+            "user_id": "user-1",
+            "tenant_id": "tenant-1",
+            "domain": "recruiting",
+            "profile_version": "profile-v2",
+            "goals": ["transition_to_backend"],
+            "preferences": {},
+            "attributes": {},
+        },
+    )
+
+    assert answer["personal_family"] == "profile_gap_analysis"
+    assert answer["input_bundle"]["personal_context"][0]["record_id"] == "personal:gap-1"
+    assert answer["input_bundle"]["personal_context"][0]["matched_fields"] == [
+        "canonical_summary"
+    ]
+    assert answer["answer_summary"].startswith("Current profile gap focus:")
