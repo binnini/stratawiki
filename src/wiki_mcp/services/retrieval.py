@@ -1,13 +1,26 @@
 from __future__ import annotations
 
 import re
-from typing import cast
+from typing import Any, cast
 
+from wiki_mcp.schemas.fact_record import FactRecord
+from wiki_mcp.schemas.interpretation_record import InterpretationRecord
+from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
 from wiki_mcp.schemas.rendered_page_summary import RenderedPageSummary
+from wiki_mcp.schemas.retrieval_fact_summary import RetrievalFactSummary
+from wiki_mcp.schemas.retrieval_interpretation_summary import (
+    RetrievalInterpretationSummary,
+)
+from wiki_mcp.schemas.retrieval_personal_summary import RetrievalPersonalSummary
 from wiki_mcp.schemas.retrieval_result import RetrievalResult
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
+from wiki_mcp.services.interfaces.repositories import (
+    FactRepository,
+    InterpretationRepository,
+    PersonalRepository,
+)
 from wiki_mcp.services.interfaces.page_reads import PageReadService
 
 
@@ -20,10 +33,16 @@ class DefaultRetrievalService:
         self,
         *,
         page_read_service: PageReadService,
+        fact_repository: FactRepository | None = None,
+        interpretation_repository: InterpretationRepository | None = None,
+        personal_repository: PersonalRepository | None = None,
         page_scan_limit: int = 50,
         layer_result_limit: int = 5,
     ) -> None:
         self.page_read_service = page_read_service
+        self.fact_repository = fact_repository
+        self.interpretation_repository = interpretation_repository
+        self.personal_repository = personal_repository
         self.page_scan_limit = page_scan_limit
         self.layer_result_limit = layer_result_limit
 
@@ -74,12 +93,137 @@ class DefaultRetrievalService:
             "interpretation_pages": matches_by_layer["interpretation"],
             "fact_pages": matches_by_layer["fact"],
         }
+        hydrated_records = self._hydrate_records(matches_by_layer, requested_scope=scope_ref)
+        result.update(hydrated_records)
 
         snapshot_ref = self._merge_snapshot_ref(matches_by_layer)
         if snapshot_ref is not None:
             result["snapshot_ref"] = snapshot_ref
 
         return result
+
+    def _hydrate_records(
+        self,
+        matches_by_layer: dict[str, list[RenderedPageSummary]],
+        *,
+        requested_scope: ScopeRef,
+    ) -> RetrievalResult:
+        hydrated: dict[str, Any] = {}
+
+        personal_ids = [page["record_id"] for page in matches_by_layer["personal"]]
+        if personal_ids and self.personal_repository is not None:
+            hydrated["personal_records"] = self._ordered_records(
+                personal_ids,
+                self._map_personal_records(
+                    self.personal_repository.get_by_ids(personal_ids, requested_scope)
+                ),
+            )
+
+        interpretation_ids = [
+            page["record_id"] for page in matches_by_layer["interpretation"]
+        ]
+        if interpretation_ids and self.interpretation_repository is not None:
+            hydrated["interpretation_records"] = self._ordered_records(
+                interpretation_ids,
+                self._map_interpretation_records(
+                    self.interpretation_repository.get_by_ids(
+                        interpretation_ids,
+                        self._scope_for_layer("interpretation", requested_scope),
+                    )
+                ),
+            )
+
+        fact_ids = [page["record_id"] for page in matches_by_layer["fact"]]
+        if fact_ids and self.fact_repository is not None:
+            hydrated["fact_records"] = self._ordered_records(
+                fact_ids,
+                self._map_fact_records(
+                    self.fact_repository.get_by_ids(
+                        fact_ids,
+                        self._scope_for_layer("fact", requested_scope),
+                    )
+                ),
+            )
+
+        return cast(RetrievalResult, hydrated)
+
+    def _ordered_records(
+        self,
+        expected_ids: list[str],
+        records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        records_by_id = {record["id"]: record for record in records}
+        return [records_by_id[record_id] for record_id in expected_ids if record_id in records_by_id]
+
+    def _map_personal_records(
+        self,
+        records: list[PersonalRecord],
+    ) -> list[RetrievalPersonalSummary]:
+        return [
+            {
+                "id": record["id"],
+                "domain": record["domain"],
+                "kind": record["kind"],
+                "title": record["title"],
+                "summary": record["summary"],
+                "snapshot_ref": record["snapshot_ref"],
+            }
+            for record in records
+        ]
+
+    def _map_interpretation_records(
+        self,
+        records: list[InterpretationRecord],
+    ) -> list[RetrievalInterpretationSummary]:
+        mapped: list[RetrievalInterpretationSummary] = []
+        for record in records:
+            summary = self._summarize_interpretation_body(record["body"])
+            item: RetrievalInterpretationSummary = {
+                "id": record["id"],
+                "domain": record["domain"],
+                "kind": record["kind"],
+                "subject_type": record["subject_type"],
+                "subject_id": record["subject_id"],
+                "status": record["status"],
+                "confidence": record["confidence"],
+            }
+            if summary is not None:
+                item["summary"] = summary
+            mapped.append(item)
+        return mapped
+
+    def _map_fact_records(
+        self,
+        records: list[FactRecord],
+    ) -> list[RetrievalFactSummary]:
+        mapped: list[RetrievalFactSummary] = []
+        for record in records:
+            item: RetrievalFactSummary = {
+                "id": record["id"],
+                "domain": record["domain"],
+                "entity_type": record["entity_type"],
+                "canonical_key": record["canonical_key"],
+                "scope": record["scope"],
+            }
+            title = self._summarize_fact_attributes(record["attributes"])
+            if title is not None:
+                item["title"] = title
+            mapped.append(item)
+        return mapped
+
+    def _summarize_interpretation_body(self, body: dict[str, Any]) -> str | None:
+        for key in ("summary", "thesis", "headline", "title"):
+            value = body.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    def _summarize_fact_attributes(self, attributes: dict[str, Any]) -> str | None:
+        for key in ("title", "name", "label"):
+            value = attributes.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
 
     def _scope_for_layer(self, layer: str, requested_scope: ScopeRef) -> ScopeRef:
         if layer == "personal":
