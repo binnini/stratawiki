@@ -71,14 +71,14 @@ See `docs/deployment-and-operations-spec.md` for the runtime constraints view.
 
 ## Implementation Quick Reference
 
-| Area | Primary owner | Early reference spec |
-|---|---|---|
-| Fact write authority | program | `docs/three-layer-data-model-spec.md` |
-| Interpretation lifecycle | LLM generation plus program validation | `docs/interpretation-schema-and-lifecycle-spec.md` |
-| Retrieval mode policy | retrieval and orchestration layer | `docs/llm-orchestration-and-retrieval-spec.md` |
-| Graph traversal and impact | graph layer | `docs/graph-index-and-propagation-spec.md` |
-| Cache key and stale policy | cache and snapshot layer | `docs/cache-invalidation-consistency-spec.md` |
-| Runtime topology | deployment and operations | `docs/deployment-and-operations-spec.md` |
+| Area                       | Primary owner                          | Early reference spec                               |
+| -------------------------- | -------------------------------------- | -------------------------------------------------- |
+| Fact write authority       | program                                | `docs/three-layer-data-model-spec.md`              |
+| Interpretation lifecycle   | LLM generation plus program validation | `docs/interpretation-schema-and-lifecycle-spec.md` |
+| Retrieval mode policy      | retrieval and orchestration layer      | `docs/llm-orchestration-and-retrieval-spec.md`     |
+| Graph traversal and impact | graph layer                            | `docs/graph-index-and-propagation-spec.md`         |
+| Cache key and stale policy | cache and snapshot layer               | `docs/cache-invalidation-consistency-spec.md`      |
+| Runtime topology           | deployment and operations              | `docs/deployment-and-operations-spec.md`           |
 
 ## Phase 1: Core Contracts and LLM Interface
 
