@@ -32,6 +32,10 @@ from wiki_mcp.schemas.interpretation_lifecycle import (
     InterpretationLifecycleStatus,
 )
 from wiki_mcp.schemas.interpretation_record import InterpretationRecord
+from wiki_mcp.schemas.interpretation_validation_result import (
+    InterpretationValidationError,
+    InterpretationValidationResult,
+)
 from wiki_mcp.schemas.outbox_event import (
     FactIngestedPayload,
     InterpretationSnapshotPublishedPayload,
@@ -87,6 +91,8 @@ __all__ = [
     "INTERPRETATION_STATUS_SUPERSEDED",
     "INTERPRETATION_STATUS_VALIDATED",
     "InterpretationRecord",
+    "InterpretationValidationError",
+    "InterpretationValidationResult",
     "InterpretationLifecycleStatus",
     "InterpretationSnapshotPublishedPayload",
     "OutboxEvent",

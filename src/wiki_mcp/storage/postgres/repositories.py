@@ -372,6 +372,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                 SELECT
                     id,
                     domain,
+                    family,
                     kind,
                     subject_type,
                     subject_id,
@@ -384,7 +385,12 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     computed_at,
                     expires_at,
+                    title,
+                    claim,
+                    summary,
                     body_json,
+                    evidence_json,
+                    relations_json,
                     provenance_json,
                     render_hints_json
                 FROM interp.record
@@ -409,13 +415,15 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         scope_sql, scope_params = self._scope_filter_sql(scope_ref)
         search_expr = _normalized_text_sql(
             "id",
+            "family",
             "kind",
             "subject_type",
             "subject_id",
-            "body_json->>'summary'",
+            "title",
+            "claim",
+            "summary",
             "body_json->>'thesis'",
             "body_json->>'headline'",
-            "body_json->>'title'",
         )
         vector_sql = _fts_vector_sql(search_expr=search_expr)
         query_sql, query_params = _fts_query_sql(query_text=query_text)
@@ -425,6 +433,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                 SELECT
                     id,
                     domain,
+                    family,
                     kind,
                     subject_type,
                     subject_id,
@@ -437,11 +446,20 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     computed_at,
                     expires_at,
+                    title,
+                    claim,
+                    summary,
                     body_json,
+                    evidence_json,
+                    relations_json,
                     provenance_json,
                     render_hints_json
                 FROM interp.record
-                WHERE domain = %s AND {scope_sql} AND {vector_sql} @@ {query_sql}
+                WHERE
+                    domain = %s
+                    AND {scope_sql}
+                    AND status IN ('published', 'stale')
+                    AND {vector_sql} @@ {query_sql}
                 ORDER BY ts_rank_cd({vector_sql}, {query_sql}) DESC, updated_at DESC, id ASC
                 LIMIT %s
                 """,
@@ -468,6 +486,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     INSERT INTO interp.record (
                         id,
                         domain,
+                        family,
                         kind,
                         subject_type,
                         subject_id,
@@ -479,15 +498,22 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                         confidence,
                         computed_at,
                         expires_at,
+                        title,
+                        claim,
+                        summary,
                         body_json,
+                        evidence_json,
+                        relations_json,
                         provenance_json,
                         render_hints_json,
                         fact_snapshot_id
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s::jsonb, %s::jsonb, %s::jsonb, %s
+                        %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
+                        %s::jsonb, %s
                     )
                     ON CONFLICT (id) DO UPDATE SET
+                        family = EXCLUDED.family,
                         kind = EXCLUDED.kind,
                         subject_type = EXCLUDED.subject_type,
                         subject_id = EXCLUDED.subject_id,
@@ -499,7 +525,12 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                         confidence = EXCLUDED.confidence,
                         computed_at = EXCLUDED.computed_at,
                         expires_at = EXCLUDED.expires_at,
+                        title = EXCLUDED.title,
+                        claim = EXCLUDED.claim,
+                        summary = EXCLUDED.summary,
                         body_json = EXCLUDED.body_json,
+                        evidence_json = EXCLUDED.evidence_json,
+                        relations_json = EXCLUDED.relations_json,
                         provenance_json = EXCLUDED.provenance_json,
                         render_hints_json = EXCLUDED.render_hints_json,
                         fact_snapshot_id = EXCLUDED.fact_snapshot_id,
@@ -508,6 +539,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     (
                         record["id"],
                         record["domain"],
+                        record["family"],
                         record["kind"],
                         record["subject_type"],
                         record["subject_id"],
@@ -519,7 +551,12 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                         record["confidence"],
                         record["computed_at"],
                         record["expires_at"],
+                        record.get("title"),
+                        record.get("claim"),
+                        record.get("summary"),
                         self._json(record["body"]),
+                        self._json(record.get("evidence", [])),
+                        self._json(record.get("relations", [])),
                         self._json(record["provenance"]),
                         self._json(record["render_hints"]),
                         validated_snapshot_ref["fact_snapshot_id"],
@@ -533,6 +570,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         return {
             "id": data["id"],
             "domain": data["domain"],
+            **({"family": data["family"]} if data.get("family") else {}),
             "kind": data["kind"],
             "subject_type": data["subject_type"],
             "subject_id": data["subject_id"],
@@ -547,7 +585,20 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             "fact_snapshot_id": data["fact_snapshot_id"],
             "computed_at": data["computed_at"],
             "expires_at": data["expires_at"],
+            **({"title": data["title"]} if data.get("title") else {}),
+            **({"claim": data["claim"]} if data.get("claim") else {}),
+            **({"summary": data["summary"]} if data.get("summary") else {}),
             "body": self._load_json(data["body_json"]),
+            **(
+                {"evidence": self._load_json_list(data["evidence_json"])}
+                if data.get("evidence_json") is not None
+                else {}
+            ),
+            **(
+                {"relations": self._load_json_list(data["relations_json"])}
+                if data.get("relations_json") is not None
+                else {}
+            ),
             "provenance": self._load_json(data["provenance_json"]),
             "render_hints": self._load_json(data["render_hints_json"]),
         }
@@ -558,13 +609,17 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         *,
         snapshot_ref: SnapshotRef,
     ) -> None:
-        ensure_non_empty_string(record["id"], label="InterpretationRecord.id")
-        ensure_non_empty_string(record["domain"], label="InterpretationRecord.domain")
-        ensure_non_empty_string(record["kind"], label="InterpretationRecord.kind")
-        ensure_non_empty_string(record["subject_type"], label="InterpretationRecord.subject_type")
-        ensure_non_empty_string(record["subject_id"], label="InterpretationRecord.subject_id")
+        ensure_non_empty_string(record.get("id"), label="InterpretationRecord.id")
+        ensure_non_empty_string(record.get("domain"), label="InterpretationRecord.domain")
+        ensure_non_empty_string(record.get("family"), label="InterpretationRecord.family")
+        ensure_non_empty_string(record.get("kind"), label="InterpretationRecord.kind")
         ensure_non_empty_string(
-            record["schema_version"],
+            record.get("subject_type"),
+            label="InterpretationRecord.subject_type",
+        )
+        ensure_non_empty_string(record.get("subject_id"), label="InterpretationRecord.subject_id")
+        ensure_non_empty_string(
+            record.get("schema_version"),
             label="InterpretationRecord.schema_version",
         )
         ensure_scope_ref(record.get("scope_ref"), label=f"InterpretationRecord {record['id']}.scope_ref")
@@ -600,6 +655,14 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             raise ValueError(
                 f"InterpretationRecord {record['id']}.render_hints must be a mapping."
             )
+        if "evidence" in record and not isinstance(record["evidence"], list):
+            raise ValueError(
+                f"InterpretationRecord {record['id']}.evidence must be a list when present."
+            )
+        if "relations" in record and not isinstance(record["relations"], list):
+            raise ValueError(
+                f"InterpretationRecord {record['id']}.relations must be a list when present."
+            )
 
     def _load_json(self, value: Any) -> dict[str, Any]:
         if isinstance(value, dict):
@@ -607,6 +670,14 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         if value is None:
             return {}
         return json.loads(value)
+
+    def _load_json_list(self, value: Any) -> list[Any]:
+        if isinstance(value, list):
+            return value
+        if value is None:
+            return []
+        loaded = json.loads(value)
+        return loaded if isinstance(loaded, list) else []
 
 
 class PostgresPersonalRepository(PostgresRepositoryBase):

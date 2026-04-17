@@ -200,21 +200,28 @@ class CuratedRetrievalService:
         self,
         record: dict[str, Any],
     ) -> RetrievalInterpretationSummary:
-        body = record.get("body", {})
         summary = None
-        if isinstance(body, dict):
-            raw_summary = body.get("summary")
-            if isinstance(raw_summary, str) and raw_summary.strip():
-                summary = raw_summary.strip()
+        raw_summary = record.get("summary")
+        if isinstance(raw_summary, str) and raw_summary.strip():
+            summary = raw_summary.strip()
+        else:
+            body = record.get("body", {})
+            if isinstance(body, dict):
+                nested_summary = body.get("summary")
+                if isinstance(nested_summary, str) and nested_summary.strip():
+                    summary = nested_summary.strip()
         result: RetrievalInterpretationSummary = {
             "id": record["id"],
             "domain": record["domain"],
+            **({"family": record["family"]} if record.get("family") else {}),
             "kind": record["kind"],
             "subject_type": record["subject_type"],
             "subject_id": record["subject_id"],
             "status": record["status"],
             "confidence": record["confidence"],
         }
+        if record.get("title"):
+            result["title"] = record["title"]
         if summary:
             result["summary"] = summary
         return result

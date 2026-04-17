@@ -75,6 +75,7 @@ def test_interpretation_repository_rejects_unknown_lifecycle_status() -> None:
                 {
                     "id": "interp:1",
                     "domain": "recruiting",
+                    "family": "market_trend",
                     "kind": "trend",
                     "subject_type": "market_segment",
                     "subject_id": "backend-japan-midlevel",
