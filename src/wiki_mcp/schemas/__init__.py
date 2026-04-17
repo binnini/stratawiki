@@ -20,6 +20,17 @@ from wiki_mcp.schemas.ingestion_batch import IngestionBatch
 from wiki_mcp.schemas.ingestion_error import IngestionError
 from wiki_mcp.schemas.ingestion_execution_result import IngestionExecutionResult
 from wiki_mcp.schemas.ingestion_result import IngestionResult
+from wiki_mcp.schemas.interpretation_lifecycle import (
+    INTERPRETATION_LIFECYCLE_STATUSES,
+    INTERPRETATION_STATUS_DELETED,
+    INTERPRETATION_STATUS_PROPOSED,
+    INTERPRETATION_STATUS_PUBLISHED,
+    INTERPRETATION_STATUS_REJECTED,
+    INTERPRETATION_STATUS_STALE,
+    INTERPRETATION_STATUS_SUPERSEDED,
+    INTERPRETATION_STATUS_VALIDATED,
+    InterpretationLifecycleStatus,
+)
 from wiki_mcp.schemas.interpretation_record import InterpretationRecord
 from wiki_mcp.schemas.outbox_event import (
     FactIngestedPayload,
@@ -40,6 +51,7 @@ from wiki_mcp.schemas.personal_query_bundle import (
     PersonalQueryBundleItem,
 )
 from wiki_mcp.schemas.profile_context import ProfileContext
+from wiki_mcp.schemas.provenance import GeneratedBy, GeneratedByKind, Provenance
 from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
 from wiki_mcp.schemas.rendered_page import RenderedPage
 from wiki_mcp.schemas.rendered_page_summary import RenderedPageSummary
@@ -66,7 +78,16 @@ __all__ = [
     "IngestionError",
     "IngestionExecutionResult",
     "IngestionResult",
+    "INTERPRETATION_LIFECYCLE_STATUSES",
+    "INTERPRETATION_STATUS_DELETED",
+    "INTERPRETATION_STATUS_PROPOSED",
+    "INTERPRETATION_STATUS_PUBLISHED",
+    "INTERPRETATION_STATUS_REJECTED",
+    "INTERPRETATION_STATUS_STALE",
+    "INTERPRETATION_STATUS_SUPERSEDED",
+    "INTERPRETATION_STATUS_VALIDATED",
     "InterpretationRecord",
+    "InterpretationLifecycleStatus",
     "InterpretationSnapshotPublishedPayload",
     "OutboxEvent",
     "OutboxEventRecord",
@@ -79,6 +100,9 @@ __all__ = [
     "PersonalQueryCitation",
     "PersonalQueryRationaleItem",
     "ProfileContext",
+    "GeneratedBy",
+    "GeneratedByKind",
+    "Provenance",
     "RecruitingAttachmentPayload",
     "RecruitingCompanyCoordinates",
     "RecruitingCompanyPayload",

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
+from wiki_mcp.schemas.provenance import Provenance
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
 
@@ -10,6 +11,7 @@ class PersonalRecord(TypedDict):
     """User-scoped Personal metadata record."""
 
     id: str
+    layer: NotRequired[str]
     domain: str
     kind: str
     title: str
@@ -18,6 +20,10 @@ class PersonalRecord(TypedDict):
     snapshot_ref: SnapshotRef
     profile_version: str
     body_path: str
+    body: NotRequired[dict[str, Any] | str]
     status: str
     schema_version: str
-    provenance: dict[str, Any]
+    created_at: NotRequired[str]
+    updated_at: NotRequired[str]
+    version: NotRequired[int]
+    provenance: Provenance

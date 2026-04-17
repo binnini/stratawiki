@@ -9,6 +9,14 @@ from wiki_mcp.schemas.fact_record import FactRecord
 from wiki_mcp.schemas.fact_relation import FactRelation
 from wiki_mcp.schemas.fact_write_result import FactWriteResult
 from wiki_mcp.schemas.interpretation_record import InterpretationRecord
+from wiki_mcp.schemas.metadata_validation import (
+    ensure_interpretation_status,
+    ensure_non_empty_string,
+    ensure_provenance,
+    ensure_scope_ref,
+    ensure_scope_shape,
+    ensure_snapshot_ref,
+)
 from wiki_mcp.schemas.outbox_event import OutboxEvent, OutboxEventRecord
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
@@ -131,6 +139,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
         *,
         fact_snapshot_id: str,
     ) -> FactWriteResult:
+        ensure_non_empty_string(fact_snapshot_id, label="fact_snapshot_id")
         facts_created = 0
         facts_updated = 0
         relations_created = 0
@@ -138,6 +147,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
 
         with managed_cursor(self.connection) as cursor:
             for record in records:
+                self._validate_fact_record(record, fact_snapshot_id=fact_snapshot_id)
                 cursor.execute(
                     """
                     INSERT INTO fact.record_envelopes (
@@ -190,6 +200,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
                 affected_fact_ids.append(record["id"])
 
             for relation in relations:
+                self._validate_fact_relation(relation)
                 cursor.execute(
                     """
                     INSERT INTO fact.relation_envelopes (
@@ -249,6 +260,62 @@ class PostgresFactRepository(PostgresRepositoryBase):
             "schema_version": data["schema_version"],
             "provenance": self._load_json(data["provenance_json"]),
         }
+
+    def _validate_fact_record(
+        self,
+        record: FactRecord,
+        *,
+        fact_snapshot_id: str,
+    ) -> None:
+        ensure_non_empty_string(record["id"], label="FactRecord.id")
+        ensure_non_empty_string(record["domain"], label="FactRecord.domain")
+        ensure_non_empty_string(record["entity_type"], label="FactRecord.entity_type")
+        ensure_non_empty_string(record["canonical_key"], label="FactRecord.canonical_key")
+        ensure_non_empty_string(record["schema_version"], label="FactRecord.schema_version")
+        ensure_scope_shape(
+            scope=record.get("scope"),
+            tenant_id=record.get("tenant_id"),
+            user_id=record.get("user_id"),
+            label=f"FactRecord {record['id']}",
+        )
+        ensure_provenance(record.get("provenance"), label=f"FactRecord {record['id']}.provenance")
+        if "layer" in record and record["layer"] != "fact":
+            raise ValueError(
+                f"FactRecord {record['id']} layer must be 'fact', got {record['layer']!r}."
+            )
+        if "fact_snapshot_id" in record and record["fact_snapshot_id"] != fact_snapshot_id:
+            raise ValueError(
+                f"FactRecord {record['id']} fact_snapshot_id does not match the write snapshot."
+            )
+        if not isinstance(record.get("attributes"), dict):
+            raise ValueError(f"FactRecord {record['id']}.attributes must be a mapping.")
+
+    def _validate_fact_relation(self, relation: FactRelation) -> None:
+        ensure_non_empty_string(relation["domain"], label="FactRelation.domain")
+        ensure_non_empty_string(relation["relation_type"], label="FactRelation.relation_type")
+        ensure_non_empty_string(
+            relation["from_canonical_key"],
+            label="FactRelation.from_canonical_key",
+        )
+        ensure_non_empty_string(
+            relation["to_canonical_key"],
+            label="FactRelation.to_canonical_key",
+        )
+        ensure_non_empty_string(relation["schema_version"], label="FactRelation.schema_version")
+        ensure_scope_shape(
+            scope=relation.get("scope"),
+            tenant_id=relation.get("tenant_id"),
+            user_id=relation.get("user_id"),
+            label=f"FactRelation {relation['relation_type']}",
+        )
+        ensure_provenance(
+            relation.get("provenance"),
+            label=f"FactRelation {relation['relation_type']}.provenance",
+        )
+        if "attributes" in relation and not isinstance(relation["attributes"], dict):
+            raise ValueError(
+                f"FactRelation {relation['relation_type']}.attributes must be a mapping."
+            )
 
     def _load_json(self, value: Any) -> dict[str, Any]:
         if isinstance(value, dict):
@@ -356,9 +423,14 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         records: list[InterpretationRecord],
         snapshot_ref: SnapshotRef,
     ) -> list[str]:
+        validated_snapshot_ref = ensure_snapshot_ref(
+            snapshot_ref,
+            label="InterpretationRepository.snapshot_ref",
+        )
         stored_ids: list[str] = []
         with managed_cursor(self.connection) as cursor:
             for record in records:
+                self._validate_interpretation_record(record, snapshot_ref=validated_snapshot_ref)
                 scope_ref = record["scope_ref"]
                 cursor.execute(
                     """
@@ -419,7 +491,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                         self._json(record["body"]),
                         self._json(record["provenance"]),
                         self._json(record["render_hints"]),
-                        snapshot_ref["fact_snapshot_id"],
+                        validated_snapshot_ref["fact_snapshot_id"],
                     ),
                 )
                 stored_ids.append(record["id"])
@@ -448,6 +520,55 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             "provenance": self._load_json(data["provenance_json"]),
             "render_hints": self._load_json(data["render_hints_json"]),
         }
+
+    def _validate_interpretation_record(
+        self,
+        record: InterpretationRecord,
+        *,
+        snapshot_ref: SnapshotRef,
+    ) -> None:
+        ensure_non_empty_string(record["id"], label="InterpretationRecord.id")
+        ensure_non_empty_string(record["domain"], label="InterpretationRecord.domain")
+        ensure_non_empty_string(record["kind"], label="InterpretationRecord.kind")
+        ensure_non_empty_string(record["subject_type"], label="InterpretationRecord.subject_type")
+        ensure_non_empty_string(record["subject_id"], label="InterpretationRecord.subject_id")
+        ensure_non_empty_string(
+            record["schema_version"],
+            label="InterpretationRecord.schema_version",
+        )
+        ensure_scope_ref(record.get("scope_ref"), label=f"InterpretationRecord {record['id']}.scope_ref")
+        ensure_interpretation_status(
+            record.get("status"),
+            label=f"InterpretationRecord {record['id']}.status",
+        )
+        ensure_non_empty_string(
+            record["computed_at"],
+            label=f"InterpretationRecord {record['id']}.computed_at",
+        )
+        if record["expires_at"] is not None:
+            ensure_non_empty_string(
+                record["expires_at"],
+                label=f"InterpretationRecord {record['id']}.expires_at",
+            )
+        ensure_provenance(
+            record.get("provenance"),
+            label=f"InterpretationRecord {record['id']}.provenance",
+        )
+        if "layer" in record and record["layer"] != "interpretation":
+            raise ValueError(
+                "InterpretationRecord "
+                f"{record['id']} layer must be 'interpretation', got {record['layer']!r}."
+            )
+        if record["fact_snapshot_id"] != snapshot_ref["fact_snapshot_id"]:
+            raise ValueError(
+                f"InterpretationRecord {record['id']} fact_snapshot_id does not match the save snapshot."
+            )
+        if not isinstance(record.get("body"), dict):
+            raise ValueError(f"InterpretationRecord {record['id']}.body must be a mapping.")
+        if not isinstance(record.get("render_hints"), dict):
+            raise ValueError(
+                f"InterpretationRecord {record['id']}.render_hints must be a mapping."
+            )
 
     def _load_json(self, value: Any) -> dict[str, Any]:
         if isinstance(value, dict):
@@ -544,8 +665,12 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             return [self._row_to_personal_record(row) for row in cursor.fetchall()]
 
     def save_record(self, record: PersonalRecord) -> str:
+        self._validate_personal_record(record)
         scope_ref = record["scope_ref"]
-        snapshot_ref = record["snapshot_ref"]
+        snapshot_ref = ensure_snapshot_ref(
+            record["snapshot_ref"],
+            label=f"PersonalRecord {record['id']}.snapshot_ref",
+        )
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 """
@@ -632,6 +757,45 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             "provenance": self._load_json(data["provenance_json"]),
         }
 
+    def _validate_personal_record(self, record: PersonalRecord) -> None:
+        ensure_non_empty_string(record["id"], label="PersonalRecord.id")
+        ensure_non_empty_string(record["domain"], label="PersonalRecord.domain")
+        ensure_non_empty_string(record["kind"], label="PersonalRecord.kind")
+        ensure_non_empty_string(record["title"], label="PersonalRecord.title")
+        ensure_non_empty_string(record["summary"], label="PersonalRecord.summary")
+        ensure_non_empty_string(
+            record["profile_version"],
+            label="PersonalRecord.profile_version",
+        )
+        ensure_non_empty_string(record["body_path"], label="PersonalRecord.body_path")
+        ensure_non_empty_string(record["status"], label="PersonalRecord.status")
+        ensure_non_empty_string(
+            record["schema_version"],
+            label="PersonalRecord.schema_version",
+        )
+        scope_ref = ensure_scope_ref(
+            record.get("scope_ref"),
+            label=f"PersonalRecord {record['id']}.scope_ref",
+        )
+        if scope_ref["scope"] != "user":
+            raise ValueError(f"PersonalRecord {record['id']} must use user scope.")
+        snapshot_ref = ensure_snapshot_ref(
+            record.get("snapshot_ref"),
+            label=f"PersonalRecord {record['id']}.snapshot_ref",
+        )
+        if snapshot_ref.get("profile_version") and snapshot_ref["profile_version"] != record["profile_version"]:
+            raise ValueError(
+                f"PersonalRecord {record['id']} snapshot_ref.profile_version must match profile_version."
+            )
+        ensure_provenance(
+            record.get("provenance"),
+            label=f"PersonalRecord {record['id']}.provenance",
+        )
+        if "layer" in record and record["layer"] != "personal":
+            raise ValueError(
+                f"PersonalRecord {record['id']} layer must be 'personal', got {record['layer']!r}."
+            )
+
     def _load_json(self, value: Any) -> dict[str, Any]:
         if isinstance(value, dict):
             return value
@@ -701,7 +865,16 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
         domain: str,
         snapshot_ref: SnapshotRef,
     ) -> str:
-        snapshot_id = snapshot_ref.get("interpretation_snapshot_id") or snapshot_ref["fact_snapshot_id"]
+        ensure_non_empty_string(layer, label="SnapshotRepository.layer")
+        ensure_non_empty_string(domain, label="SnapshotRepository.domain")
+        validated_snapshot_ref = ensure_snapshot_ref(
+            snapshot_ref,
+            label="SnapshotRepository.snapshot_ref",
+        )
+        snapshot_id = (
+            validated_snapshot_ref.get("interpretation_snapshot_id")
+            or validated_snapshot_ref["fact_snapshot_id"]
+        )
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 """
@@ -724,9 +897,9 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
                     layer,
                     domain,
                     snapshot_id,
-                    snapshot_ref["fact_snapshot_id"],
-                    snapshot_ref.get("interpretation_snapshot_id"),
-                    snapshot_ref.get("profile_version"),
+                    validated_snapshot_ref["fact_snapshot_id"],
+                    validated_snapshot_ref.get("interpretation_snapshot_id"),
+                    validated_snapshot_ref.get("profile_version"),
                 ),
             )
             cursor.execute(
@@ -746,9 +919,9 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
                     snapshot_id,
                     layer,
                     domain,
-                    snapshot_ref["fact_snapshot_id"],
-                    snapshot_ref.get("interpretation_snapshot_id"),
-                    snapshot_ref.get("profile_version"),
+                    validated_snapshot_ref["fact_snapshot_id"],
+                    validated_snapshot_ref.get("interpretation_snapshot_id"),
+                    validated_snapshot_ref.get("profile_version"),
                     self._json({}),
                 ),
             )

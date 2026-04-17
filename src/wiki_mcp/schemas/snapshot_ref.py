@@ -9,3 +9,4 @@ class SnapshotRef(TypedDict):
     fact_snapshot_id: str
     interpretation_snapshot_id: NotRequired[str]
     profile_version: NotRequired[str]
+    personal_snapshot_id: NotRequired[str]
