@@ -16,6 +16,10 @@ from wiki_mcp.schemas.external_recruiting_payload import (
 from wiki_mcp.schemas.fact_record import FactRecord
 from wiki_mcp.schemas.fact_relation import FactRelation
 from wiki_mcp.schemas.fact_write_result import FactWriteResult
+from wiki_mcp.schemas.ingestion_batch import IngestionBatch
+from wiki_mcp.schemas.ingestion_error import IngestionError
+from wiki_mcp.schemas.ingestion_execution_result import IngestionExecutionResult
+from wiki_mcp.schemas.ingestion_result import IngestionResult
 from wiki_mcp.schemas.interpretation_record import InterpretationRecord
 from wiki_mcp.schemas.outbox_event import (
     FactIngestedPayload,
@@ -58,6 +62,10 @@ __all__ = [
     "FactRecord",
     "FactRelation",
     "FactWriteResult",
+    "IngestionBatch",
+    "IngestionError",
+    "IngestionExecutionResult",
+    "IngestionResult",
     "InterpretationRecord",
     "InterpretationSnapshotPublishedPayload",
     "OutboxEvent",
