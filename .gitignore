@@ -16,5 +16,3 @@ data/graph/*
 !data/graph/.gitkeep
 data/state/*
 !data/state/.gitkeep
-
-dev-wiki/
