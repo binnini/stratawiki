@@ -125,7 +125,7 @@ def test_adapter_builds_source_record_from_external_payload() -> None:
     assert source["metadata"]["attachments"][0]["file_name"] == "guide.pdf"
 
 
-def test_plugin_extracts_minimal_fact_records_and_relations() -> None:
+def test_plugin_extracts_docs_aligned_fact_records_and_relations() -> None:
     provider = StubWorknetRecruitingProvider()
     adapter = WorknetRecruitingExternalAdapter()
     plugin = RecruitingSourceIngestionPlugin()
@@ -141,28 +141,68 @@ def test_plugin_extracts_minimal_fact_records_and_relations() -> None:
     assert validation["errors"] == []
 
     entity_types = {record["entity_type"] for record in records}
-    assert entity_types == {"job_posting", "company", "job", "recruitment_section"}
+    assert entity_types == {"job_posting", "company", "role", "skill", "location"}
 
     record_by_type = {record["entity_type"]: record for record in records}
     posting = record_by_type["job_posting"]
     company = record_by_type["company"]
-    job = record_by_type["job"]
-    section = record_by_type["recruitment_section"]
+    role = record_by_type["role"]
+    skill = record_by_type["skill"]
+    location = record_by_type["location"]
 
     assert posting["canonical_key"] == "job_posting:EMP-1"
     assert posting["attributes"]["employment_type"] == "정규직"
+    assert posting["attributes"]["source_url"] == "https://example.com/jobs/EMP-1"
     assert company["canonical_key"] == "company:COMP-1"
+    assert company["attributes"]["normalized_name"] == "잡스위키"
     assert company["attributes"]["homepage_url"] == "https://jobswiki.example.com"
-    assert job["canonical_key"] == "job:DEV-001"
-    assert job["attributes"]["name"] == "백엔드 개발"
-    assert "recruitment_section:EMP-1" in section["canonical_key"]
-    assert section["attributes"]["location"] == "서울"
+    assert role["canonical_key"] == "role:DEV-001"
+    assert role["attributes"]["display_name"] == "백엔드 개발"
+    assert skill["canonical_key"] == "skill:node-js"
+    assert skill["attributes"]["name"] == "Node.js"
+    assert location["canonical_key"] == "location:text-ea9858eeebb6"
+    assert location["attributes"]["label"] == "서울"
 
     relation_types = {relation["relation_type"] for relation in relations}
-    assert relation_types == {"posted_by", "classified_as", "has_section"}
+    assert relation_types == {"posted_by", "has_role", "requires_skill", "located_in"}
     for relation in relations:
         assert relation["from_canonical_key"] == "job_posting:EMP-1"
         assert relation["scope"] == "shared"
+
+
+def test_plugin_dedupes_repeated_skills_and_locations() -> None:
+    provider = StubWorknetRecruitingProvider()
+    adapter = WorknetRecruitingExternalAdapter()
+    plugin = RecruitingSourceIngestionPlugin()
+
+    source = adapter.fetch_source_record(provider, "EMP-1")
+    source["metadata"]["recruitment_sections"].append(
+        {
+            "title": "플랫폼팀 복제",
+            "role_description": "Node.js 운영 경험",
+            "selection_description": None,
+            "location": "서울",
+            "career_requirement": None,
+            "education_requirement": None,
+            "other_requirement": "Node.js 경험",
+            "openings": None,
+            "note": None,
+        }
+    )
+
+    normalized = plugin.normalize_source(source)
+    records = plugin.extract_fact_records(normalized)
+    relations = plugin.extract_fact_relations(normalized, records)
+
+    location_records = [record for record in records if record["entity_type"] == "location"]
+    skill_records = [record for record in records if record["entity_type"] == "skill"]
+    located_relations = [relation for relation in relations if relation["relation_type"] == "located_in"]
+    skill_relations = [relation for relation in relations if relation["relation_type"] == "requires_skill"]
+
+    assert len(location_records) == 1
+    assert len(skill_records) == 1
+    assert len(located_relations) == 1
+    assert len(skill_relations) == 1
 
 
 def test_plugin_relations_inherit_scope_fields_from_posting_record() -> None:
