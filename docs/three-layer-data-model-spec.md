@@ -52,6 +52,9 @@ Recommended status values:
 - `deleted`
 - `draft`
 
+For the `Interpretation` layer, this generic status model is refined further by the dedicated lifecycle in `docs/interpretation-schema-and-lifecycle-spec.md`.
+In particular, `published` there corresponds to the active shared interpretation state used for normal retrieval.
+
 ### Provenance
 
 Every derived record should retain provenance metadata.
@@ -257,6 +260,8 @@ Recommended relation types:
 - `relevant_to`
 
 ### Interpretation Rendering
+
+For the detailed interpretation envelope, lifecycle, validation, and publish model, see `docs/interpretation-schema-and-lifecycle-spec.md`.
 
 Interpretation records may be rendered into shared markdown pages.
 

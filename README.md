@@ -36,10 +36,14 @@ Implementation is planned around an MCP-native server rather than the earlier si
 - `docs/implementation-roadmap.md`
 - `docs/three-layer-llm-wiki-mcp-idea.md`
 - `docs/three-layer-data-model-spec.md`
-- `docs/cache-invalidation-consistency-spec.md`
+- `docs/interpretation-schema-and-lifecycle-spec.md`
+- `docs/llm-orchestration-and-retrieval-spec.md`
 - `docs/graph-index-and-propagation-spec.md`
+- `docs/cache-invalidation-consistency-spec.md`
 - `docs/mcp-tool-contract-spec.md`
+- `docs/deployment-and-operations-spec.md`
 - `docs/recruiting-domain-schema-spec.md`
+- `docs/docs-cleanup-checklist.md`
 
 ## Planned Repository Shape
 

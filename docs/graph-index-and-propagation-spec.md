@@ -59,6 +59,27 @@ Examples:
 - from an interpretation to its evidence facts
 - from a fact subject to neighboring interpretations
 
+## LLM Traversal Policy
+
+LLM access to graph-backed retrieval should be allowed, but bounded.
+
+Recommended position:
+
+- ordinary user requests should default to curated retrieval
+- graph exploration should be enabled when the request is open-ended, cross-cutting, or poorly aligned to a predefined query shape
+- LLMs should use bounded tools rather than arbitrary raw graph queries
+
+Recommended guardrails:
+
+- read-only graph access for LLM-facing exploration
+- scope and ACL filtering on every traversal step
+- hop limits
+- result-count limits
+- stale and invalid awareness
+- tool-budget limits for exploratory sessions
+
+This keeps graph useful for discovery without making it a free-form escape hatch around canonical and scope controls.
+
 ## Node Types
 
 Recommended node families:
@@ -211,6 +232,13 @@ Recommended default order:
 
 This keeps retrieval grounded in personalization while still allowing shared interpretation and factual evidence to enter the final answer.
 
+This default order is compatible with both:
+
+- graph-first retrieval for cross-layer expansion
+- markdown-search-first retrieval for rendered personal or shared pages
+
+The correct backend split should be treated as an implementation tradeoff, not a fixed architectural law.
+
 ## Personal Query Retrieval Flow
 
 ### Step 1: Personal Candidate Lookup
@@ -243,6 +271,8 @@ Search interpretation using:
 - kind match
 - lexical and embedding similarity
 - neighboring nodes in the semantic graph
+
+Depending on implementation choices, this step may also consult markdown-search indexes over rendered interpretation pages before or after graph expansion.
 
 This finds the shared knowledge most relevant to the current user request.
 
@@ -399,6 +429,12 @@ This includes:
 
 The graph cannot be treated as globally visible if the underlying records are not globally visible.
 
+This applies equally to:
+
+- curated retrieval assembled by the program
+- exploratory retrieval initiated by the LLM
+- any markdown-search result that is later expanded through graph traversal
+
 ## Partitioning Strategy
 
 Graph and propagation should not assume one giant global snapshot.
@@ -433,3 +469,5 @@ The next implementation-facing document should define:
 - edge construction jobs
 - retrieval ranking policy
 - MCP tools for dependency inspection and explainability
+
+For orchestration and retrieval-mode policy, see `docs/llm-orchestration-and-retrieval-spec.md`.

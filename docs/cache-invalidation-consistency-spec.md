@@ -1,5 +1,4 @@
-# Cache, Invalidation, and Consistency Spec
-
+ㅇ ㄷ에
 ## Purpose
 
 This document proposes cache, invalidation, and consistency rules for a multi-user three-layer LLM Wiki MCP server.
@@ -87,6 +86,7 @@ Recommended cache categories:
 - interpretation render cache
 - personal answer cache
 - graph cache
+- markdown search cache
 - profile-aware planning cache
 - dependency lookup cache
 
@@ -104,6 +104,8 @@ All cache keys should reflect the upstream state that makes the output valid.
 - profile version if applicable
 - prompt or template version
 - model profile
+- retrieval mode
+- retrieval backend fingerprint
 
 ### Example Cache Key
 
@@ -117,6 +119,8 @@ interp=interp_snap_2026_04_15:
 profile=profile_v7:
 prompt=query_v3:
 model=balanced_default:
+retrieval=curated:
+backend=graph_v1:
 hash=abc123
 ```
 
@@ -130,6 +134,7 @@ Without version-rich keys, stale reuse becomes invisible.
 - rendered interpretation pages
 - user-specific strategy answers
 - graph summaries
+- markdown search result sets
 - expensive interpretation build outputs
 
 ### Poor Candidates
@@ -137,6 +142,7 @@ Without version-rich keys, stale reuse becomes invisible.
 - low-level Fact mutation results
 - records that are already cheap to compute
 - outputs with unstable or unknown provenance
+- exploratory retrieval traces with weak scope or snapshot guarantees
 
 ## Invalidation Triggers
 
@@ -177,6 +183,8 @@ Likely affected:
 
 - rendered interpretation pages
 - personal plans or cached answers derived from those interpretation records
+- graph traversal caches rooted in affected interpretation records
+- markdown-search result caches that index rendered interpretation pages
 
 ### Profile-Level Triggers
 
@@ -192,6 +200,7 @@ Likely affected:
 - personal plans
 - personalized retrieval results
 - user-specific answer caches
+- user-scoped markdown-search caches
 
 ## Stale vs Invalid
 
@@ -245,6 +254,12 @@ Example:
 ```
 
 This is the minimum needed for reproducibility and explainability.
+
+If retrieval used exploratory mode or a markdown-search backend, the answer should also retain enough metadata to explain:
+
+- retrieval mode
+- search backend or graph backend family
+- whether stale fallback was used during retrieval
 
 ## Write Model
 
@@ -365,6 +380,7 @@ Recommended approach:
 
 - warm shared interpretation pages after snapshot publish
 - warm graph summaries after interpretation refresh
+- warm markdown indexes after rendered page updates when markdown retrieval is enabled
 - warm personal outputs only for active users or high-value queries
 
 Do not precompute every possible user plan. The state space will explode.
@@ -411,9 +427,11 @@ Example:
 
 - Never query against partially refreshed shared interpretation state
 - Never return a personal cached answer without attaching its upstream snapshot tuple
+- Never silently reuse exploratory retrieval caches across incompatible snapshot tuples
 - Prefer stale-but-explained over silent recomputation failures
 - Prefer regeneration by snapshot rather than uncontrolled in-place edits
 - Treat rendered markdown pages as cacheable views, not sole authorities
+- Treat markdown-search backends as retrieval accelerators, not canonical stores
 - Treat scope and ACL changes as first-class invalidation events
 - Keep dependency indexes small and explicit to avoid unnecessary cascade fan-out
 

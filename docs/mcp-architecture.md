@@ -28,6 +28,7 @@ This architecture should be understood as:
 - expose stable MCP tools for shared and personal workflows
 - separate canonical records from rendered markdown views
 - support multiple source connectors and multiple LLM providers
+- support bounded LLM exploration without giving up canonical control
 - support multi-user and multi-tenant scope boundaries
 - preserve provenance, snapshot traceability, and explainability
 - keep domain-specific logic modular
@@ -135,6 +136,8 @@ Responsibilities:
 - build interpretation projections
 - render shared and personal wiki pages
 - execute user-scoped retrieval
+- compact context before final generation
+- authorize exploratory retrieval when curated retrieval is insufficient
 - detect stale or invalid downstream records
 - build graph outputs and dependency indexes
 
@@ -172,6 +175,9 @@ Responsibilities:
 - enforce schema validation for structured outputs
 
 This is the key to OpenAI, Anthropic, and Gemini compatibility.
+
+The LLM router should not be treated as the owner of canonical state.
+It should operate inside orchestration and validation boundaries defined by the service layer.
 
 ### 5. Canonical Storage Layer
 
@@ -292,6 +298,34 @@ Every adapter should produce this shape before the Fact ingest pipeline runs.
 5. generate or refresh personal output
 6. store anchors and snapshot tuple
 
+## LLM Orchestration Position
+
+LLM orchestration in this architecture should follow these rules:
+
+- `Fact` remains code-owned and authoritative
+- `Interpretation` is primarily LLM-generated but program-validated
+- `Personal` is primarily LLM-authored but program-scoped
+- dependency graph state remains program-owned
+- semantic exploration may be LLM-assisted through bounded tools
+
+The default interaction mode should be curated retrieval:
+
+- retrieve from `Personal`
+- expand through `Interpretation`
+- drill into `Fact`
+- compact context
+- generate final output
+
+Exploratory retrieval should also be supported for open-ended or novel synthesis tasks, but only with:
+
+- bounded graph traversal
+- scope-aware filtering
+- result-count limits
+- stale and invalid awareness
+
+Markdown search backends such as `qmd` may be used as optional retrieval accelerators for rendered personal or interpretation pages.
+They should complement graph and canonical-store retrieval rather than replace them.
+
 ## Retrieval Principle
 
 The default retrieval order for user-facing strategy or synthesis should usually be:
@@ -378,6 +412,7 @@ The exact file layout can vary, but the conceptual separation should remain.
 Use this architecture document as the high-level system view, then rely on the dedicated specs for:
 
 - data model
+- LLM orchestration and retrieval
 - cache, invalidation, and consistency
 - graph, indexing, and propagation
 - MCP tool contracts
