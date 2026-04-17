@@ -52,6 +52,8 @@ class PersonalQueryOrchestrator:
                 "preferences": profile_context["preferences"],
                 "attributes": profile_context["attributes"],
             }
+        if "retrieval_metadata" in retrieval:
+            bundle["retrieval_metadata"] = retrieval["retrieval_metadata"]
         if "snapshot_ref" in retrieval:
             bundle["snapshot_ref"] = retrieval["snapshot_ref"]
         return retrieval, bundle

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, NotRequired, TypedDict
 
+from wiki_mcp.schemas.retrieval_metadata import RetrievalMetadata
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
 
@@ -29,6 +30,7 @@ class PersonalQueryBundle(TypedDict):
     question: str
     scope_ref: ScopeRef
     snapshot_ref: NotRequired[SnapshotRef]
+    retrieval_metadata: NotRequired[RetrievalMetadata]
     profile_context: NotRequired[dict[str, Any]]
     personal_context: list[PersonalQueryBundleItem]
     interpretation_context: list[PersonalQueryBundleItem]

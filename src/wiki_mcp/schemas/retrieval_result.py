@@ -7,6 +7,7 @@ from wiki_mcp.schemas.retrieval_interpretation_summary import (
     RetrievalInterpretationSummary,
 )
 from wiki_mcp.schemas.retrieval_match_explanation import RetrievalMatchExplanation
+from wiki_mcp.schemas.retrieval_metadata import RetrievalMetadata
 from wiki_mcp.schemas.retrieval_personal_summary import RetrievalPersonalSummary
 from wiki_mcp.schemas.rendered_page_summary import RenderedPageSummary
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
@@ -27,4 +28,5 @@ class RetrievalResult(TypedDict):
     personal_explanations: NotRequired[list[RetrievalMatchExplanation]]
     interpretation_explanations: NotRequired[list[RetrievalMatchExplanation]]
     fact_explanations: NotRequired[list[RetrievalMatchExplanation]]
+    retrieval_metadata: NotRequired[RetrievalMetadata]
     snapshot_ref: NotRequired[SnapshotRef]
