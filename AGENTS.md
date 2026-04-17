@@ -20,6 +20,27 @@ Important starting points:
 
 If code and docs disagree, prefer the docs unless the user explicitly directs otherwise.
 
+## Development Wiki
+
+This repository also keeps a lightweight `dev-wiki/` for development-time working notes.
+
+Rules:
+
+- `docs/` remains the official architecture and implementation source of truth
+- `dev-wiki/` is only a working notebook for logs, experiments, and temporary implementation notes
+- do not copy old branch-specific `dev-wiki` content into this branch as official design
+- only promote stable conclusions from `dev-wiki/` into `docs/` after they are cleaned up and made generally reusable
+
+Use `dev-wiki/` for:
+
+- implementation logs
+- experiment notes
+- temporary decision traces
+- prompt drafts
+- debugging trails
+
+Do not use `dev-wiki/` to silently replace roadmap or architecture decisions already captured in `docs/`.
+
 ## Issue-Driven Workflow
 
 Agents should use GitHub Issues as the default planning and tracking mechanism for non-trivial work.
@@ -107,6 +128,8 @@ Agents should update docs when:
 - deployment/runtime constraints change
 
 Do not let implementation drift far ahead of the specs in this repository.
+
+For substantial implementation work, it is also reasonable to add a short note in `dev-wiki/` if it would preserve useful context for later sessions.
 
 ## Preferred Implementation Order
 

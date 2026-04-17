@@ -25,6 +25,7 @@ The system is intended for domains such as recruiting and job strategy first, wh
 This repository currently contains:
 
 - architecture and design specs in `docs/`
+- a lightweight development notebook in `dev-wiki/`
 - initial source tree scaffolding under `src/`
 - empty data directories under `data/`
 
@@ -44,6 +45,20 @@ Implementation is planned around an MCP-native server rather than the earlier si
 - `docs/deployment-and-operations-spec.md`
 - `docs/recruiting-domain-schema-spec.md`
 - `docs/docs-cleanup-checklist.md`
+
+## Development Notes
+
+`dev-wiki/` is the repository's working notebook for active implementation notes.
+
+Use it for:
+
+- temporary logs
+- experiments
+- prompt drafts
+- debugging notes
+
+Keep official architecture, lifecycle, roadmap, and contract decisions in `docs/`.
+Promote only stable conclusions from `dev-wiki/` into `docs/`.
 
 ## Planned Repository Shape
 
@@ -66,6 +81,7 @@ data/
 config/
   domains/
 docs/
+dev-wiki/
 tests/
 ```
 
