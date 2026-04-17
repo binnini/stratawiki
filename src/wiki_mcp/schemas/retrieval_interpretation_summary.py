@@ -8,9 +8,11 @@ class RetrievalInterpretationSummary(TypedDict):
 
     id: str
     domain: str
+    family: NotRequired[str]
     kind: str
     subject_type: str
     subject_id: str
     status: str
     confidence: float
+    title: NotRequired[str]
     summary: NotRequired[str]

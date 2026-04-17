@@ -23,6 +23,15 @@ class InterpretationFamilyRegistry:
         context: InterpretationProposalContext,
     ) -> list[InterpretationRecord]:
         proposals: list[InterpretationRecord] = []
+        if context.family:
+            builder = self._builders_by_family.get(context.family)
+            if builder is None:
+                return []
+            proposal = builder.build_proposal(context)
+            if proposal is not None:
+                proposals.append(proposal)
+            return proposals
+
         for builder in self._builders:
             proposal = builder.build_proposal(context)
             if proposal is not None:
