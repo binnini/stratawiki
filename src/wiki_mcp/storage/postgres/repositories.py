@@ -43,6 +43,37 @@ def _fts_vector_sql(
 class PostgresFactRepository(PostgresRepositoryBase):
     """Persist generic fact envelopes into early Postgres staging tables."""
 
+    def get_by_canonical_keys(
+        self,
+        canonical_keys: list[str],
+        scope_ref: ScopeRef,
+    ) -> list[FactRecord]:
+        if not canonical_keys:
+            return []
+
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id,
+                    domain,
+                    entity_type,
+                    canonical_key,
+                    scope,
+                    fact_snapshot_id,
+                    tenant_id,
+                    user_id,
+                    schema_version,
+                    attributes_json,
+                    provenance_json
+                FROM fact.record_envelopes
+                WHERE canonical_key = ANY(%s) AND {scope_sql}
+                """,
+                [canonical_keys, *scope_params],
+            )
+            return [self._row_to_fact_record(row) for row in cursor.fetchall()]
+
     def get_by_ids(
         self,
         ids: list[str],

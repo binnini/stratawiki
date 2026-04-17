@@ -176,6 +176,30 @@ def test_prepare_batch_rejects_invalid_relation_targets() -> None:
     assert "missing from_canonical_key" in batch["validation"]["errors"][0]
 
 
+def test_prepare_batch_rejects_duplicate_canonical_fact_identity() -> None:
+    class DuplicateCanonicalKeyPlugin(StubPlugin):
+        def extract_fact_records(self, source: dict[str, object]) -> list[dict[str, object]]:
+            records = super().extract_fact_records(source)
+            return [
+                records[0],
+                {
+                    **records[0],
+                    "id": "fact:job_posting:emp-1-duplicate",
+                },
+            ]
+
+    service = DefaultCoreIngestionService(
+        fact_repository=StubFactRepository(),
+        snapshot_repository=StubSnapshotRepository(),
+        outbox_repository=StubOutboxRepository(),
+    )
+
+    batch = service.prepare_batch(_source(), DuplicateCanonicalKeyPlugin())
+
+    assert batch["validation"]["ok"] is False
+    assert "Duplicate canonical Fact identity in batch" in batch["validation"]["errors"][0]
+
+
 def test_ingest_source_wires_fact_write_snapshot_and_outbox() -> None:
     fact_repository = StubFactRepository()
     snapshot_repository = StubSnapshotRepository()

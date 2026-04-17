@@ -30,6 +30,7 @@ Use `dev-wiki/` for working state and promote only stable conclusions into `docs
 
 ## Current Working Notes
 
+- `dev-wiki/logs/2026-04-17-issue-3-fact-storage-audit.md`
 - `dev-wiki/logs/2026-04-17-phase-2-llm-gateway-handoff.md`
 - `dev-wiki/decisions/2026-04-17-llm-gateway-operations-note.md`
 

@@ -49,6 +49,7 @@ class DefaultCoreIngestionService:
         validation = self._merge_validation(
             validation,
             self._validate_scope_shapes(records, relations),
+            self._validate_canonical_identity(records),
             self._validate_relation_targets(records, relations),
         )
 
@@ -148,6 +149,37 @@ class DefaultCoreIngestionService:
                     f"Relation {relation['relation_type']!r} references missing to_canonical_key "
                     f"{relation['to_canonical_key']!r}."
                 )
+
+        return {
+            "ok": len(errors) == 0,
+            "warnings": [],
+            "errors": errors,
+        }
+
+    def _validate_canonical_identity(
+        self,
+        records: list[FactRecord],
+    ) -> ValidationResult:
+        seen_keys: dict[tuple[str, str, str | None, str | None], str] = {}
+        errors: list[str] = []
+
+        for record in records:
+            identity = (
+                record["scope"],
+                record["canonical_key"],
+                record.get("tenant_id"),
+                record.get("user_id"),
+            )
+            existing_id = seen_keys.get(identity)
+            if existing_id is not None and existing_id != record["id"]:
+                errors.append(
+                    "Duplicate canonical Fact identity in batch for "
+                    f"{record['canonical_key']!r} with scope {record['scope']!r}: "
+                    f"{existing_id!r} and {record['id']!r}."
+                )
+                continue
+
+            seen_keys[identity] = record["id"]
 
         return {
             "ok": len(errors) == 0,

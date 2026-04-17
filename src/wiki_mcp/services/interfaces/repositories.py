@@ -21,6 +21,13 @@ from wiki_mcp.schemas.snapshot_ref import SnapshotRef
 class FactRepository(Protocol):
     """Persistence boundary for canonical Fact records and relations."""
 
+    def get_by_canonical_keys(
+        self,
+        canonical_keys: list[str],
+        scope_ref: ScopeRef,
+    ) -> list[FactRecord]:
+        """Load canonical Fact records by canonical key with scope filtering."""
+
     def get_by_ids(
         self,
         ids: list[str],
