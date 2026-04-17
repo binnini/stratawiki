@@ -66,6 +66,20 @@ class InterpretationRepository(Protocol):
     ) -> list[InterpretationRecord]:
         """Load interpretation records by id with scope filtering."""
 
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        family: str | None = None,
+        kind: str | None = None,
+        subject_type: str | None = None,
+        subject_id: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[InterpretationRecord]:
+        """List interpretation records for exact partition or lifecycle filters."""
+
     def search_for_retrieval(
         self,
         *,
