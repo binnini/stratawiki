@@ -28,6 +28,11 @@ Use `dev-wiki/` for working state and promote only stable conclusions into `docs
 - `dev-wiki/prompts/`
 - `dev-wiki/logs/`
 
+## Current Working Notes
+
+- `dev-wiki/logs/2026-04-17-phase-2-llm-gateway-handoff.md`
+- `dev-wiki/decisions/2026-04-17-llm-gateway-operations-note.md`
+
 ## Note
 
 This branch intentionally introduces the `dev-wiki/` concept and folder structure only.
