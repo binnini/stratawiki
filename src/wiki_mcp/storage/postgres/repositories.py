@@ -400,6 +400,79 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             )
             return [self._row_to_interpretation_record(row) for row in cursor.fetchall()]
 
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        family: str | None = None,
+        kind: str | None = None,
+        subject_type: str | None = None,
+        subject_id: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[InterpretationRecord]:
+        if limit <= 0:
+            return []
+
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        where_clauses = [f"domain = %s", scope_sql]
+        params: list[Any] = [domain, *scope_params]
+
+        if family is not None:
+            where_clauses.append("family = %s")
+            params.append(family)
+        if kind is not None:
+            where_clauses.append("kind = %s")
+            params.append(kind)
+        if subject_type is not None:
+            where_clauses.append("subject_type = %s")
+            params.append(subject_type)
+        if subject_id is not None:
+            where_clauses.append("subject_id = %s")
+            params.append(subject_id)
+        if statuses:
+            where_clauses.append("status = ANY(%s)")
+            params.append(statuses)
+
+        params.append(limit)
+
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id,
+                    domain,
+                    family,
+                    kind,
+                    subject_type,
+                    subject_id,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    schema_version,
+                    status,
+                    confidence,
+                    fact_snapshot_id,
+                    computed_at,
+                    expires_at,
+                    title,
+                    claim,
+                    summary,
+                    body_json,
+                    evidence_json,
+                    relations_json,
+                    provenance_json,
+                    render_hints_json
+                FROM interp.record
+                WHERE {" AND ".join(where_clauses)}
+                ORDER BY updated_at DESC, id ASC
+                LIMIT %s
+                """,
+                params,
+            )
+            return [self._row_to_interpretation_record(row) for row in cursor.fetchall()]
+
     def search_for_retrieval(
         self,
         *,
