@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+from typing import Any, NotRequired, TypedDict
+
+from wiki_mcp.schemas.scope_ref import ScopeRef
+
+
+class InterpretationRecord(TypedDict):
+    """Canonical shared Interpretation record envelope."""
+
+    id: str
+    domain: str
+    family: NotRequired[str]
+    kind: str
+    subject_type: str
+    subject_id: str
+    subject_label: NotRequired[str]
+    scope_ref: ScopeRef
+    schema_version: str
+    status: str
+    confidence: float
+    fact_snapshot_id: str
+    computed_at: str
+    expires_at: str | None
+    title: NotRequired[str]
+    claim: NotRequired[str]
+    summary: NotRequired[str]
+    body: dict[str, Any]
+    evidence: NotRequired[list[dict[str, Any]]]
+    relations: NotRequired[list[dict[str, Any]]]
+    freshness: NotRequired[dict[str, Any]]
+    provenance: dict[str, Any]
+    render_hints: dict[str, Any]

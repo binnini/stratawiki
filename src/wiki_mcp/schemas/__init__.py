@@ -1,1 +1,95 @@
-"""Shared schema definitions."""
+"""Schema exports available in the current migration slice."""
+
+from wiki_mcp.schemas.dependency_impact import DependencyImpact
+from wiki_mcp.schemas.dependency_edge import DependencyEdge
+from wiki_mcp.schemas.external_recruiting_payload import (
+    RecruitingAttachmentPayload,
+    RecruitingCompanyCoordinates,
+    RecruitingCompanyPayload,
+    RecruitingJobPayload,
+    RecruitingJobPostingPayload,
+    RecruitingRecruitmentSectionPayload,
+    RecruitingSelectionStepPayload,
+    RecruitingSourcePayload,
+    RecruitingSourceProvenance,
+)
+from wiki_mcp.schemas.fact_record import FactRecord
+from wiki_mcp.schemas.fact_relation import FactRelation
+from wiki_mcp.schemas.fact_write_result import FactWriteResult
+from wiki_mcp.schemas.interpretation_record import InterpretationRecord
+from wiki_mcp.schemas.outbox_event import (
+    FactIngestedPayload,
+    InterpretationSnapshotPublishedPayload,
+    OutboxEvent,
+    OutboxEventRecord,
+    PersonalRecordsMarkedStalePayload,
+    PersonalRecordsRegeneratedPayload,
+)
+from wiki_mcp.schemas.personal_record import PersonalRecord
+from wiki_mcp.schemas.personal_query_answer import (
+    PersonalQueryAnswer,
+    PersonalQueryCitation,
+    PersonalQueryRationaleItem,
+)
+from wiki_mcp.schemas.personal_query_bundle import (
+    PersonalQueryBundle,
+    PersonalQueryBundleItem,
+)
+from wiki_mcp.schemas.profile_context import ProfileContext
+from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
+from wiki_mcp.schemas.rendered_page import RenderedPage
+from wiki_mcp.schemas.rendered_page_summary import RenderedPageSummary
+from wiki_mcp.schemas.retrieval_fact_summary import RetrievalFactSummary
+from wiki_mcp.schemas.retrieval_interpretation_summary import (
+    RetrievalInterpretationSummary,
+)
+from wiki_mcp.schemas.retrieval_match_explanation import RetrievalMatchExplanation
+from wiki_mcp.schemas.retrieval_personal_summary import RetrievalPersonalSummary
+from wiki_mcp.schemas.retrieval_result import RetrievalResult
+from wiki_mcp.schemas.scope_ref import ScopeRef
+from wiki_mcp.schemas.snapshot_ref import SnapshotRef
+from wiki_mcp.schemas.source_record import SourceRecord
+from wiki_mcp.schemas.validation_result import ValidationResult
+
+__all__ = [
+    "DependencyImpact",
+    "DependencyEdge",
+    "FactIngestedPayload",
+    "FactRecord",
+    "FactRelation",
+    "FactWriteResult",
+    "InterpretationRecord",
+    "InterpretationSnapshotPublishedPayload",
+    "OutboxEvent",
+    "OutboxEventRecord",
+    "PersonalRecordsMarkedStalePayload",
+    "PersonalRecordsRegeneratedPayload",
+    "PersonalRecord",
+    "PersonalQueryAnswer",
+    "PersonalQueryBundle",
+    "PersonalQueryBundleItem",
+    "PersonalQueryCitation",
+    "PersonalQueryRationaleItem",
+    "ProfileContext",
+    "RecruitingAttachmentPayload",
+    "RecruitingCompanyCoordinates",
+    "RecruitingCompanyPayload",
+    "RecruitingJobPayload",
+    "RecruitingJobPostingPayload",
+    "RecruitingRecruitmentSectionPayload",
+    "RecruitingSelectionStepPayload",
+    "RecruitingSourcePayload",
+    "RecruitingSourceProvenance",
+    "RenderedArtifact",
+    "RenderedPage",
+    "RenderedPageSummary",
+    "RetrievalFactSummary",
+    "RetrievalInterpretationSummary",
+    "RetrievalMatchExplanation",
+    "RetrievalPersonalSummary",
+    "RetrievalResult",
+    "ScopeRef",
+    "SnapshotRef",
+    "SourceRecord",
+    "ValidationResult",
+]
