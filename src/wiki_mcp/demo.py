@@ -7,6 +7,9 @@ from typing import Any
 
 from wiki_mcp.adapters.llm import DeterministicLLMGateway
 from wiki_mcp.services import (
+    DefaultDomainPackApprovalService,
+    DefaultDomainPackCompatibilityChecker,
+    DefaultDomainPackValidator,
     InMemoryDomainPackRegistry,
     InterpretationProposalService,
     InterpretationPublicationService,
@@ -142,6 +145,13 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
         interpretation_repository=interpretation_repository,
     )
     domain_pack_registry = InMemoryDomainPackRegistry()
+    domain_pack_validator = DefaultDomainPackValidator()
+    domain_pack_compatibility_checker = DefaultDomainPackCompatibilityChecker()
+    domain_pack_approval_service = DefaultDomainPackApprovalService(
+        domain_pack_registry=domain_pack_registry,
+        validator=domain_pack_validator,
+        compatibility_checker=domain_pack_compatibility_checker,
+    )
     return {
         "seed": seed,
         "fact_repository": fact_repository,
@@ -154,6 +164,9 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
         "llm_gateway": llm_gateway,
         "core_ingestion_service": core_ingestion_service,
         "domain_pack_registry": domain_pack_registry,
+        "domain_pack_validator": domain_pack_validator,
+        "domain_pack_compatibility_checker": domain_pack_compatibility_checker,
+        "domain_pack_approval_service": domain_pack_approval_service,
         "retrieval_service": retrieval_service,
         "personal_query_orchestrator": personal_query_orchestrator,
         "personal_query_service": personal_query_service,

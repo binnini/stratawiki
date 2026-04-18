@@ -11,6 +11,9 @@ if TYPE_CHECKING:
 from wiki_mcp.adapters.llm import build_llm_gateway_router_from_env
 from wiki_mcp.demo import build_demo_runtime
 from wiki_mcp.services import (
+    DefaultDomainPackApprovalService,
+    DefaultDomainPackCompatibilityChecker,
+    DefaultDomainPackValidator,
     InMemoryDomainPackRegistry,
     InterpretationProposalService,
     InterpretationPublicationService,
@@ -54,6 +57,9 @@ class BootstrapContext:
     llm_gateway: Any | None = None
     core_ingestion_service: Any | None = None
     domain_pack_registry: Any | None = None
+    domain_pack_validator: Any | None = None
+    domain_pack_compatibility_checker: Any | None = None
+    domain_pack_approval_service: Any | None = None
     retrieval_service: Any | None = None
     personal_query_orchestrator: Any | None = None
     personal_query_service: Any | None = None
@@ -105,6 +111,9 @@ def bootstrap_application(
             llm_gateway=runtime["llm_gateway"],
             core_ingestion_service=runtime["core_ingestion_service"],
             domain_pack_registry=runtime["domain_pack_registry"],
+            domain_pack_validator=runtime["domain_pack_validator"],
+            domain_pack_compatibility_checker=runtime["domain_pack_compatibility_checker"],
+            domain_pack_approval_service=runtime["domain_pack_approval_service"],
             retrieval_service=runtime["retrieval_service"],
             personal_query_orchestrator=runtime["personal_query_orchestrator"],
             personal_query_service=runtime["personal_query_service"],
@@ -130,6 +139,13 @@ def bootstrap_application(
         outbox_repository=outbox_repository,
     )
     domain_pack_registry = InMemoryDomainPackRegistry()
+    domain_pack_validator = DefaultDomainPackValidator()
+    domain_pack_compatibility_checker = DefaultDomainPackCompatibilityChecker()
+    domain_pack_approval_service = DefaultDomainPackApprovalService(
+        domain_pack_registry=domain_pack_registry,
+        validator=domain_pack_validator,
+        compatibility_checker=domain_pack_compatibility_checker,
+    )
     retrieval_service = CuratedRetrievalService(
         fact_repository=fact_repository,
         interpretation_repository=interpretation_repository,
@@ -172,6 +188,9 @@ def bootstrap_application(
         llm_gateway=llm_gateway,
         core_ingestion_service=core_ingestion_service,
         domain_pack_registry=domain_pack_registry,
+        domain_pack_validator=domain_pack_validator,
+        domain_pack_compatibility_checker=domain_pack_compatibility_checker,
+        domain_pack_approval_service=domain_pack_approval_service,
         retrieval_service=retrieval_service,
         personal_query_orchestrator=personal_query_orchestrator,
         personal_query_service=personal_query_service,

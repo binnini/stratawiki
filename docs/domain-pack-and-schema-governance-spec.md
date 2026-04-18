@@ -24,13 +24,16 @@ The repository now includes:
 - a default in-memory registry implementation
 - runtime lookup by `domain + pack_version`
 - explicit errors for missing packs and unsupported versions
+- a dedicated Domain Pack validator with structured validation reports
+- a compatibility checker with structured upgrade reports
+- manual-review classification for non-breaking but operator-sensitive pack upgrades
+- an approval service that evaluates candidate packs before registration or activation
 
 The repository does not yet include:
 
-- a pack validator
-- a compatibility checker
 - file-based pack loading
-- proposal ingestion based on registered packs
+- a bootstrapped proposal-ingestion path as the default runtime write surface
+- durable pack-registration audit storage
 - active or deprecated lifecycle metadata beyond one active-version pointer
 
 ## Architectural Position
@@ -42,7 +45,7 @@ The current runtime split is:
 
 - source adapters still normalize raw inputs into `SourceRecord`
 - the existing recruiting ingestion plugin still decomposes normalized source into Facts
-- the new Domain Pack registry provides the future runtime seam for validator and proposal-ingestion work
+- the new Domain Pack registry plus approval services provide the runtime seam for future proposal-ingestion work
 
 This means the current source-driven ingestion path remains valid while schema governance is being introduced incrementally.
 
@@ -178,6 +181,22 @@ This keeps the registry reachable from future services without forcing the curre
 At the moment, the registry is initialized empty.
 Real domain-pack artifacts are expected to be registered by future bootstrap or integration code.
 
+The runtime bootstrap now exposes:
+
+- the registry itself
+- a Domain Pack validator
+- a compatibility checker
+- an approval service that can review or gate registration/activation
+
+Compatibility reports now distinguish between:
+
+- `auto_pass`
+- `manual_review`
+- `auto_block`
+
+This allows additive but operator-sensitive changes to be registered without
+becoming the active pack until an explicit activation review is attached.
+
 ## Relationship to Existing Domain Code
 
 The current recruiting ingestion path is still code-driven.
@@ -196,11 +215,7 @@ The intended migration path is:
 
 The following are intentionally deferred:
 
-- full pack-shape validation
-- relation endpoint validation
-- compatibility reports between versions
-- proposal batch schemas
-- canonical write gating against packs
-- audit trails for pack registration
+- proposal ingestion against registered packs as the default runtime write path
+- durable audit trails for pack registration
 
 Those concerns belong to the next schema-governance steps after the contract and registry foundation.
