@@ -482,7 +482,7 @@ Weaknesses:
 
 ## Implementation Direction
 
-The system should be implemented as an MCP server with a domain-neutral core and domain-specific modules.
+The system should be implemented as an MCP server with a domain-neutral core, registered domain-pack artifacts, and domain-specific modules where code is still needed.
 
 ### Core Responsibilities
 
@@ -615,7 +615,7 @@ The architecture should not hard-code recruiting assumptions into the core.
 Recommended split:
 
 - domain-neutral MCP core
-- domain plugin packages
+- domain-pack artifacts plus domain-owned packages
 
 The core should know how to:
 

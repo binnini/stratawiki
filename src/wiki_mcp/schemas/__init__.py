@@ -2,6 +2,20 @@
 
 from wiki_mcp.schemas.dependency_impact import DependencyImpact
 from wiki_mcp.schemas.dependency_edge import DependencyEdge
+from wiki_mcp.schemas.domain_pack import (
+    AttributeDefinition,
+    CompositeIdentityRule,
+    DomainPack,
+    DomainPackCompatibility,
+    DomainPackManifest,
+    DomainPackOwner,
+    EntityTypeDefinition,
+    ExternalIdIdentityRule,
+    IdentityRule,
+    MergePolicy,
+    ProjectionHints,
+    RelationTypeDefinition,
+)
 from wiki_mcp.schemas.external_recruiting_payload import (
     RecruitingAttachmentPayload,
     RecruitingCompanyCoordinates,
@@ -76,6 +90,14 @@ from wiki_mcp.schemas.validation_result import ValidationResult
 __all__ = [
     "DependencyImpact",
     "DependencyEdge",
+    "AttributeDefinition",
+    "CompositeIdentityRule",
+    "DomainPack",
+    "DomainPackCompatibility",
+    "DomainPackManifest",
+    "DomainPackOwner",
+    "EntityTypeDefinition",
+    "ExternalIdIdentityRule",
     "FactIngestedPayload",
     "FactRecord",
     "FactRelation",
@@ -92,6 +114,7 @@ __all__ = [
     "INTERPRETATION_STATUS_STALE",
     "INTERPRETATION_STATUS_SUPERSEDED",
     "INTERPRETATION_STATUS_VALIDATED",
+    "IdentityRule",
     "InterpretationRecord",
     "InterpretationValidationError",
     "InterpretationValidationResult",
@@ -108,6 +131,8 @@ __all__ = [
     "PersonalQueryCitation",
     "PersonalQueryProvenance",
     "PersonalQueryRationaleItem",
+    "MergePolicy",
+    "ProjectionHints",
     "ProfileContext",
     "GeneratedBy",
     "GeneratedByKind",
@@ -124,6 +149,7 @@ __all__ = [
     "RenderedArtifact",
     "RenderedPage",
     "RenderedPageSummary",
+    "RelationTypeDefinition",
     "RetrievalFactSummary",
     "RetrievalInterpretationSummary",
     "RetrievalMatchExplanation",

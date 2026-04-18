@@ -7,6 +7,7 @@ from typing import Any
 
 from wiki_mcp.adapters.llm import DeterministicLLMGateway
 from wiki_mcp.services import (
+    InMemoryDomainPackRegistry,
     InterpretationProposalService,
     InterpretationPublicationService,
     InterpretationQueryService,
@@ -140,6 +141,7 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
     interpretation_query_service = InterpretationQueryService(
         interpretation_repository=interpretation_repository,
     )
+    domain_pack_registry = InMemoryDomainPackRegistry()
     return {
         "seed": seed,
         "fact_repository": fact_repository,
@@ -151,6 +153,7 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
         "rendering_repository": rendering_repository,
         "llm_gateway": llm_gateway,
         "core_ingestion_service": core_ingestion_service,
+        "domain_pack_registry": domain_pack_registry,
         "retrieval_service": retrieval_service,
         "personal_query_orchestrator": personal_query_orchestrator,
         "personal_query_service": personal_query_service,

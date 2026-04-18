@@ -10,7 +10,7 @@ StrataWiki is being rebuilt around three semantic layers:
 - `Interpretation`: shared derived meaning
 - `Personal`: user-scoped plans, notes, and cached outputs
 
-The system is intended for domains such as recruiting and job strategy first, while staying extensible to other domains through domain plugins.
+The system is intended for domains such as recruiting and job strategy first, while staying extensible to other domains through a domain-neutral core plus registered `Domain Pack` artifacts for canonical schema semantics.
 
 ## Architecture Summary
 
@@ -27,6 +27,7 @@ This repository currently contains:
 - architecture and design specs in `docs/`
 - a lightweight development notebook in `dev-wiki/`
 - initial source tree scaffolding under `src/`
+- an initial `Domain Pack` contract and registry foundation
 - empty data directories under `data/`
 - an MVP CLI and tool runtime for the Week 1 flow
 
@@ -81,6 +82,7 @@ Use demo mode for the Week 1 MVP walkthrough unless you have already provisioned
 
 - `docs/mcp-architecture.md`
 - `docs/implementation-roadmap.md`
+- `docs/domain-pack-and-schema-governance-spec.md`
 - `docs/three-layer-llm-wiki-mcp-idea.md`
 - `docs/three-layer-data-model-spec.md`
 - `docs/interpretation-schema-and-lifecycle-spec.md`

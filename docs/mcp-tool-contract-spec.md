@@ -21,7 +21,7 @@ The tools are intentionally provider-agnostic. Clients should not need to know w
 - make provenance and snapshot usage explicit
 - expose invalidation state without leaking internal implementation details
 - support bounded exploratory retrieval without exposing unrestricted datastore access
-- support domain plugins without redesigning the core protocol
+- support registered domain packs without redesigning the core protocol
 
 ## Tool Families
 
@@ -1112,13 +1112,19 @@ Recommended error codes:
 - `REGENERATION_REQUIRED`
 - `CACHE_INVALID`
 
-## Domain Plugin Extensibility
+## Domain Pack Extensibility
 
 The core tool names should remain stable across domains.
 
-Domain plugins extend behavior through:
+Registered domain packs extend canonical behavior through:
 
 - domain-specific schemas
+- identity rules
+- merge policies
+- projection hints
+
+Adjacent domain-owned modules may still extend behavior through:
+
 - filter fields
 - rendering templates
 - interpretation builders

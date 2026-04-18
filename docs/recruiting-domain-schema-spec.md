@@ -14,6 +14,15 @@ It specifies:
 
 The recruiting domain is treated as a batch-oriented but mutable domain. It usually does not require sub-second transactional behavior, but it does require strong normalization, deduplication, and provenance.
 
+## Relationship to Domain Packs
+
+This document is the recruiting-domain meaning reference.
+
+In the current schema-governance direction, these semantics are expected to map to a versioned `recruiting` `DomainPack` artifact registered by the core runtime.
+
+Today the repository has the Domain Pack contract and registry foundation, but the recruiting ingest path is still partially code-driven through the existing source-ingestion plugin.
+That means this document remains the domain-design source while pack-driven validation and proposal ingestion are built out incrementally.
+
 ## Domain Assumptions
 
 - job data is ingested from APIs, ATS platforms, company career pages, and public job boards

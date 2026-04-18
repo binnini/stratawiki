@@ -7,7 +7,7 @@ This document proposes an MCP-native architecture for a multi-user three-layer L
 The architecture is intended to support:
 
 - shared knowledge with personal overlays
-- domain-specific plugins
+- versioned domain packs for canonical schema semantics
 - provider-agnostic LLM orchestration
 - rendered markdown wiki views
 - snapshot-aware retrieval and invalidation
@@ -31,7 +31,7 @@ This architecture should be understood as:
 - support bounded LLM exploration without giving up canonical control
 - support multi-user and multi-tenant scope boundaries
 - preserve provenance, snapshot traceability, and explainability
-- keep domain-specific logic modular
+- keep domain semantics modular and registry-driven
 - support graph-based retrieval expansion and dependency routing
 
 ## Non-Goals
@@ -162,6 +162,23 @@ Initial adapters:
 - Slack
 - GitHub
 
+### 3.5. Domain Pack Registry and Schema Governance Layer
+
+This layer owns versioned domain semantics that should not stay hardcoded in core services.
+
+Responsibilities:
+
+- register `DomainPack` artifacts
+- resolve packs by `domain` and optional `pack_version`
+- expose one active version per domain
+- provide entity, relation, identity, merge, and projection metadata to future validators and ingestion gates
+
+Current status:
+
+- a minimal pack contract and in-memory registry exist in the codebase
+- the current MVP Fact ingest path still uses `SourceRecord` plus a thin domain ingestion plugin
+- proposal ingestion and pack validation are not yet implemented
+
 ### 4. LLM Router Layer
 
 This layer hides provider-specific differences behind common operations.
@@ -270,6 +287,9 @@ The architectural pivot is to ingest everything through a provider-neutral sourc
 
 Every adapter should produce this shape before the Fact ingest pipeline runs.
 
+The current runtime still follows this source-first ingest path.
+The new schema-governance direction adds a registry for canonical domain semantics without yet replacing the existing source-driven ingestion flow.
+
 ## Core Data Flows
 
 ### Fact Ingest Flow
@@ -280,6 +300,12 @@ Every adapter should produce this shape before the Fact ingest pipeline runs.
 4. write Fact records
 5. publish fact snapshot or delta metadata
 6. route dependency impact to downstream layers
+
+Near-term evolution:
+
+- keep the existing `SourceRecord` path working
+- resolve domain semantics through registered `DomainPack` artifacts
+- add a future proposal-ingestion path that validates against the registry before canonical writes
 
 ### Interpretation Projection Flow
 
@@ -416,4 +442,4 @@ Use this architecture document as the high-level system view, then rely on the d
 - cache, invalidation, and consistency
 - graph, indexing, and propagation
 - MCP tool contracts
-- domain-specific schemas
+- domain-specific schemas and schema governance

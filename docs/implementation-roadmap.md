@@ -13,7 +13,7 @@ The current direction is broader:
 - snapshot-aware derivation
 - graph-based dependency routing
 - bounded LLM orchestration and retrieval
-- domain-plugin extensibility
+- domain-pack extensibility
 
 This roadmap focuses on implementation order rather than repository migration mechanics.
 
@@ -78,7 +78,11 @@ See `docs/deployment-and-operations-spec.md` for the runtime constraints view.
 | Retrieval mode policy      | retrieval and orchestration layer      | `docs/llm-orchestration-and-retrieval-spec.md`     |
 | Graph traversal and impact | graph layer                            | `docs/graph-index-and-propagation-spec.md`         |
 | Cache key and stale policy | cache and snapshot layer               | `docs/cache-invalidation-consistency-spec.md`      |
+| Domain pack governance     | schema governance layer                | `docs/domain-pack-and-schema-governance-spec.md`   |
 | Runtime topology           | deployment and operations              | `docs/deployment-and-operations-spec.md`           |
+
+Schema-governance foundation can land before full multi-domain generalization.
+The contract and registry work unblock validator, compatibility, and proposal-ingestion phases even while the current source-driven ingest path remains active.
 
 ## Phase 1: Core Contracts and LLM Interface
 
@@ -501,7 +505,7 @@ Primary specs:
 
 - `docs/deployment-and-operations-spec.md`
 
-## Phase 12: Domain Plugin Generalization
+## Phase 12: Domain Pack and Schema Governance Generalization
 
 Objective:
 
@@ -509,15 +513,16 @@ Objective:
 
 Deliverables:
 
-- domain plugin contract
+- domain pack contract and registration path
 - one second domain stub or pilot
 
 Implementation tasks:
 
-- extract domain-specific schemas into plugin modules
+- extract domain-specific schemas into domain-pack artifacts
 - extract rendering templates by domain
-- extract freshness defaults by domain
-- define plugin registration path
+- extract freshness defaults into domain-owned semantics
+- add pack validator and compatibility checks
+- define pack registration and activation path
 
 Possible second domains:
 

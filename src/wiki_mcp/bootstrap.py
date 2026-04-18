@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 from wiki_mcp.adapters.llm import build_llm_gateway_router_from_env
 from wiki_mcp.demo import build_demo_runtime
 from wiki_mcp.services import (
+    InMemoryDomainPackRegistry,
     InterpretationProposalService,
     InterpretationPublicationService,
     InterpretationQueryService,
@@ -52,6 +53,7 @@ class BootstrapContext:
     rendering_repository: Any | None = None
     llm_gateway: Any | None = None
     core_ingestion_service: Any | None = None
+    domain_pack_registry: Any | None = None
     retrieval_service: Any | None = None
     personal_query_orchestrator: Any | None = None
     personal_query_service: Any | None = None
@@ -102,6 +104,7 @@ def bootstrap_application(
             rendering_repository=runtime["rendering_repository"],
             llm_gateway=runtime["llm_gateway"],
             core_ingestion_service=runtime["core_ingestion_service"],
+            domain_pack_registry=runtime["domain_pack_registry"],
             retrieval_service=runtime["retrieval_service"],
             personal_query_orchestrator=runtime["personal_query_orchestrator"],
             personal_query_service=runtime["personal_query_service"],
@@ -126,6 +129,7 @@ def bootstrap_application(
         snapshot_repository=snapshot_repository,
         outbox_repository=outbox_repository,
     )
+    domain_pack_registry = InMemoryDomainPackRegistry()
     retrieval_service = CuratedRetrievalService(
         fact_repository=fact_repository,
         interpretation_repository=interpretation_repository,
@@ -167,6 +171,7 @@ def bootstrap_application(
         rendering_repository=rendering_repository,
         llm_gateway=llm_gateway,
         core_ingestion_service=core_ingestion_service,
+        domain_pack_registry=domain_pack_registry,
         retrieval_service=retrieval_service,
         personal_query_orchestrator=personal_query_orchestrator,
         personal_query_service=personal_query_service,
