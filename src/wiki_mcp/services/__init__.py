@@ -1,6 +1,7 @@
 """Core domain services."""
 
 from wiki_mcp.services.domain_pack_registry import (
+    DomainPackApprovalRequiredError,
     DomainPackNotRegisteredError,
     DomainPackRegistryError,
     DomainPackVersionAlreadyRegisteredError,
@@ -23,6 +24,7 @@ from wiki_mcp.services.interpretation_queries import InterpretationQueryService
 
 __all__ = [
     "DomainPackNotRegisteredError",
+    "DomainPackApprovalRequiredError",
     "DefaultDomainPackApprovalService",
     "DefaultDomainPackCompatibilityChecker",
     "DefaultDomainPackValidator",

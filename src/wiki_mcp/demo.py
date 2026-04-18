@@ -23,7 +23,10 @@ from wiki_mcp.services.interpretation_families import (
     MarketTrendInterpretationBuilder,
 )
 from wiki_mcp.services.retrieval import CuratedRetrievalService
-from wiki_mcp.storage.filesystem import FileSystemRenderingRepository
+from wiki_mcp.storage.filesystem import (
+    FileSystemDomainPackReviewAuditRepository,
+    FileSystemRenderingRepository,
+)
 from wiki_mcp.storage.memory import (
     InMemoryFactRepository,
     InMemoryInterpretationRepository,
@@ -147,10 +150,14 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
     domain_pack_registry = InMemoryDomainPackRegistry()
     domain_pack_validator = DefaultDomainPackValidator()
     domain_pack_compatibility_checker = DefaultDomainPackCompatibilityChecker()
+    domain_pack_review_audit_repository = FileSystemDomainPackReviewAuditRepository(
+        Path(render_root) / "domain-pack-reviews.jsonl"
+    )
     domain_pack_approval_service = DefaultDomainPackApprovalService(
         domain_pack_registry=domain_pack_registry,
         validator=domain_pack_validator,
         compatibility_checker=domain_pack_compatibility_checker,
+        review_audit_repository=domain_pack_review_audit_repository,
     )
     return {
         "seed": seed,
@@ -166,6 +173,7 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
         "domain_pack_registry": domain_pack_registry,
         "domain_pack_validator": domain_pack_validator,
         "domain_pack_compatibility_checker": domain_pack_compatibility_checker,
+        "domain_pack_review_audit_repository": domain_pack_review_audit_repository,
         "domain_pack_approval_service": domain_pack_approval_service,
         "retrieval_service": retrieval_service,
         "personal_query_orchestrator": personal_query_orchestrator,

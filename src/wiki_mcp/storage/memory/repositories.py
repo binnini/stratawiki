@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from wiki_mcp.schemas.domain_pack_review import DomainPackApprovalAuditRecord
+
 
 def _matches_text(query_text: str, query_tokens: list[str], *parts: object) -> bool:
     haystack = " ".join(str(part or "") for part in parts).lower()
@@ -230,3 +232,15 @@ class InMemoryOutboxRepository:
         start = len(self.events) + 1
         self.events.extend(dict(event) for event in events)
         return [f"evt-{index}" for index in range(start, start + len(events))]
+
+
+@dataclass
+class InMemoryDomainPackReviewAuditRepository:
+    records: list[DomainPackApprovalAuditRecord] = field(default_factory=list)
+
+    def append_record(self, record: DomainPackApprovalAuditRecord) -> str:
+        stored = dict(record)
+        record_id = str(stored.get("record_id") or f"pack_audit:{len(self.records) + 1}")
+        stored["record_id"] = record_id
+        self.records.append(stored)
+        return record_id

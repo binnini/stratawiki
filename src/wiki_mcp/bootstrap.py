@@ -29,7 +29,10 @@ from wiki_mcp.services.interpretation_families import (
     MarketTrendInterpretationBuilder,
 )
 from wiki_mcp.services.retrieval import CuratedRetrievalService
-from wiki_mcp.storage.filesystem import FileSystemRenderingRepository
+from wiki_mcp.storage.filesystem import (
+    FileSystemDomainPackReviewAuditRepository,
+    FileSystemRenderingRepository,
+)
 from wiki_mcp.storage.postgres.repositories import (
     PostgresFactRepository,
     PostgresInterpretationRepository,
@@ -61,6 +64,7 @@ class BootstrapContext:
     domain_pack_registry: Any | None = None
     domain_pack_validator: Any | None = None
     domain_pack_compatibility_checker: Any | None = None
+    domain_pack_review_audit_repository: Any | None = None
     domain_pack_approval_service: Any | None = None
     domain_proposal_ingestion_service: Any | None = None
     domain_pack_load_reports: list[dict[str, Any]] | None = None
@@ -112,7 +116,6 @@ def bootstrap_application(
             approval_service=runtime["domain_pack_approval_service"],
             domain_pack_paths=domain_pack_paths,
             active_domain_pack_versions=active_domain_pack_versions,
-            review_log_path=Path(render_root) / "domain-pack-reviews.jsonl",
         )
         return BootstrapContext(
             connection=connection or object(),
@@ -130,6 +133,7 @@ def bootstrap_application(
             domain_pack_registry=runtime["domain_pack_registry"],
             domain_pack_validator=runtime["domain_pack_validator"],
             domain_pack_compatibility_checker=runtime["domain_pack_compatibility_checker"],
+            domain_pack_review_audit_repository=runtime["domain_pack_review_audit_repository"],
             domain_pack_approval_service=runtime["domain_pack_approval_service"],
             domain_proposal_ingestion_service=domain_proposal_ingestion_service,
             domain_pack_load_reports=domain_pack_load_reports,
@@ -160,10 +164,14 @@ def bootstrap_application(
     domain_pack_registry = InMemoryDomainPackRegistry()
     domain_pack_validator = DefaultDomainPackValidator()
     domain_pack_compatibility_checker = DefaultDomainPackCompatibilityChecker()
+    domain_pack_review_audit_repository = FileSystemDomainPackReviewAuditRepository(
+        Path(render_root) / "domain-pack-reviews.jsonl"
+    )
     domain_pack_approval_service = DefaultDomainPackApprovalService(
         domain_pack_registry=domain_pack_registry,
         validator=domain_pack_validator,
         compatibility_checker=domain_pack_compatibility_checker,
+        review_audit_repository=domain_pack_review_audit_repository,
     )
     domain_proposal_ingestion_service = DomainProposalIngestionGateway(
         domain_pack_registry=domain_pack_registry,
@@ -174,7 +182,6 @@ def bootstrap_application(
         approval_service=domain_pack_approval_service,
         domain_pack_paths=domain_pack_paths,
         active_domain_pack_versions=active_domain_pack_versions,
-        review_log_path=Path(render_root) / "domain-pack-reviews.jsonl",
     )
     retrieval_service = CuratedRetrievalService(
         fact_repository=fact_repository,
@@ -220,6 +227,7 @@ def bootstrap_application(
         domain_pack_registry=domain_pack_registry,
         domain_pack_validator=domain_pack_validator,
         domain_pack_compatibility_checker=domain_pack_compatibility_checker,
+        domain_pack_review_audit_repository=domain_pack_review_audit_repository,
         domain_pack_approval_service=domain_pack_approval_service,
         domain_proposal_ingestion_service=domain_proposal_ingestion_service,
         domain_pack_load_reports=domain_pack_load_reports,

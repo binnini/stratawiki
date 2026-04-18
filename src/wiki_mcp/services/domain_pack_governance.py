@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from collections.abc import Mapping
 from typing import Any
 
 from wiki_mcp.schemas.domain_pack import DomainPack
 from wiki_mcp.schemas.domain_pack_review import (
     DomainPackApprovalReport,
+    DomainPackApprovalAuditRecord,
     DomainPackCompatibilityDecision,
     DomainPackCompatibilityIssue,
     DomainPackCompatibilityReport,
@@ -19,6 +22,7 @@ from wiki_mcp.services.domain_pack_registry import DomainPackRegistryError
 from wiki_mcp.services.interfaces.domain_pack_governance import (
     DomainPackApprovalService,
     DomainPackCompatibilityChecker,
+    DomainPackReviewAuditRepository,
     DomainPackValidator,
 )
 from wiki_mcp.services.interfaces.domain_pack_registry import DomainPackRegistry
@@ -1513,10 +1517,12 @@ class DefaultDomainPackApprovalService(DomainPackApprovalService):
         domain_pack_registry: DomainPackRegistry,
         validator: DomainPackValidator | None = None,
         compatibility_checker: DomainPackCompatibilityChecker | None = None,
+        review_audit_repository: DomainPackReviewAuditRepository | None = None,
     ) -> None:
         self.domain_pack_registry = domain_pack_registry
         self.validator = validator or DefaultDomainPackValidator()
         self.compatibility_checker = compatibility_checker or DefaultDomainPackCompatibilityChecker()
+        self.review_audit_repository = review_audit_repository
 
     def review_registration(
         self,
@@ -1524,9 +1530,87 @@ class DefaultDomainPackApprovalService(DomainPackApprovalService):
         review_audit: DomainPackReviewAudit | None = None,
     ) -> DomainPackApprovalReport:
         normalized_candidate_pack = normalize_domain_pack(candidate_pack)
-        validation = self.validator.validate(normalized_candidate_pack)
-        domain = _manifest_value(normalized_candidate_pack, "domain") or ""
-        candidate_pack_version = _manifest_value(normalized_candidate_pack, "pack_version") or ""
+        report = self._build_review_report(
+            normalized_candidate_pack,
+            review_audit=review_audit,
+        )
+        self._persist_audit_record(
+            action="review_registration",
+            candidate_pack=normalized_candidate_pack,
+            requested_activation=False,
+            report=report,
+        )
+        return report
+
+    def register_pack(
+        self,
+        candidate_pack: DomainPack,
+        *,
+        activate: bool = False,
+        review_audit: DomainPackReviewAudit | None = None,
+    ) -> DomainPackApprovalReport:
+        normalized_candidate_pack = normalize_domain_pack(candidate_pack)
+        report = self._build_review_report(
+            normalized_candidate_pack,
+            review_audit=review_audit,
+        )
+        if not report["validation"]["ok"]:
+            report["ok"] = False
+            self._persist_audit_record(
+                action="register_pack",
+                candidate_pack=normalized_candidate_pack,
+                requested_activation=activate,
+                report=report,
+            )
+            return report
+
+        compatibility = report.get("compatibility")
+        if activate and compatibility is not None and (
+            not compatibility["compatible"] or not report["activation_safe"]
+        ):
+            report["ok"] = False
+            report["activated"] = False
+            self._persist_audit_record(
+                action="register_pack",
+                candidate_pack=normalized_candidate_pack,
+                requested_activation=activate,
+                report=report,
+            )
+            return report
+
+        try:
+            self.domain_pack_registry.register_approved(normalized_candidate_pack, activate=activate)
+        except DomainPackRegistryError as exc:
+            report["ok"] = False
+            report["registration_error"] = self._registration_error(exc)
+            self._persist_audit_record(
+                action="register_pack",
+                candidate_pack=normalized_candidate_pack,
+                requested_activation=activate,
+                report=report,
+            )
+            return report
+
+        report["ok"] = True
+        report["registered"] = True
+        report["activated"] = activate
+        self._persist_audit_record(
+            action="register_pack",
+            candidate_pack=normalized_candidate_pack,
+            requested_activation=activate,
+            report=report,
+        )
+        return report
+
+    def _build_review_report(
+        self,
+        candidate_pack: DomainPack,
+        *,
+        review_audit: DomainPackReviewAudit | None,
+    ) -> DomainPackApprovalReport:
+        validation = self.validator.validate(candidate_pack)
+        domain = _manifest_value(candidate_pack, "domain") or ""
+        candidate_pack_version = _manifest_value(candidate_pack, "pack_version") or ""
         active_pack_version = self.domain_pack_registry.get_active_version(domain) if domain else None
 
         report: DomainPackApprovalReport = {
@@ -1562,7 +1646,7 @@ class DefaultDomainPackApprovalService(DomainPackApprovalService):
 
         compatibility = self.compatibility_checker.compare(
             active_pack=active_pack,
-            candidate_pack=normalized_candidate_pack,
+            candidate_pack=candidate_pack,
         )
         report["compatibility"] = compatibility
         report["review_required"] = compatibility["review_required"]
@@ -1571,39 +1655,6 @@ class DefaultDomainPackApprovalService(DomainPackApprovalService):
             not compatibility["review_required"]
             or self._review_allows_activation(normalized_review_audit)
         )
-        return report
-
-    def register_pack(
-        self,
-        candidate_pack: DomainPack,
-        *,
-        activate: bool = False,
-        review_audit: DomainPackReviewAudit | None = None,
-    ) -> DomainPackApprovalReport:
-        normalized_candidate_pack = normalize_domain_pack(candidate_pack)
-        report = self.review_registration(normalized_candidate_pack, review_audit=review_audit)
-        if not report["validation"]["ok"]:
-            report["ok"] = False
-            return report
-
-        compatibility = report.get("compatibility")
-        if activate and compatibility is not None and (
-            not compatibility["compatible"] or not report["activation_safe"]
-        ):
-            report["ok"] = False
-            report["activated"] = False
-            return report
-
-        try:
-            self.domain_pack_registry.register(normalized_candidate_pack, activate=activate)
-        except DomainPackRegistryError as exc:
-            report["ok"] = False
-            report["registration_error"] = self._registration_error(exc)
-            return report
-
-        report["ok"] = True
-        report["registered"] = True
-        report["activated"] = activate
         return report
 
     def _normalize_review_audit(
@@ -1640,6 +1691,27 @@ class DefaultDomainPackApprovalService(DomainPackApprovalService):
                 "available_versions": exc.available_versions,
             },
         }
+
+    def _persist_audit_record(
+        self,
+        *,
+        action: str,
+        candidate_pack: DomainPack,
+        requested_activation: bool,
+        report: DomainPackApprovalReport,
+    ) -> None:
+        if self.review_audit_repository is None:
+            return
+        record: DomainPackApprovalAuditRecord = {
+            "action": action,  # type: ignore[typeddict-item]
+            "recorded_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "domain": _manifest_value(candidate_pack, "domain") or "",
+            "candidate_pack_version": _manifest_value(candidate_pack, "pack_version") or "",
+            "requested_activation": requested_activation,
+            "report": report,
+        }
+        record_id = self.review_audit_repository.append_record(record)
+        report["audit_record_id"] = record_id
 
 
 def _manifest_value(pack: DomainPack, key: str) -> str | None:

@@ -50,6 +50,7 @@ def test_bootstrap_loads_and_activates_domain_pack_artifact_in_demo_mode(tmp_pat
     try:
         assert context.domain_pack_registry.get_active_version("recruiting") == "2026-04-18"
         assert context.domain_proposal_ingestion_service is not None
+        assert context.domain_pack_review_audit_repository is not None
         assert context.domain_pack_load_reports is not None
         assert context.domain_pack_load_reports[0]["report"]["ok"] is True
         review_log = tmp_path / "domain-pack-reviews.jsonl"

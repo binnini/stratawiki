@@ -258,6 +258,7 @@ class FakeBootstrap:
     domain_pack_registry: Any
     domain_pack_validator: Any
     domain_pack_compatibility_checker: Any
+    domain_pack_review_audit_repository: Any
     domain_pack_approval_service: Any
     domain_proposal_ingestion_service: Any
     retrieval_service: Any
@@ -504,6 +505,7 @@ def build_fake_server(tmp_path: Path) -> StrataWikiServer:
         domain_pack_registry=domain_pack_registry,
         domain_pack_validator=domain_pack_validator,
         domain_pack_compatibility_checker=domain_pack_compatibility_checker,
+        domain_pack_review_audit_repository=None,
         domain_pack_approval_service=domain_pack_approval_service,
         domain_proposal_ingestion_service=domain_proposal_ingestion_service,
         retrieval_service=retrieval_service,

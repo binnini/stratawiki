@@ -9,7 +9,10 @@ class DomainPackRegistry(Protocol):
     """Registry contract for versioned Domain Pack artifacts."""
 
     def register(self, pack: DomainPack, *, activate: bool = False) -> None:
-        """Register one domain pack artifact with an optional activation step."""
+        """Public mutation path should raise and direct callers to governance APIs."""
+
+    def register_approved(self, pack: DomainPack, *, activate: bool = False) -> None:
+        """Register one domain pack artifact after governance approval."""
 
     def get(self, domain: str, pack_version: str | None = None) -> DomainPack:
         """Resolve one registered pack by domain and optionally by explicit version."""
@@ -24,4 +27,7 @@ class DomainPackRegistry(Protocol):
         """Return the currently active version for a domain, if one exists."""
 
     def set_active_version(self, domain: str, pack_version: str) -> None:
-        """Point default resolution for a domain at a registered pack version."""
+        """Public activation path should raise and direct callers to governance APIs."""
+
+    def set_active_version_approved(self, domain: str, pack_version: str) -> None:
+        """Point default resolution for a domain at a registered pack version after approval."""

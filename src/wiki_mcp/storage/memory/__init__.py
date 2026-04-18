@@ -2,6 +2,7 @@
 
 from wiki_mcp.storage.memory.repositories import (
     InMemoryFactRepository,
+    InMemoryDomainPackReviewAuditRepository,
     InMemoryInterpretationRepository,
     InMemoryOutboxRepository,
     InMemoryPersonalRepository,
@@ -11,6 +12,7 @@ from wiki_mcp.storage.memory.repositories import (
 
 __all__ = [
     "InMemoryFactRepository",
+    "InMemoryDomainPackReviewAuditRepository",
     "InMemoryInterpretationRepository",
     "InMemoryOutboxRepository",
     "InMemoryPersonalRepository",

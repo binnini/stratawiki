@@ -5,6 +5,7 @@ from typing import Protocol
 from wiki_mcp.schemas.domain_pack import DomainPack
 from wiki_mcp.schemas.domain_pack_review import (
     DomainPackApprovalReport,
+    DomainPackApprovalAuditRecord,
     DomainPackCompatibilityReport,
     DomainPackReviewAudit,
     DomainPackValidationReport,
@@ -51,3 +52,13 @@ class DomainPackApprovalService(Protocol):
         review_audit: DomainPackReviewAudit | None = None,
     ) -> DomainPackApprovalReport:
         """Validate, compare, and register a candidate pack when allowed."""
+
+
+class DomainPackReviewAuditRepository(Protocol):
+    """Durable storage boundary for approval-time governance audit records."""
+
+    def append_record(
+        self,
+        record: DomainPackApprovalAuditRecord,
+    ) -> str:
+        """Persist one audit record and return its stored id."""

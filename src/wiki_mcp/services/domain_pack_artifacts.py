@@ -4,20 +4,14 @@ import json
 import os
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from wiki_mcp.schemas.domain_pack_review import DomainPackApprovalReport
 from wiki_mcp.services.domain_contract_normalization import normalize_domain_pack
 from wiki_mcp.services.interfaces.domain_pack_governance import DomainPackApprovalService
 
 DEFAULT_DOMAIN_PACK_PATHS_ENV = "STRATAWIKI_DOMAIN_PACK_PATHS"
 DEFAULT_ACTIVE_DOMAIN_PACKS_ENV = "STRATAWIKI_ACTIVE_DOMAIN_PACKS"
-
-
-def _utc_now() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _manifest_value(pack: Mapping[str, Any], key: str) -> str | None:
@@ -71,7 +65,6 @@ def load_and_register_domain_packs(
     approval_service: DomainPackApprovalService,
     domain_pack_paths: Iterable[str | Path] | None = None,
     active_domain_pack_versions: Mapping[str, str] | None = None,
-    review_log_path: str | Path | None = None,
 ) -> list[dict[str, Any]]:
     paths = resolve_domain_pack_paths(domain_pack_paths)
     if not paths:
@@ -101,15 +94,10 @@ def load_and_register_domain_packs(
     target_active_versions = {**default_active_versions, **requested_active_versions}
 
     reports: list[dict[str, Any]] = []
-    review_log = Path(review_log_path).expanduser().resolve() if review_log_path else None
-    if review_log is not None:
-        review_log.parent.mkdir(parents=True, exist_ok=True)
-
     for artifact in artifacts:
         activate = target_active_versions.get(artifact["domain"]) == artifact["pack_version"]
         review_audit = {
             "reviewed_by": "bootstrap",
-            "reviewed_at": _utc_now(),
             "decision_reason": f"Loaded domain pack artifact from {artifact['path']}.",
             **({"approved_for_activation": True} if activate else {}),
         }
@@ -131,9 +119,6 @@ def load_and_register_domain_packs(
             "report": report,
         }
         reports.append(enriched_report)
-        if review_log is not None:
-            with review_log.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(enriched_report, sort_keys=True) + "\n")
     return reports
 
 

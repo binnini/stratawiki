@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from wiki_mcp.services.domain_pack_registry import (
+    DomainPackApprovalRequiredError,
     DomainPackNotRegisteredError,
     DomainPackVersionAlreadyRegisteredError,
     InMemoryDomainPackRegistry,
@@ -95,8 +96,8 @@ def test_registry_registers_and_resolves_by_domain_and_version() -> None:
     v1 = _pack("2026-04-18")
     v2 = _pack("2026-05-01")
 
-    registry.register(v1, activate=True)
-    registry.register(v2, activate=True)
+    registry.register_approved(v1, activate=True)
+    registry.register_approved(v2, activate=True)
 
     assert registry.get_active_version("recruiting") == "2026-05-01"
     assert registry.list_versions("recruiting") == ["2026-04-18", "2026-05-01"]
@@ -108,11 +109,11 @@ def test_registry_registers_and_resolves_by_domain_and_version() -> None:
 def test_registry_can_switch_active_version() -> None:
     registry = InMemoryDomainPackRegistry([_pack("2026-04-18"), _pack("2026-05-01")])
 
-    registry.set_active_version("recruiting", "2026-04-18")
+    registry.set_active_version_approved("recruiting", "2026-04-18")
 
     assert registry.get("recruiting")["manifest"]["pack_version"] == "2026-04-18"
 
-    registry.set_active_version("recruiting", "2026-05-01")
+    registry.set_active_version_approved("recruiting", "2026-05-01")
 
     assert registry.get("recruiting")["manifest"]["pack_version"] == "2026-05-01"
 
@@ -142,6 +143,19 @@ def test_registry_rejects_duplicate_registration() -> None:
     registry = InMemoryDomainPackRegistry([_pack("2026-04-18")])
 
     with pytest.raises(DomainPackVersionAlreadyRegisteredError) as exc_info:
-        registry.register(_pack("2026-04-18"))
+        registry.register_approved(_pack("2026-04-18"))
 
     assert exc_info.value.code == "domain_pack_version_already_registered"
+
+
+def test_registry_blocks_public_registration_and_activation_paths() -> None:
+    registry = InMemoryDomainPackRegistry([_pack("2026-04-18")])
+
+    with pytest.raises(DomainPackApprovalRequiredError) as register_exc:
+        registry.register(_pack("2026-05-01"))
+
+    with pytest.raises(DomainPackApprovalRequiredError) as activate_exc:
+        registry.set_active_version("recruiting", "2026-04-18")
+
+    assert register_exc.value.code == "domain_pack_approval_required"
+    assert activate_exc.value.code == "domain_pack_approval_required"

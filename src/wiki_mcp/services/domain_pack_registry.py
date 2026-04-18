@@ -61,6 +61,19 @@ class DomainPackVersionAlreadyRegisteredError(DomainPackRegistryError):
         )
 
 
+class DomainPackApprovalRequiredError(DomainPackRegistryError):
+    code = "domain_pack_approval_required"
+
+    def __init__(self, domain: str, *, action: str) -> None:
+        super().__init__(
+            (
+                f"Direct registry {action} for domain pack {domain!r} is not allowed. "
+                "Use the DomainPackApprovalService instead."
+            ),
+            domain=domain,
+        )
+
+
 def _pack_identity(pack: DomainPack) -> tuple[str, str]:
     manifest = pack.get("manifest")
     if not isinstance(manifest, dict):
@@ -83,9 +96,13 @@ class InMemoryDomainPackRegistry:
         self._active_versions: dict[str, str] = {}
 
         for pack in packs or []:
-            self.register(pack)
+            self.register_approved(pack)
 
     def register(self, pack: DomainPack, *, activate: bool = False) -> None:
+        domain, _ = _pack_identity(pack)
+        raise DomainPackApprovalRequiredError(domain, action="registration")
+
+    def register_approved(self, pack: DomainPack, *, activate: bool = False) -> None:
         domain, pack_version = _pack_identity(pack)
         versions = self._packs_by_domain.setdefault(domain, {})
         if pack_version in versions:
@@ -126,6 +143,9 @@ class InMemoryDomainPackRegistry:
         return self._active_versions.get(domain)
 
     def set_active_version(self, domain: str, pack_version: str) -> None:
+        raise DomainPackApprovalRequiredError(domain, action="activation")
+
+    def set_active_version_approved(self, domain: str, pack_version: str) -> None:
         versions = self._packs_by_domain.get(domain)
         if versions is None:
             raise DomainPackNotRegisteredError(domain)

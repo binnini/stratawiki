@@ -89,7 +89,7 @@ def _service(*, active_pack_version: str = "2026-04-18") -> tuple[
         outbox_repository=outbox_repository,
     )
     registry = InMemoryDomainPackRegistry([_pack("2026-04-01"), _pack(active_pack_version)])
-    registry.set_active_version("recruiting", active_pack_version)
+    registry.set_active_version_approved("recruiting", active_pack_version)
     service = DomainProposalIngestionGateway(
         domain_pack_registry=registry,
         fact_repository=fact_repository,

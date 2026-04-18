@@ -4,6 +4,7 @@ from wiki_mcp.services.interfaces.core_ingestion import CoreIngestionService
 from wiki_mcp.services.interfaces.domain_pack_governance import (
     DomainPackApprovalService,
     DomainPackCompatibilityChecker,
+    DomainPackReviewAuditRepository,
     DomainPackValidator,
 )
 from wiki_mcp.services.interfaces.domain_pack_registry import DomainPackRegistry
@@ -28,6 +29,7 @@ __all__ = [
     "DependencyRepository",
     "DomainPackApprovalService",
     "DomainPackCompatibilityChecker",
+    "DomainPackReviewAuditRepository",
     "DomainPackRegistry",
     "DomainPackValidator",
     "DomainIngestionPlugin",

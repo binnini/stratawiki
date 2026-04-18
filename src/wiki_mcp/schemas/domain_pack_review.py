@@ -5,6 +5,7 @@ from typing import Any, Literal, NotRequired, TypedDict
 
 ValidationIssueSeverity = Literal["error", "warning"]
 DomainPackCompatibilityDecision = Literal["auto_pass", "manual_review", "auto_block"]
+DomainPackAuditAction = Literal["review_registration", "register_pack"]
 
 
 class DomainPackValidationIssue(TypedDict, total=False):
@@ -74,4 +75,15 @@ class DomainPackApprovalReport(TypedDict, total=False):
     registered: bool
     activated: bool
     review_audit: DomainPackReviewAudit
+    audit_record_id: str
     registration_error: DomainPackRegistrationError
+
+
+class DomainPackApprovalAuditRecord(TypedDict, total=False):
+    record_id: str
+    action: DomainPackAuditAction
+    recorded_at: str
+    domain: str
+    candidate_pack_version: str
+    requested_activation: bool
+    report: DomainPackApprovalReport

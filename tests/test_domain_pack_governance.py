@@ -6,6 +6,7 @@ from wiki_mcp.services import (
     DefaultDomainPackValidator,
     InMemoryDomainPackRegistry,
 )
+from wiki_mcp.storage.memory import InMemoryDomainPackReviewAuditRepository
 
 
 def _valid_pack(pack_version: str = "2026-04-18") -> dict[str, object]:
@@ -327,7 +328,7 @@ def test_approval_service_blocks_invalid_pack_registration() -> None:
 
 def test_approval_service_blocks_activation_for_breaking_candidate() -> None:
     registry = InMemoryDomainPackRegistry([_valid_pack("2026-04-18")])
-    registry.set_active_version("recruiting", "2026-04-18")
+    registry.set_active_version_approved("recruiting", "2026-04-18")
     approval_service = DefaultDomainPackApprovalService(domain_pack_registry=registry)
     candidate_pack = _valid_pack("2026-05-01")
     candidate_pack["entity_types"]["job_posting"]["identity"] = {
@@ -347,7 +348,7 @@ def test_approval_service_blocks_activation_for_breaking_candidate() -> None:
 
 def test_approval_service_can_register_incompatible_version_without_activation() -> None:
     registry = InMemoryDomainPackRegistry([_valid_pack("2026-04-18")])
-    registry.set_active_version("recruiting", "2026-04-18")
+    registry.set_active_version_approved("recruiting", "2026-04-18")
     approval_service = DefaultDomainPackApprovalService(domain_pack_registry=registry)
     candidate_pack = _valid_pack("2026-05-01")
     candidate_pack["entity_types"]["job_posting"]["identity"] = {
@@ -367,7 +368,7 @@ def test_approval_service_can_register_incompatible_version_without_activation()
 
 def test_approval_service_blocks_activation_when_manual_review_is_required() -> None:
     registry = InMemoryDomainPackRegistry([_valid_pack("2026-04-18")])
-    registry.set_active_version("recruiting", "2026-04-18")
+    registry.set_active_version_approved("recruiting", "2026-04-18")
     approval_service = DefaultDomainPackApprovalService(domain_pack_registry=registry)
     candidate_pack = _valid_pack("2026-05-01")
     candidate_pack["entity_types"]["organization"] = {
@@ -402,7 +403,7 @@ def test_approval_service_blocks_activation_when_manual_review_is_required() -> 
 
 def test_approval_service_allows_review_required_activation_with_review_audit() -> None:
     registry = InMemoryDomainPackRegistry([_valid_pack("2026-04-18")])
-    registry.set_active_version("recruiting", "2026-04-18")
+    registry.set_active_version_approved("recruiting", "2026-04-18")
     approval_service = DefaultDomainPackApprovalService(domain_pack_registry=registry)
     candidate_pack = _valid_pack("2026-05-01")
     candidate_pack["entity_types"]["organization"] = {
@@ -439,10 +440,39 @@ def test_approval_service_allows_review_required_activation_with_review_audit() 
     )
 
     assert report["ok"] is True
+
+
+def test_approval_service_persists_durable_audit_records() -> None:
+    registry = InMemoryDomainPackRegistry([_valid_pack("2026-04-18")])
+    registry.set_active_version_approved("recruiting", "2026-04-18")
+    audit_repository = InMemoryDomainPackReviewAuditRepository()
+    approval_service = DefaultDomainPackApprovalService(
+        domain_pack_registry=registry,
+        review_audit_repository=audit_repository,
+    )
+    candidate_pack = _valid_pack("2026-05-01")
+
+    report = approval_service.register_pack(
+        candidate_pack,
+        activate=False,
+        review_audit={
+            "reviewed_by": "operator-1",
+            "reviewed_at": "2026-04-18T12:00:00Z",
+            "decision_reason": "Safe additive pack registration.",
+        },
+    )
+
+    assert report["ok"] is True
+    assert "audit_record_id" in report
+    assert len(audit_repository.records) == 1
+    stored = audit_repository.records[0]
+    assert stored["action"] == "register_pack"
+    assert stored["requested_activation"] is False
+    assert stored["report"]["candidate_pack_version"] == "2026-05-01"
     assert report["registered"] is True
-    assert report["activated"] is True
+    assert report["activated"] is False
     assert report["activation_safe"] is True
-    assert report["review_required"] is True
+    assert report["review_required"] is False
     assert report["review_audit"]["reviewed_by"] == "operator-1"
-    assert report["review_audit"]["approved_for_activation"] is True
+    assert "approved_for_activation" not in report["review_audit"]
     assert registry.has("recruiting", "2026-05-01") is True
