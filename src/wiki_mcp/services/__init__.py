@@ -21,6 +21,7 @@ from wiki_mcp.services.personal_query import (
 from wiki_mcp.services.interpretation_proposals import InterpretationProposalService
 from wiki_mcp.services.interpretation_publication import InterpretationPublicationService
 from wiki_mcp.services.interpretation_queries import InterpretationQueryService
+from wiki_mcp.services.interpretation_rendering import InterpretationRenderingService
 
 __all__ = [
     "DomainPackNotRegisteredError",
@@ -35,6 +36,7 @@ __all__ = [
     "InterpretationProposalService",
     "InterpretationPublicationService",
     "InterpretationQueryService",
+    "InterpretationRenderingService",
     "PersonalKnowledgeQueryService",
     "PersonalQueryOrchestrator",
     "UnsupportedDomainPackVersionError",
