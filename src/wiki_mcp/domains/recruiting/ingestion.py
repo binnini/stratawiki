@@ -12,6 +12,17 @@ from wiki_mcp.schemas.validation_result import ValidationResult
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _SKILL_TOKEN_RE = re.compile(r"[A-Za-z0-9.+#/\\-]+")
+_SKILL_ALIAS_CLEAN_RE = re.compile(r"[^0-9a-z가-힣+#]+")
+_SKILL_TAXONOMY: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Python", ("python", "파이썬")),
+    ("Node.js", ("node.js", "nodejs", "node js", "노드js", "노드.js", "노드 js")),
+    ("React", ("react", "react.js", "reactjs", "리액트")),
+    ("JavaScript", ("javascript", "java script", "자바스크립트")),
+    ("TypeScript", ("typescript", "type script", "타입스크립트")),
+    ("Docker", ("docker", "도커")),
+    ("Kubernetes", ("kubernetes", "k8s", "쿠버네티스")),
+    ("AWS", ("aws", "amazon web services", "아마존웹서비스")),
+)
 
 
 def _slugify(value: str | None) -> str:
@@ -31,6 +42,34 @@ def _normalize_whitespace(value: str | None) -> str | None:
 
     normalized = " ".join(value.split()).strip()
     return normalized or None
+
+
+def _compact_skill_alias(value: str | None) -> str:
+    normalized = (_normalize_whitespace(value.lower()) if value else "") or ""
+    return _SKILL_ALIAS_CLEAN_RE.sub("", normalized)
+
+
+_SKILL_CANONICAL_BY_ALIAS = {
+    _normalize_whitespace(alias.lower()): canonical_name
+    for canonical_name, aliases in _SKILL_TAXONOMY
+    for alias in aliases
+}
+_SKILL_CANONICAL_BY_ALIAS_COMPACT = {
+    _compact_skill_alias(alias): canonical_name
+    for canonical_name, aliases in _SKILL_TAXONOMY
+    for alias in aliases
+}
+_SKILL_TAXONOMY_BY_COMPACT_ALIAS = tuple(
+    sorted(
+        (
+            (_compact_skill_alias(alias), canonical_name)
+            for canonical_name, aliases in _SKILL_TAXONOMY
+            for alias in aliases
+        ),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+)
 
 
 def _dedupe_records(records: list[FactRecord]) -> list[FactRecord]:
@@ -61,6 +100,11 @@ def _extract_skill_names(*texts: str | None) -> list[str]:
         if not normalized_text:
             continue
 
+        compact_text = _compact_skill_alias(normalized_text)
+        for compact_alias, canonical_name in _SKILL_TAXONOMY_BY_COMPACT_ALIAS:
+            if compact_alias and compact_alias in compact_text:
+                skills.setdefault(canonical_name.lower(), canonical_name)
+
         for token in _SKILL_TOKEN_RE.findall(normalized_text):
             stripped = token.strip(".,:;()[]{}<>")
             if len(stripped) < 2:
@@ -72,7 +116,14 @@ def _extract_skill_names(*texts: str | None) -> list[str]:
             if lowered in {"api", "and", "or"}:
                 continue
 
-            skills.setdefault(lowered, stripped)
+            canonical_name = (
+                _SKILL_CANONICAL_BY_ALIAS.get(_normalize_whitespace(lowered))
+                or _SKILL_CANONICAL_BY_ALIAS_COMPACT.get(_compact_skill_alias(stripped))
+                or stripped
+            )
+            if len(stripped) <= 2 and canonical_name == stripped:
+                continue
+            skills.setdefault(canonical_name.lower(), canonical_name)
 
     return list(skills.values())
 

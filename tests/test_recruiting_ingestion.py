@@ -205,6 +205,38 @@ def test_plugin_dedupes_repeated_skills_and_locations() -> None:
     assert len(skill_relations) == 1
 
 
+def test_plugin_normalizes_multilingual_skill_aliases_to_shared_canonical_keys() -> None:
+    provider = StubWorknetRecruitingProvider()
+    adapter = WorknetRecruitingExternalAdapter()
+    plugin = RecruitingSourceIngestionPlugin()
+
+    source = adapter.fetch_source_record(provider, "EMP-1")
+    source["metadata"]["posting"]["summary"] = "파이썬 기반 서비스와 React 운영 경험"
+    source["metadata"]["posting"]["notes"] = "NodeJS, 노드 js 협업 경험 우대"
+    source["metadata"]["recruitment_sections"][0]["other_requirement"] = "파이썬, 리액트, 노드JS 경험"
+
+    normalized = plugin.normalize_source(source)
+    records = plugin.extract_fact_records(normalized)
+    relations = plugin.extract_fact_relations(normalized, records)
+
+    skill_records = sorted(
+        [record for record in records if record["entity_type"] == "skill"],
+        key=lambda record: record["canonical_key"],
+    )
+
+    assert [record["canonical_key"] for record in skill_records] == [
+        "skill:node-js",
+        "skill:python",
+        "skill:react",
+    ]
+    assert [record["attributes"]["name"] for record in skill_records] == [
+        "Node.js",
+        "Python",
+        "React",
+    ]
+    assert len([relation for relation in relations if relation["relation_type"] == "requires_skill"]) == 3
+
+
 def test_plugin_relations_inherit_scope_fields_from_posting_record() -> None:
     provider = StubWorknetRecruitingProvider()
     adapter = WorknetRecruitingExternalAdapter()
