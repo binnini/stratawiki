@@ -2,18 +2,17 @@
 
 ## Purpose
 
-This document defines the current `Domain Pack` foundation in `StrataWiki`.
+This document defines the current `Domain Pack` and schema-governance runtime in `StrataWiki`.
 
 The goal is to move canonical domain semantics out of core Python code and into
-registered, versioned artifacts that can later support:
+registered, versioned artifacts that support:
 
 - pack validation
 - compatibility checking
 - proposal ingestion
 - pack-driven canonical key resolution
 
-This document describes the foundation that now exists in the repository.
-It does not claim that the full proposal-ingestion architecture is complete.
+This document describes what is already implemented and what still remains open.
 
 ## Current Status
 
@@ -28,15 +27,18 @@ The repository now includes:
 - a compatibility checker with structured upgrade reports
 - manual-review classification for non-breaking but operator-sensitive pack upgrades
 - an approval service that evaluates candidate packs before registration or activation
+- approval-only registration and activation flow through the governance service
 - a proposal-ingestion service for `DomainProposalBatch`
 - dry-run evaluation, structured rejection responses, and pack-version audit metadata for proposal ingestion
+- file-based pack artifact loading during bootstrap
+- persisted review and activation audit records in an append-only filesystem store
 
 The repository does not yet include:
 
-- file-based pack loading
 - a bootstrapped proposal-ingestion path as the default runtime write surface
-- durable pack-registration audit storage
-- active or deprecated lifecycle metadata beyond one active-version pointer
+- richer pack lifecycle metadata beyond the active-version pointer plus review audit
+- an operator-facing workflow beyond direct runtime APIs and JSONL audit records
+- removal of the legacy source-driven recruiting ingestion path
 
 ## Architectural Position
 
@@ -47,7 +49,8 @@ The current runtime split is:
 
 - source adapters still normalize raw inputs into `SourceRecord`
 - the existing recruiting ingestion plugin still decomposes normalized source into Facts
-- the new Domain Pack registry, approval services, and proposal-ingestion service provide the runtime seam for pack-governed ingestion
+- Domain Pack artifacts can be loaded and activated during bootstrap
+- the Domain Pack registry, approval services, and proposal-ingestion service provide the runtime seam for pack-governed ingestion
 
 This means the current source-driven ingestion path remains valid while schema governance is being introduced incrementally.
 
@@ -176,19 +179,19 @@ Raised when the same `domain + pack_version` pair is registered twice.
 
 ## Runtime Integration
 
-The default bootstrap context now exposes a `domain_pack_registry`.
-
-This keeps the registry reachable from future services without forcing the current MVP ingestion path to migrate all at once.
-
-At the moment, the registry is initialized empty.
-Real domain-pack artifacts are expected to be registered by future bootstrap or integration code.
-
-The runtime bootstrap now exposes:
+The default bootstrap context now exposes:
 
 - the registry itself
 - a Domain Pack validator
 - a compatibility checker
 - an approval service that can review or gate registration/activation
+- a proposal-ingestion gateway
+- bootstrap pack load reports
+- a review-audit repository
+
+When pack paths are configured, bootstrap can load, review, register, and optionally activate pack artifacts at startup.
+
+The runtime may still start with an empty registry when no pack artifacts are configured.
 
 Compatibility reports now distinguish between:
 
@@ -213,11 +216,13 @@ The intended migration path is:
 4. introduce proposal ingestion against registered packs
 5. reduce hardcoded recruiting semantics in the ingestion plugin
 
-## Out of Scope for This Foundation
+## Remaining Gaps
 
-The following are intentionally deferred:
+The following still remain open:
 
 - proposal ingestion against registered packs as the default runtime write path
-- durable audit trails for pack registration
+- a fully pack-driven replacement for the recruiting plugin decomposition path
+- stronger pack lifecycle metadata for active, deprecated, and superseded versions
+- richer operator-facing review tooling than the current persisted audit log
 
-Those concerns belong to the next schema-governance steps after the contract and registry foundation.
+Those are the next schema-governance steps after the currently implemented approval, loading, and proposal-ingestion runtime.

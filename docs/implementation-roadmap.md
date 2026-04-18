@@ -69,6 +69,31 @@ This workstream includes:
 
 See `docs/deployment-and-operations-spec.md` for the runtime constraints view.
 
+## Current Status Snapshot
+
+As of the current Week 1 MVP branch state:
+
+- the original thin vertical slice for issues `#1` through `#10` has landed
+- the repository has a working local `Fact -> Interpretation -> Personal` demo path
+- schema-governance work originally described as late generalization work has already been pulled forward in part
+
+More concretely:
+
+- Phase 1 contract work is in place at MVP depth
+- Phase 2 Fact ingestion and snapshot publishing are in place, with follow-up hardening still open
+- Phase 3 interpretation proposal, validation, publication, and read paths exist for one family
+- Phase 4 retrieval and personal-query orchestration exist on the curated MVP path
+- Phase 6 has a first personal persistence path, but anchor reuse still needs a stronger read model
+- Phase 12 foundation work has already landed for Domain Pack contract, validation, compatibility, approval, artifact loading, and proposal ingestion
+
+The remaining Week 1 MVP work is therefore mostly:
+
+- documentation alignment
+- Fact hardening against the newer docs
+- interpretation read and render follow-ups
+- Personal anchor reuse
+- operator and runtime follow-ups beyond the local demo path
+
 ## Implementation Quick Reference
 
 | Area                       | Primary owner                          | Early reference spec                               |
@@ -513,16 +538,16 @@ Objective:
 
 Deliverables:
 
-- domain pack contract and registration path
+- pack-governed ingest as a normal runtime path rather than only a sidecar path
 - one second domain stub or pilot
 
 Implementation tasks:
 
-- extract domain-specific schemas into domain-pack artifacts
+- keep extracting domain-specific schemas into domain-pack artifacts
 - extract rendering templates by domain
 - extract freshness defaults into domain-owned semantics
-- add pack validator and compatibility checks
-- define pack registration and activation path
+- make pack-governed proposal ingestion a default or primary write path where appropriate
+- reduce hardcoded recruiting semantics still embedded in the source-driven plugin path
 
 Possible second domains:
 
@@ -576,8 +601,8 @@ The roadmap is functionally successful when:
 
 ## Recommended Immediate Next Build Steps
 
-1. scaffold the repository around the current docs
-2. implement the recruiting Fact slice
-3. implement one interpretation family and its rendered page
-4. implement one personal query flow with anchors
-5. implement one dependency impact tool
+1. keep docs aligned with the implemented runtime and open follow-up issues
+2. harden canonical Fact identity and metadata against the current docs
+3. complete persisted Personal anchor reuse for retrieval
+4. expose interpretation snapshot metadata and shared rendering read models more directly
+5. add the next worker-compatible interpretation publication and operator-facing follow-ups

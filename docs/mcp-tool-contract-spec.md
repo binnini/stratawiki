@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines a concrete MCP tool surface for a three-layer LLM Wiki MCP server.
+This document defines the MCP tool surface for a three-layer LLM Wiki MCP server.
 
 The tool surface is designed to expose:
 
@@ -13,6 +13,11 @@ The tool surface is designed to expose:
 - cache and snapshot visibility
 
 The tools are intentionally provider-agnostic. Clients should not need to know which LLM vendor or internal storage technology was used.
+
+This document distinguishes between:
+
+- the currently implemented Week 1 MVP tool surface
+- the broader target tool surface that the architecture is designed to grow into
 
 ## Design Goals
 
@@ -33,6 +38,30 @@ The tools are intentionally provider-agnostic. Clients should not need to know w
 - retrieval and exploration tools
 - cache and snapshot tools
 - admin tools
+
+## Current Implemented Tool Surface
+
+The repository currently exposes these runtime tools:
+
+- `ingest_fact_batch`
+- `validate_domain_proposal_batch`
+- `ingest_domain_proposal_batch`
+- `get_fact_record`
+- `build_interpretation_snapshot`
+- `get_interpretation_record`
+- `query_personal_knowledge`
+- `get_snapshot_status`
+
+Current MVP caveats:
+
+- `ingest_fact_batch` currently accepts inline `source_records` rather than source ids fetched from external connectors
+- `build_interpretation_snapshot` still requires explicit `fact_ids` on the happy path
+- the Domain Proposal tools are implemented even though they were not part of the original narrow Week 1 MVP tool list
+
+## Planned Tool Surface
+
+The remaining sections describe the broader target protocol shape.
+They should be read as design targets unless a tool is explicitly listed above as currently implemented.
 
 ## Tool Design Principle
 

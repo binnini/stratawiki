@@ -26,10 +26,21 @@ This repository currently contains:
 
 - architecture and design specs in `docs/`
 - a lightweight development notebook in `dev-wiki/`
-- initial source tree scaffolding under `src/`
-- an initial `Domain Pack` contract and registry foundation
+- an implemented Week 1 MVP runtime under `src/`
+- a working local `Fact -> Interpretation -> Personal` demo path
+- canonical Fact ingestion, interpretation proposal and publish flow, and personal query orchestration
+- a schema-governance layer with Domain Pack registry, validator, compatibility checks, approval gating, proposal ingestion, artifact loading, and review-audit persistence
 - empty data directories under `data/`
-- an MVP CLI and tool runtime for the Week 1 flow
+
+## Current Gaps
+
+The main remaining gaps are no longer whether an MVP path exists at all.
+They are follow-up hardening and read-model work:
+
+- Fact identity and metadata alignment with the current docs
+- interpretation read and shared-rendering follow-ups
+- persisted Personal anchor reuse for retrieval
+- worker, scheduler, and broader operator-runtime paths beyond the single-process demo
 
 ## Local MVP Demo
 
@@ -75,6 +86,8 @@ You can also override the seed and render paths:
 ## Postgres Runtime
 
 The non-demo runtime still expects a PostgreSQL database reachable through `DATABASE_URL` or the default local URL in `src/wiki_mcp/bootstrap.py`.
+
+The runtime can also load Domain Pack artifacts from configured file paths during bootstrap.
 
 Use demo mode for the Week 1 MVP walkthrough unless you have already provisioned the database schema locally.
 

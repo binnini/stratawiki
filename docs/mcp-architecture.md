@@ -51,6 +51,23 @@ The system uses three semantic layers:
 
 This split exists to prevent shared truth, shared meaning, and user-specific strategy from being mixed together.
 
+## Current Implementation Snapshot
+
+The repository is no longer only at the architecture-sketch stage.
+
+Implemented today:
+
+- the Week 1 MVP thin slice across `Fact -> Interpretation -> Personal`
+- a local demo runtime and CLI that exercise the happy path end-to-end
+- the MVP MCP tools for fact ingest, interpretation build and read, personal query, and snapshot status
+- Domain Pack governance services for validation, compatibility review, approval gating, artifact loading, and proposal ingestion
+
+Still open:
+
+- shared rendered-page read models remain thinner than the canonical interpretation flow
+- Personal anchor reuse is persisted but not yet fully indexed as a first-class retrieval read model
+- worker, scheduler, graph, and operator-runtime paths remain earlier than the single-process demo path
+
 ## Target Architecture
 
 ```text
@@ -116,9 +133,19 @@ Responsibilities:
 
 Examples:
 
+Currently implemented:
+
 - `ingest_fact_batch`
+- `validate_domain_proposal_batch`
+- `ingest_domain_proposal_batch`
+- `get_fact_record`
 - `build_interpretation_snapshot`
+- `get_interpretation_record`
 - `query_personal_knowledge`
+- `get_snapshot_status`
+
+Planned or partial follow-up examples:
+
 - `create_personal_plan`
 - `get_dependency_impact`
 - `get_cache_status`
@@ -175,9 +202,10 @@ Responsibilities:
 
 Current status:
 
-- a minimal pack contract and in-memory registry exist in the codebase
+- a Domain Pack contract, registry, validator, compatibility checker, approval service, proposal-ingestion gateway, and artifact-loading path exist in the codebase
 - the current MVP Fact ingest path still uses `SourceRecord` plus a thin domain ingestion plugin
-- proposal ingestion and pack validation are not yet implemented
+- pack-governed proposal ingestion now exists alongside the source-driven path
+- the remaining gap is making pack-governed ingestion the default write surface rather than an additional runtime path
 
 ### 4. LLM Router Layer
 
@@ -226,6 +254,11 @@ Responsibilities:
 - preserve snapshot references used for rendering
 
 Markdown is a view layer here, not the sole authority.
+
+Current implementation note:
+
+- persisted personal answer rendering exists on the MVP path
+- shared interpretation rendering and page read models remain follow-up work
 
 ### 7. Graph and Dependency Layer
 
