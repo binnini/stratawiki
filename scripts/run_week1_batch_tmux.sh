@@ -9,6 +9,8 @@ PROMPT_FILE="${PROMPT_FILE:-$REPO_ROOT/dev-wiki/logs/2026-04-18-week-1-mvp-batch
 LOG_DIR="${LOG_DIR:-$REPO_ROOT/.codex-batch}"
 LOG_FILE="$LOG_DIR/${SESSION_NAME}.log"
 LAST_MESSAGE_FILE="$LOG_DIR/${SESSION_NAME}.last.txt"
+CODEX_SANDBOX_MODE="${CODEX_SANDBOX_MODE:-danger-full-access}"
+CODEX_USE_BYPASS="${CODEX_USE_BYPASS:-0}"
 
 mkdir -p "$LOG_DIR"
 
@@ -34,7 +36,7 @@ fi
 
 RUN_CMD=$(
   cat <<EOF
-cd "$REPO_ROOT" && codex exec --dangerously-bypass-approvals-and-sandbox -C "$REPO_ROOT" -o "$LAST_MESSAGE_FILE" - < "$PROMPT_FILE" 2>&1 | tee "$LOG_FILE"
+cd "$REPO_ROOT" && $(if [[ "$CODEX_USE_BYPASS" == "1" ]]; then printf 'codex exec --dangerously-bypass-approvals-and-sandbox'; else printf 'codex exec --sandbox %q' "$CODEX_SANDBOX_MODE"; fi) -C "$REPO_ROOT" -o "$LAST_MESSAGE_FILE" - < "$PROMPT_FILE" 2>&1 | tee "$LOG_FILE"
 EOF
 )
 
@@ -43,6 +45,11 @@ tmux new-session -d -s "$SESSION_NAME" "$RUN_CMD"
 echo "Started tmux session: $SESSION_NAME"
 echo "Repo: $REPO_ROOT"
 echo "Prompt: $PROMPT_FILE"
+if [[ "$CODEX_USE_BYPASS" != "1" ]]; then
+  echo "Sandbox mode: $CODEX_SANDBOX_MODE"
+else
+  echo "Sandbox mode: bypass approvals and sandbox"
+fi
 echo "Log: $LOG_FILE"
 echo "Last message: $LAST_MESSAGE_FILE"
 echo "Attach with: tmux attach -t $SESSION_NAME"
