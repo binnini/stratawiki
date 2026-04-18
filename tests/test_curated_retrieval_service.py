@@ -81,6 +81,7 @@ def _interpretation(
     *,
     evidence: list[dict[str, Any]] | None = None,
     status: str = "published",
+    interpretation_snapshot_id: str | None = "interp_snap:1",
 ) -> dict[str, Any]:
     return {
         "id": record_id,
@@ -93,6 +94,11 @@ def _interpretation(
         "confidence": 0.82,
         "summary": "Shared summary",
         "fact_snapshot_id": "fact_snap:1",
+        **(
+            {"interpretation_snapshot_id": interpretation_snapshot_id}
+            if interpretation_snapshot_id is not None
+            else {}
+        ),
         "body": {"summary": "Shared summary"},
         "evidence": evidence or [],
     }
@@ -242,6 +248,8 @@ def test_curated_retrieval_falls_back_to_interpretation_search_when_personal_anc
     assert result["retrieval_metadata"]["personal_anchor_status"] == "absent"
     assert result["retrieval_metadata"]["interpretation_source"] == "search_fallback"
     assert result["retrieval_metadata"]["fact_source"] == "interpretation_evidence"
+    assert result["interpretation_records"][0]["interpretation_snapshot_id"] == "interp_snap:1"
+    assert result["snapshot_ref"]["interpretation_snapshot_id"] == "interp_snap:1"
 
 
 def test_curated_retrieval_keeps_body_anchor_compatibility_when_metadata_absent() -> None:

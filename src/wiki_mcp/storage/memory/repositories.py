@@ -177,7 +177,6 @@ class InMemoryInterpretationRepository:
     def save_records(self, records: list[dict[str, Any]], snapshot_ref: dict[str, Any]) -> list[str]:
         for record in records:
             persisted = dict(record)
-            persisted.pop("interpretation_snapshot_id", None)
             self.records[persisted["id"]] = persisted
         return [record["id"] for record in records]
 

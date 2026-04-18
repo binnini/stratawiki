@@ -133,9 +133,7 @@ class FakeInterpretationRepository:
         snapshot_ref: dict[str, Any],
     ) -> list[str]:
         for record in records:
-            persisted = dict(record)
-            persisted.pop("interpretation_snapshot_id", None)
-            self.records[persisted["id"]] = persisted
+            self.records[record["id"]] = dict(record)
         return [record["id"] for record in records]
 
 
@@ -411,6 +409,7 @@ def build_fake_server(tmp_path: Path) -> StrataWikiServer:
         "status": "published",
         "confidence": 0.82,
         "fact_snapshot_id": "fact_snap:seed",
+        "interpretation_snapshot_id": "interp_snap:seed",
         "computed_at": "2026-04-18T00:00:00Z",
         "expires_at": "2026-04-19T00:00:00Z",
         "title": "Demand is rising",
@@ -543,6 +542,10 @@ def test_server_fact_and_personal_tools_work_on_happy_path(tmp_path: Path) -> No
         "get_fact_record",
         {"domain": "recruiting", "fact_id": "fact:job:1"},
     )
+    interpretation = server.call_tool(
+        "get_interpretation_record",
+        {"domain": "recruiting", "interpretation_id": "interp:published:1"},
+    )
     answer = server.call_tool(
         "query_personal_knowledge",
         {
@@ -558,6 +561,8 @@ def test_server_fact_and_personal_tools_work_on_happy_path(tmp_path: Path) -> No
 
     assert fact["status"] == "ok"
     assert fact["record"]["id"] == "fact:job:1"
+    assert interpretation["status"] == "ok"
+    assert interpretation["record"]["interpretation_snapshot_id"] == "interp_snap:seed"
     assert answer["status"] == "ok"
     assert answer["interpretation_records_used"] == ["interp:published:1"]
     assert answer["fact_records_used"] == ["fact:job:1"]

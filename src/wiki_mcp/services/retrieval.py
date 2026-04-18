@@ -419,6 +419,10 @@ class CuratedRetrievalService:
             "status": record["status"],
             "confidence": record["confidence"],
         }
+        if record.get("fact_snapshot_id"):
+            result["fact_snapshot_id"] = record["fact_snapshot_id"]
+        if record.get("interpretation_snapshot_id"):
+            result["interpretation_snapshot_id"] = record["interpretation_snapshot_id"]
         if record.get("title"):
             result["title"] = record["title"]
         if summary:
@@ -531,6 +535,9 @@ class CuratedRetrievalService:
             fact_snapshot_id = record.get("fact_snapshot_id")
             if fact_snapshot_id and not merged.get("fact_snapshot_id"):
                 merged["fact_snapshot_id"] = fact_snapshot_id
+            interpretation_snapshot_id = record.get("interpretation_snapshot_id")
+            if interpretation_snapshot_id and not merged.get("interpretation_snapshot_id"):
+                merged["interpretation_snapshot_id"] = interpretation_snapshot_id
 
         for record in fact_records:
             fact_snapshot_id = record.get("fact_snapshot_id")

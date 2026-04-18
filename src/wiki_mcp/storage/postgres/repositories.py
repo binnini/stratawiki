@@ -560,6 +560,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     status,
                     confidence,
                     fact_snapshot_id,
+                    interpretation_snapshot_id,
                     computed_at,
                     expires_at,
                     title,
@@ -631,6 +632,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     status,
                     confidence,
                     fact_snapshot_id,
+                    interpretation_snapshot_id,
                     computed_at,
                     expires_at,
                     title,
@@ -694,6 +696,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     status,
                     confidence,
                     fact_snapshot_id,
+                    interpretation_snapshot_id,
                     computed_at,
                     expires_at,
                     title,
@@ -756,11 +759,12 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                         relations_json,
                         provenance_json,
                         render_hints_json,
-                        fact_snapshot_id
+                        fact_snapshot_id,
+                        interpretation_snapshot_id
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
-                        %s::jsonb, %s
+                        %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
+                        %s::jsonb, %s, %s
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         family = EXCLUDED.family,
@@ -784,6 +788,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                         provenance_json = EXCLUDED.provenance_json,
                         render_hints_json = EXCLUDED.render_hints_json,
                         fact_snapshot_id = EXCLUDED.fact_snapshot_id,
+                        interpretation_snapshot_id = EXCLUDED.interpretation_snapshot_id,
                         updated_at = NOW()
                     """,
                     (
@@ -810,6 +815,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                         self._json(record["provenance"]),
                         self._json(record["render_hints"]),
                         validated_snapshot_ref["fact_snapshot_id"],
+                        record.get("interpretation_snapshot_id"),
                     ),
                 )
                 stored_ids.append(record["id"])
@@ -833,6 +839,11 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             "status": data["status"],
             "confidence": data["confidence"],
             "fact_snapshot_id": data["fact_snapshot_id"],
+            **(
+                {"interpretation_snapshot_id": data["interpretation_snapshot_id"]}
+                if data.get("interpretation_snapshot_id")
+                else {}
+            ),
             "computed_at": data["computed_at"],
             "expires_at": data["expires_at"],
             **({"title": data["title"]} if data.get("title") else {}),
@@ -898,6 +909,11 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         if record["fact_snapshot_id"] != snapshot_ref["fact_snapshot_id"]:
             raise ValueError(
                 f"InterpretationRecord {record['id']} fact_snapshot_id does not match the save snapshot."
+            )
+        if record.get("interpretation_snapshot_id") is not None:
+            ensure_non_empty_string(
+                record["interpretation_snapshot_id"],
+                label=f"InterpretationRecord {record['id']}.interpretation_snapshot_id",
             )
         if not isinstance(record.get("body"), dict):
             raise ValueError(f"InterpretationRecord {record['id']}.body must be a mapping.")

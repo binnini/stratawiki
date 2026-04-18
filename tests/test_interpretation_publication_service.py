@@ -83,9 +83,7 @@ class FakeInterpretationRepository:
     ) -> list[str]:
         self.saved_batches.append(([dict(record) for record in records], dict(snapshot_ref)))
         for record in records:
-            persisted = dict(record)
-            persisted.pop("interpretation_snapshot_id", None)
-            self.records[record["id"]] = persisted
+            self.records[record["id"]] = dict(record)
         return [record["id"] for record in records]
 
 
@@ -182,6 +180,7 @@ def test_query_service_returns_only_published_records_by_default() -> None:
                 "status": "published",
                 "summary": "Demand is trending upward.",
                 "title": "Production LLM experience demand is rising",
+                "interpretation_snapshot_id": "interp_snap:published:1",
             },
             "interp:validated:1": _validated_record("interp:validated:1"),
         }
@@ -206,8 +205,10 @@ def test_query_service_returns_only_published_records_by_default() -> None:
 
     assert published is not None
     assert published["status"] == "published"
+    assert published["interpretation_snapshot_id"] == "interp_snap:published:1"
     assert hidden is None
     assert [record["id"] for record in matches] == ["interp:published:1"]
+    assert matches[0]["interpretation_snapshot_id"] == "interp_snap:published:1"
 
 
 def _validated_record(record_id: str) -> dict[str, Any]:
