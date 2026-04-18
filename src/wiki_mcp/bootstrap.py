@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     import psycopg
 
 from wiki_mcp.adapters.llm import build_llm_gateway_router_from_env
-from wiki_mcp.domains.recruiting import RecruitingSourceIngestionPlugin
+from wiki_mcp.demo import build_demo_runtime
 from wiki_mcp.services import (
     InterpretationProposalService,
     InterpretationPublicationService,
@@ -38,12 +38,7 @@ DEFAULT_DATABASE_URL = "postgresql://stratawiki:stratawiki@localhost:5432/strata
 
 @dataclass(slots=True)
 class BootstrapContext:
-    """Minimal runtime bootstrap context for the current migration stage.
-
-    The implementation intentionally keeps bootstrap narrow until the new
-    retrieval, orchestration, and tool layers are rebuilt around the current
-    docs-defined architecture.
-    """
+    """Runtime bootstrap context for the current MVP slice."""
 
     connection: Any
     owns_connection: bool = False
@@ -66,8 +61,9 @@ class BootstrapContext:
     interpretation_query_service: Any | None = None
 
     def close(self) -> None:
-        if self.owns_connection and not self.connection.closed:
-            self.connection.close()
+        connection = self.connection
+        if self.owns_connection and hasattr(connection, "closed") and not connection.closed:
+            connection.close()
 
 
 def resolve_database_url(database_url: str | None = None) -> str:
@@ -88,7 +84,33 @@ def bootstrap_application(
     connection: Any | None = None,
     database_url: str | None = None,
     render_root: str | Path = "data",
+    demo_mode: bool = False,
+    seed_path: str | Path | None = None,
 ) -> BootstrapContext:
+    if demo_mode:
+        runtime = build_demo_runtime(render_root=render_root, seed_path=seed_path)
+        return BootstrapContext(
+            connection=connection or object(),
+            owns_connection=False,
+            render_root=Path(render_root),
+            fact_repository=runtime["fact_repository"],
+            interpretation_repository=runtime["interpretation_repository"],
+            personal_repository=runtime["personal_repository"],
+            profile_context_repository=runtime["profile_context_repository"],
+            snapshot_repository=runtime["snapshot_repository"],
+            outbox_repository=runtime["outbox_repository"],
+            rendering_repository=runtime["rendering_repository"],
+            llm_gateway=runtime["llm_gateway"],
+            core_ingestion_service=runtime["core_ingestion_service"],
+            retrieval_service=runtime["retrieval_service"],
+            personal_query_orchestrator=runtime["personal_query_orchestrator"],
+            personal_query_service=runtime["personal_query_service"],
+            interpretation_family_registry=runtime["interpretation_family_registry"],
+            interpretation_proposal_service=runtime["interpretation_proposal_service"],
+            interpretation_publication_service=runtime["interpretation_publication_service"],
+            interpretation_query_service=runtime["interpretation_query_service"],
+        )
+
     owns_connection = connection is None
     resolved_connection = connection or connect_postgres(database_url)
     fact_repository = PostgresFactRepository(resolved_connection)
@@ -109,9 +131,7 @@ def bootstrap_application(
         interpretation_repository=interpretation_repository,
         personal_repository=personal_repository,
     )
-    personal_query_orchestrator = PersonalQueryOrchestrator(
-        retrieval_service=retrieval_service,
-    )
+    personal_query_orchestrator = PersonalQueryOrchestrator(retrieval_service=retrieval_service)
     personal_query_service = PersonalKnowledgeQueryService(
         orchestrator=personal_query_orchestrator,
         llm_gateway=llm_gateway,

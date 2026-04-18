@@ -1,0 +1,95 @@
+{
+  "profiles": [
+    {
+      "user_id": "user-1",
+      "tenant_id": "tenant-1",
+      "domain": "recruiting",
+      "profile_version": "profile:v1",
+      "goals": ["move_into_backend_roles"],
+      "preferences": {
+        "location": "tokyo",
+        "company_stage": "startup"
+      },
+      "attributes": {
+        "level": "mid",
+        "skills": ["python", "sql", "apis"]
+      }
+    }
+  ],
+  "source_records": [
+    {
+      "source_id": "EMP-DEMO-1",
+      "connector": "worknet",
+      "domain": "recruiting",
+      "title": "Backend Platform Engineer",
+      "body_markdown": "## Posting\n- Title: Backend Platform Engineer\n- Company: Demo Labs\n- Summary: Build APIs and production AI features.\n",
+      "metadata": {
+        "posting": {
+          "title": "Backend Platform Engineer",
+          "company_name": "Demo Labs",
+          "company_type": "startup",
+          "employment_type": "full-time",
+          "starts_at": "2026-04-01",
+          "closes_at": "2026-04-30",
+          "summary": "Build APIs and production AI features.",
+          "application_method": "homepage",
+          "required_documents": "resume",
+          "acceptance_announcement": "email",
+          "inquiry": "jobs@demo.example",
+          "notes": "production AI experience preferred"
+        },
+        "company": {
+          "source_company_id": "COMP-DEMO-1",
+          "name": "Demo Labs",
+          "company_type": "startup",
+          "homepage_url": "https://demo.example",
+          "business_number": null,
+          "summary": "AI product company",
+          "description": "Builds AI-native workflow products.",
+          "main_business": "AI software",
+          "logo_url": null,
+          "coordinates": null
+        },
+        "jobs": [
+          {
+            "source_code": "BACKEND-1",
+            "name": "Backend Platform Engineer"
+          }
+        ],
+        "recruitment_sections": [
+          {
+            "title": "Platform Team",
+            "role_description": "Build backend APIs and production AI integrations",
+            "selection_description": "coding test",
+            "location": "Tokyo",
+            "career_requirement": "3+ years",
+            "education_requirement": null,
+            "other_requirement": "Python, APIs, production AI systems",
+            "openings": "1",
+            "note": null
+          }
+        ],
+        "selection_steps": [],
+        "attachments": [],
+        "source_url": "https://demo.example/jobs/EMP-DEMO-1",
+        "mobile_source_url": null
+      },
+      "fetched_at": "2026-04-18T00:00:00Z",
+      "content_hash": "demo-hash-1",
+      "status": "active"
+    }
+  ],
+  "demo_query": {
+    "domain": "recruiting",
+    "tenant_id": "tenant-1",
+    "user_id": "user-1",
+    "question": "What should I focus on to move into backend roles in Tokyo startups?",
+    "profile_version": "profile:v1",
+    "model_profile": "balanced_default",
+    "save": true
+  },
+  "demo_partition": {
+    "family": "market_trends",
+    "segment": "backend-japan-midlevel"
+  }
+}
