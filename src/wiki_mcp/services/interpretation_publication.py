@@ -11,10 +11,12 @@ from wiki_mcp.schemas import (
     INTERPRETATION_STATUS_SUPERSEDED,
     INTERPRETATION_STATUS_VALIDATED,
     InterpretationRecord,
+    OutboxEvent,
     ScopeRef,
 )
 from wiki_mcp.services.interfaces.repositories import (
     InterpretationRepository,
+    OutboxRepository,
     SnapshotRepository,
 )
 from wiki_mcp.services.interpretation_proposals import InterpretationProposalService
@@ -29,10 +31,12 @@ class InterpretationPublicationService:
         proposal_service: InterpretationProposalService,
         interpretation_repository: InterpretationRepository,
         snapshot_repository: SnapshotRepository,
+        outbox_repository: OutboxRepository,
     ) -> None:
         self.proposal_service = proposal_service
         self.interpretation_repository = interpretation_repository
         self.snapshot_repository = snapshot_repository
+        self.outbox_repository = outbox_repository
 
     def publish_proposal(
         self,
@@ -126,6 +130,14 @@ class InterpretationPublicationService:
             record["domain"],
             snapshot_ref,
         )
+        outbox_event_ids = self.outbox_repository.append_events(
+            [
+                self._build_interpretation_snapshot_published_event(
+                    record=record,  # type: ignore[arg-type]
+                    scope_ref=scope_ref,
+                )
+            ]
+        )
 
         return {
             "ok": True,
@@ -133,6 +145,7 @@ class InterpretationPublicationService:
             "status": INTERPRETATION_STATUS_PUBLISHED,
             "interpretation_snapshot_id": interpretation_snapshot_id,
             "superseded_ids": superseded_ids,
+            "outbox_event_ids": outbox_event_ids,
             "record": record,
         }
 
@@ -224,6 +237,34 @@ class InterpretationPublicationService:
 
     def _normalize_text(self, value: str) -> str:
         return " ".join(value.lower().split())
+
+    def _build_interpretation_snapshot_published_event(
+        self,
+        *,
+        record: InterpretationRecord,
+        scope_ref: ScopeRef,
+    ) -> OutboxEvent:
+        interpretation_snapshot_id = str(record["interpretation_snapshot_id"])
+        payload: dict[str, Any] = {
+            "domain": record["domain"],
+            "interpretation_kind": record["kind"],
+            "fact_snapshot_id": record["fact_snapshot_id"],
+            "interpretation_snapshot_id": interpretation_snapshot_id,
+            "interpretation_ids": [record["id"]],
+            "source_event_id": record["id"],
+            "scope": scope_ref["scope"],
+        }
+        if "tenant_id" in scope_ref:
+            payload["tenant_id"] = scope_ref["tenant_id"]
+        if "user_id" in scope_ref:
+            payload["user_id"] = scope_ref["user_id"]
+        return {
+            "event_type": "interpretation_snapshot_published",
+            "aggregate_layer": "interpretation",
+            "aggregate_id": interpretation_snapshot_id,
+            "idempotency_key": f"interpretation_snapshot_published:{interpretation_snapshot_id}",
+            "payload": payload,
+        }
 
     def _new_interpretation_snapshot_id(self, record: InterpretationRecord) -> str:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")

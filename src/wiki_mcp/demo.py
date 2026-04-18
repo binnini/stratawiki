@@ -144,6 +144,7 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
         proposal_service=interpretation_proposal_service,
         interpretation_repository=interpretation_repository,
         snapshot_repository=snapshot_repository,
+        outbox_repository=outbox_repository,
     )
     interpretation_query_service = InterpretationQueryService(
         interpretation_repository=interpretation_repository,

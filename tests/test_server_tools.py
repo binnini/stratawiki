@@ -487,6 +487,7 @@ def build_fake_server(tmp_path: Path) -> StrataWikiServer:
         proposal_service=proposal_service,
         interpretation_repository=interpretation_repository,
         snapshot_repository=snapshot_repository,
+        outbox_repository=outbox_repository,
     )
     query_service = InterpretationQueryService(
         interpretation_repository=interpretation_repository,

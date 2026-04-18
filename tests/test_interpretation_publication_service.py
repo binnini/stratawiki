@@ -124,6 +124,15 @@ class FakeSnapshotRepository:
         )
 
 
+class FakeOutboxRepository:
+    def __init__(self) -> None:
+        self.events: list[list[dict[str, Any]]] = []
+
+    def append_events(self, events: list[dict[str, Any]]) -> list[str]:
+        self.events.append([dict(event) for event in events])
+        return [f"evt-{index}" for index, _ in enumerate(events, start=1)]
+
+
 def test_publish_proposal_promotes_validated_market_trend_and_supersedes_prior_record() -> None:
     interpretation_repository = FakeInterpretationRepository(
         {
@@ -143,10 +152,12 @@ def test_publish_proposal_promotes_validated_market_trend_and_supersedes_prior_r
         fact_repository=_fact_repository(),
     )
     snapshot_repository = FakeSnapshotRepository()
+    outbox_repository = FakeOutboxRepository()
     publication_service = InterpretationPublicationService(
         proposal_service=proposal_service,
         interpretation_repository=interpretation_repository,
         snapshot_repository=snapshot_repository,
+        outbox_repository=outbox_repository,
     )
 
     result = publication_service.publish_proposal(
@@ -160,6 +171,7 @@ def test_publish_proposal_promotes_validated_market_trend_and_supersedes_prior_r
     assert result["interpretation_snapshot_id"].startswith(
         "interp_snap:recruiting:market_trend:backend-japan-midlevel:"
     )
+    assert result["outbox_event_ids"] == ["evt-1"]
     assert interpretation_repository.records["interp:proposal:1"]["status"] == "published"
     assert interpretation_repository.records["interp:published:older"]["status"] == "superseded"
     assert snapshot_repository.published == [
@@ -171,6 +183,27 @@ def test_publish_proposal_promotes_validated_market_trend_and_supersedes_prior_r
                 "interpretation_snapshot_id": result["interpretation_snapshot_id"],
             },
         )
+    ]
+    assert outbox_repository.events == [
+        [
+            {
+                "event_type": "interpretation_snapshot_published",
+                "aggregate_layer": "interpretation",
+                "aggregate_id": result["interpretation_snapshot_id"],
+                "idempotency_key": (
+                    f"interpretation_snapshot_published:{result['interpretation_snapshot_id']}"
+                ),
+                "payload": {
+                    "domain": "recruiting",
+                    "interpretation_kind": "market_trend",
+                    "fact_snapshot_id": "fact_snap:1",
+                    "interpretation_snapshot_id": result["interpretation_snapshot_id"],
+                    "interpretation_ids": ["interp:proposal:1"],
+                    "source_event_id": "interp:proposal:1",
+                    "scope": "shared",
+                },
+            }
+        ]
     ]
 
 
@@ -230,10 +263,12 @@ def test_publish_proposal_marks_exact_duplicate_against_current_published_as_sup
         fact_repository=_fact_repository(),
     )
     snapshot_repository = FakeSnapshotRepository()
+    outbox_repository = FakeOutboxRepository()
     publication_service = InterpretationPublicationService(
         proposal_service=proposal_service,
         interpretation_repository=interpretation_repository,
         snapshot_repository=snapshot_repository,
+        outbox_repository=outbox_repository,
     )
 
     result = publication_service.publish_proposal(
@@ -248,6 +283,7 @@ def test_publish_proposal_marks_exact_duplicate_against_current_published_as_sup
     assert interpretation_repository.records["interp:proposal:duplicate"]["status"] == "superseded"
     assert interpretation_repository.records["interp:published:1"]["status"] == "published"
     assert snapshot_repository.published == []
+    assert outbox_repository.events == []
 
 
 def test_publish_proposal_blocks_near_duplicate_against_current_published_until_review() -> None:
@@ -273,10 +309,12 @@ def test_publish_proposal_blocks_near_duplicate_against_current_published_until_
         fact_repository=_fact_repository(),
     )
     snapshot_repository = FakeSnapshotRepository()
+    outbox_repository = FakeOutboxRepository()
     publication_service = InterpretationPublicationService(
         proposal_service=proposal_service,
         interpretation_repository=interpretation_repository,
         snapshot_repository=snapshot_repository,
+        outbox_repository=outbox_repository,
     )
 
     result = publication_service.publish_proposal(
@@ -291,6 +329,7 @@ def test_publish_proposal_blocks_near_duplicate_against_current_published_until_
     assert interpretation_repository.records["interp:proposal:near-duplicate"]["status"] == "validated"
     assert interpretation_repository.records["interp:published:1"]["status"] == "published"
     assert snapshot_repository.published == []
+    assert outbox_repository.events == []
 
 
 def _validated_record(record_id: str) -> dict[str, Any]:
