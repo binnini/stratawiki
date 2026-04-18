@@ -1102,6 +1102,58 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
             )
         return snapshot_id
 
+    def get_snapshot_status(
+        self,
+        *,
+        layer: str | None = None,
+        domain: str,
+    ) -> dict[str, object] | None:
+        where_clause = "domain = %s"
+        params: list[Any] = [domain]
+        if layer is not None:
+            where_clause += " AND layer = %s"
+            params.append(layer)
+
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    p.layer,
+                    p.domain,
+                    p.current_snapshot_id,
+                    p.fact_snapshot_id,
+                    p.interpretation_snapshot_id,
+                    p.profile_version,
+                    pub.published_at
+                FROM ops.snapshot_pointer p
+                LEFT JOIN ops.snapshot_publication pub
+                    ON pub.snapshot_id = p.current_snapshot_id
+                    AND pub.layer = p.layer
+                    AND pub.domain = p.domain
+                WHERE {where_clause}
+                ORDER BY p.updated_at DESC, p.layer ASC
+                LIMIT 1
+                """,
+                params,
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            data = self._row_to_dict(row)
+            return {
+                "layer": data["layer"],
+                "domain": data["domain"],
+                "current_snapshot_id": data["current_snapshot_id"],
+                "fact_snapshot_id": data["fact_snapshot_id"],
+                **(
+                    {"interpretation_snapshot_id": data["interpretation_snapshot_id"]}
+                    if data.get("interpretation_snapshot_id")
+                    else {}
+                ),
+                **({"profile_version": data["profile_version"]} if data.get("profile_version") else {}),
+                **({"published_at": data["published_at"]} if data.get("published_at") else {}),
+            }
+
 
 class PostgresOutboxRepository(PostgresRepositoryBase):
     def append_events(self, events: list[OutboxEvent]) -> list[str]:
