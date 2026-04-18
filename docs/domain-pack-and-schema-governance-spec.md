@@ -28,6 +28,8 @@ The repository now includes:
 - a compatibility checker with structured upgrade reports
 - manual-review classification for non-breaking but operator-sensitive pack upgrades
 - an approval service that evaluates candidate packs before registration or activation
+- a proposal-ingestion service for `DomainProposalBatch`
+- dry-run evaluation, structured rejection responses, and pack-version audit metadata for proposal ingestion
 
 The repository does not yet include:
 
@@ -45,7 +47,7 @@ The current runtime split is:
 
 - source adapters still normalize raw inputs into `SourceRecord`
 - the existing recruiting ingestion plugin still decomposes normalized source into Facts
-- the new Domain Pack registry plus approval services provide the runtime seam for future proposal-ingestion work
+- the new Domain Pack registry, approval services, and proposal-ingestion service provide the runtime seam for pack-governed ingestion
 
 This means the current source-driven ingestion path remains valid while schema governance is being introduced incrementally.
 
