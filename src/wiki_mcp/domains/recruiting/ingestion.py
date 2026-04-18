@@ -13,6 +13,7 @@ from wiki_mcp.schemas.validation_result import ValidationResult
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _SKILL_TOKEN_RE = re.compile(r"[A-Za-z0-9.+#/\\-]+")
 _SKILL_ALIAS_CLEAN_RE = re.compile(r"[^0-9a-z가-힣+#]+")
+_SKILL_ALIAS_TOKEN_RE = re.compile(r"[0-9a-z가-힣+#]+")
 _SKILL_TAXONOMY: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Python", ("python", "파이썬")),
     ("Node.js", ("node.js", "nodejs", "node js", "노드js", "노드.js", "노드 js")),
@@ -49,6 +50,11 @@ def _compact_skill_alias(value: str | None) -> str:
     return _SKILL_ALIAS_CLEAN_RE.sub("", normalized)
 
 
+def _skill_alias_tokens(value: str | None) -> list[str]:
+    normalized = (_normalize_whitespace(value.lower()) if value else "") or ""
+    return _SKILL_ALIAS_TOKEN_RE.findall(normalized)
+
+
 _SKILL_CANONICAL_BY_ALIAS = {
     _normalize_whitespace(alias.lower()): canonical_name
     for canonical_name, aliases in _SKILL_TAXONOMY
@@ -59,17 +65,23 @@ _SKILL_CANONICAL_BY_ALIAS_COMPACT = {
     for canonical_name, aliases in _SKILL_TAXONOMY
     for alias in aliases
 }
-_SKILL_TAXONOMY_BY_COMPACT_ALIAS = tuple(
-    sorted(
-        (
-            (_compact_skill_alias(alias), canonical_name)
-            for canonical_name, aliases in _SKILL_TAXONOMY
-            for alias in aliases
-        ),
-        key=lambda item: len(item[0]),
-        reverse=True,
-    )
+_SKILL_MAX_ALIAS_TOKENS = max(
+    len(_skill_alias_tokens(alias))
+    for canonical_name, aliases in _SKILL_TAXONOMY
+    for alias in aliases
 )
+
+
+def _skill_match_keys(text: str) -> set[tuple[str, str]]:
+    tokens = _skill_alias_tokens(text)
+    match_keys: set[tuple[str, str]] = set()
+    for start_index in range(len(tokens)):
+        for window_size in range(1, _SKILL_MAX_ALIAS_TOKENS + 1):
+            window = tokens[start_index : start_index + window_size]
+            if len(window) != window_size:
+                continue
+            match_keys.add((" ".join(window), "".join(window)))
+    return match_keys
 
 
 def _dedupe_records(records: list[FactRecord]) -> list[FactRecord]:
@@ -100,9 +112,12 @@ def _extract_skill_names(*texts: str | None) -> list[str]:
         if not normalized_text:
             continue
 
-        compact_text = _compact_skill_alias(normalized_text)
-        for compact_alias, canonical_name in _SKILL_TAXONOMY_BY_COMPACT_ALIAS:
-            if compact_alias and compact_alias in compact_text:
+        for normalized_key, compact_key in _skill_match_keys(normalized_text):
+            canonical_name = (
+                _SKILL_CANONICAL_BY_ALIAS.get(normalized_key)
+                or _SKILL_CANONICAL_BY_ALIAS_COMPACT.get(compact_key)
+            )
+            if canonical_name is not None:
                 skills.setdefault(canonical_name.lower(), canonical_name)
 
         for token in _SKILL_TOKEN_RE.findall(normalized_text):

@@ -237,6 +237,26 @@ def test_plugin_normalizes_multilingual_skill_aliases_to_shared_canonical_keys()
     assert len([relation for relation in relations if relation["relation_type"] == "requires_skill"]) == 3
 
 
+def test_plugin_does_not_canonicalize_partial_alias_substrings() -> None:
+    provider = StubWorknetRecruitingProvider()
+    adapter = WorknetRecruitingExternalAdapter()
+    plugin = RecruitingSourceIngestionPlugin()
+
+    source = adapter.fetch_source_record(provider, "EMP-1")
+    source["metadata"]["posting"]["summary"] = "Privacy laws and reactive systems experience preferred"
+    source["metadata"]["posting"]["notes"] = "Draws graphs for experimentation"
+    source["metadata"]["recruitment_sections"][0]["other_requirement"] = "No explicit cloud stack required"
+
+    normalized = plugin.normalize_source(source)
+    records = plugin.extract_fact_records(normalized)
+
+    skill_records = [record for record in records if record["entity_type"] == "skill"]
+    canonical_keys = {record["canonical_key"] for record in skill_records}
+
+    assert "skill:aws" not in canonical_keys
+    assert "skill:react" not in canonical_keys
+
+
 def test_plugin_relations_inherit_scope_fields_from_posting_record() -> None:
     provider = StubWorknetRecruitingProvider()
     adapter = WorknetRecruitingExternalAdapter()
