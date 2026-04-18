@@ -148,3 +148,51 @@ def test_save_record_persists_personal_anchor_metadata() -> None:
         {"layer": "interpretation", "id": "interp:1"},
         {"layer": "fact", "id": "fact:1"},
     ]
+
+
+def test_search_by_anchors_queries_anchor_metadata_column() -> None:
+    cursor = FakeCursor(
+        [
+            {
+                "fetchall": [
+                    {
+                        "id": "personal:1",
+                        "domain": "recruiting",
+                        "kind": "query_answer",
+                        "title": "Answer",
+                        "summary": "Saved answer",
+                        "scope": "user",
+                        "tenant_id": "tenant-1",
+                        "user_id": "user-1",
+                        "fact_snapshot_id": "fact_snap:1",
+                        "interpretation_snapshot_id": "interp_snap:1",
+                        "profile_version": "profile:v1",
+                        "body_path": "wiki/users/user-1/answers/answer.md",
+                        "status": "active",
+                        "schema_version": "personal.v1",
+                        "anchors_json": [
+                            {"layer": "interpretation", "id": "interp:1"},
+                            {"layer": "fact", "id": "fact:1"},
+                        ],
+                        "provenance_json": {"generated_by": {"kind": "llm"}},
+                    }
+                ]
+            }
+        ]
+    )
+    repository = PostgresPersonalRepository(FakeConnection(cursor))
+
+    records = repository.search_by_anchors(
+        domain="recruiting",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+        interpretation_ids=["interp:1"],
+        fact_ids=["fact:1"],
+        limit=5,
+    )
+
+    assert records[0]["id"] == "personal:1"
+    query, params = cursor.executed[0]
+    assert "jsonb_array_elements" in query
+    assert "anchors_json" in query
+    assert isinstance(params, list)
+    assert params[-1] == 5

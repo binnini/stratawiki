@@ -215,6 +215,37 @@ class InMemoryPersonalRepository:
         ]
         return matches[:limit]
 
+    def search_by_anchors(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any],
+        interpretation_ids: list[str],
+        fact_ids: list[str],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        if limit <= 0 or (not interpretation_ids and not fact_ids):
+            return []
+
+        interpretation_id_set = set(interpretation_ids)
+        fact_id_set = set(fact_ids)
+        matches = [
+            dict(record)
+            for record in self.records.values()
+            if record["domain"] == domain
+            and record["scope_ref"].get("tenant_id") == scope_ref.get("tenant_id")
+            and record["scope_ref"].get("user_id") == scope_ref.get("user_id")
+            and any(
+                isinstance(anchor, dict)
+                and (
+                    (anchor.get("layer") == "interpretation" and anchor.get("id") in interpretation_id_set)
+                    or (anchor.get("layer") == "fact" and anchor.get("id") in fact_id_set)
+                )
+                for anchor in (record.get("anchors") or [])
+            )
+        ]
+        return matches[:limit]
+
     def save_record(self, record: dict[str, Any]) -> str:
         self.records[record["id"]] = dict(record)
         return str(record["id"])

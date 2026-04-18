@@ -120,6 +120,17 @@ class PersonalRepository(Protocol):
     ) -> list[PersonalRecord]:
         """Search Personal records as bounded retrieval candidates."""
 
+    def search_by_anchors(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        interpretation_ids: list[str],
+        fact_ids: list[str],
+        limit: int,
+    ) -> list[PersonalRecord]:
+        """Search Personal records by persisted anchor targets."""
+
     def save_record(self, record: PersonalRecord) -> str:
         """Persist one Personal metadata record and return its id."""
 

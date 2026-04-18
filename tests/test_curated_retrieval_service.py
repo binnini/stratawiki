@@ -53,13 +53,24 @@ class StubInterpretationRepository:
 
 
 class StubPersonalRepository:
-    def __init__(self, *, search_results: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        search_results: list[dict[str, Any]] | None = None,
+        anchor_search_results: list[dict[str, Any]] | None = None,
+    ) -> None:
         self.search_results = search_results or []
+        self.anchor_search_results = anchor_search_results or []
         self.search_calls: list[dict[str, Any]] = []
+        self.anchor_search_calls: list[dict[str, Any]] = []
 
     def search_for_retrieval(self, **kwargs: Any) -> list[dict[str, Any]]:
         self.search_calls.append(dict(kwargs))
         return list(self.search_results)
+
+    def search_by_anchors(self, **kwargs: Any) -> list[dict[str, Any]]:
+        self.anchor_search_calls.append(dict(kwargs))
+        return list(self.anchor_search_results)
 
 
 class StubRenderingRepository:
@@ -407,6 +418,72 @@ Saved answer body.
     ]
     assert result["retrieval_metadata"]["fact_source"] == "personal_anchors"
     assert result["fact_explanations"][0]["match_type"] == "personal_anchor_expansion"
+
+
+def test_curated_retrieval_reverse_looks_up_personal_records_from_persisted_anchors() -> None:
+    personal_repository = StubPersonalRepository(
+        search_results=[],
+        anchor_search_results=[
+            {
+                "id": "personal:anchored:1",
+                "domain": "recruiting",
+                "kind": "query_answer",
+                "title": "Saved answer",
+                "summary": "Short saved answer",
+                "snapshot_ref": {
+                    "fact_snapshot_id": "fact_snap:1",
+                    "interpretation_snapshot_id": "interp_snap:1",
+                    "profile_version": "profile:v1",
+                },
+                "body_path": "wiki/users/user-1/answers/saved-answer.md",
+                "anchors": [
+                    {"layer": "interpretation", "id": "interp:shared:1"},
+                    {"layer": "fact", "id": "fact:shared:1"},
+                ],
+            }
+        ],
+    )
+    interpretation_repository = StubInterpretationRepository(
+        by_id={"interp:shared:1": _interpretation("interp:shared:1", evidence=[])},
+        search_results=[
+            {
+                **_interpretation("interp:shared:1", evidence=[]),
+                "title": "Production AI hiring is rising",
+                "summary": "Backend roles increasingly mention production AI delivery.",
+            }
+        ],
+    )
+    fact_repository = StubFactRepository(
+        by_id={"fact:shared:1": _fact("fact:shared:1", "Shared fact")},
+        search_results=[],
+    )
+
+    service = CuratedRetrievalService(
+        fact_repository=fact_repository,
+        interpretation_repository=interpretation_repository,
+        personal_repository=personal_repository,
+    )
+
+    result = service.retrieve_for_query(
+        domain="recruiting",
+        question="production AI hiring",
+        scope_ref=_scope_ref(),
+    )
+
+    assert result["personal_ids"] == ["personal:anchored:1"]
+    assert result["interpretation_ids"] == ["interp:shared:1"]
+    assert result["fact_ids"] == ["fact:shared:1"]
+    assert personal_repository.anchor_search_calls == [
+        {
+            "domain": "recruiting",
+            "scope_ref": _scope_ref(),
+            "interpretation_ids": ["interp:shared:1"],
+            "fact_ids": [],
+            "limit": 5,
+        }
+    ]
+    assert result["personal_explanations"][0]["match_type"] == "personal_anchor_reverse_lookup"
+    assert result["personal_explanations"][0]["matched_fields"] == ["anchors"]
 
 
 def test_personal_query_bundle_carries_retrieval_metadata() -> None:

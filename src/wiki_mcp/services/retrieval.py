@@ -62,7 +62,7 @@ class CuratedRetrievalService:
         if not normalized_question:
             return self._empty_result()
 
-        personal_records = self._search_personal(
+        personal_records, personal_source_by_id = self._search_personal(
             domain=domain,
             question=normalized_question,
             query_tokens=query_tokens,
@@ -110,6 +110,7 @@ class CuratedRetrievalService:
                 records=personal_records,
                 query_tokens=query_tokens,
                 profile_context=profile_context,
+                source_by_id=personal_source_by_id,
             ),
             "interpretation_explanations": self._build_explanations(
                 layer="interpretation",
@@ -175,10 +176,11 @@ class CuratedRetrievalService:
         question: str,
         query_tokens: list[str],
         scope_ref: ScopeRef,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
         if self.personal_repository is None:
-            return []
-        records = list(
+            return [], {}
+
+        direct_records = list(
             self.personal_repository.search_for_retrieval(
                 domain=domain,
                 scope_ref=scope_ref,
@@ -187,6 +189,88 @@ class CuratedRetrievalService:
                 limit=self.layer_result_limit,
             )
         )
+        direct_records = self._rehydrate_personal_anchors_from_rendered_bodies(
+            records=direct_records,
+            scope_ref=scope_ref,
+        )
+        source_by_id = {
+            record["id"]: {
+                "match_type": "curated_repository_search",
+                "matched_fields": self._matched_fields(record, query_tokens) or ["repository_search"],
+                "matched_token_count": len(query_tokens),
+            }
+            for record in direct_records
+        }
+
+        reverse_lookup_records: list[dict[str, Any]] = []
+        if not any(self._record_has_personal_anchors(record) for record in direct_records):
+            reverse_lookup_records = self._search_personal_by_anchor_targets(
+                domain=domain,
+                question=question,
+                query_tokens=query_tokens,
+                scope_ref=scope_ref,
+                exclude_ids=[record["id"] for record in direct_records],
+                limit=max(self.layer_result_limit - len(direct_records), 0),
+            )
+        for record in reverse_lookup_records:
+            source_by_id[record["id"]] = {
+                "match_type": "personal_anchor_reverse_lookup",
+                "matched_fields": ["anchors"],
+                "matched_token_count": 0,
+            }
+        return direct_records + reverse_lookup_records, source_by_id
+
+    def _search_personal_by_anchor_targets(
+        self,
+        *,
+        domain: str,
+        question: str,
+        query_tokens: list[str],
+        scope_ref: ScopeRef,
+        exclude_ids: list[str],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        if (
+            self.personal_repository is None
+            or limit <= 0
+        ):
+            return []
+
+        interpretation_ids = []
+        if self.interpretation_repository is not None:
+            interpretation_ids = [
+                record["id"]
+                for record in self._search_interpretation(
+                    domain=domain,
+                    question=question,
+                    query_tokens=query_tokens,
+                    scope_ref=scope_ref,
+                )
+            ]
+        fact_ids = [
+            record["id"]
+            for record in self._search_fact(
+                domain=domain,
+                question=question,
+                query_tokens=query_tokens,
+                scope_ref=scope_ref,
+            )
+        ]
+        if not interpretation_ids and not fact_ids:
+            return []
+
+        records = list(
+            self.personal_repository.search_by_anchors(
+                domain=domain,
+                scope_ref=scope_ref,
+                interpretation_ids=interpretation_ids,
+                fact_ids=fact_ids,
+                limit=limit,
+            )
+        )
+        if exclude_ids:
+            excluded = set(exclude_ids)
+            records = [record for record in records if record["id"] not in excluded]
         return self._rehydrate_personal_anchors_from_rendered_bodies(
             records=records,
             scope_ref=scope_ref,

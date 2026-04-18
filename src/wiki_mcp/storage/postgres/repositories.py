@@ -1034,6 +1034,67 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             )
             return [self._row_to_personal_record(row) for row in cursor.fetchall()]
 
+    def search_by_anchors(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        interpretation_ids: list[str],
+        fact_ids: list[str],
+        limit: int,
+    ) -> list[PersonalRecord]:
+        if limit <= 0 or (not interpretation_ids and not fact_ids):
+            return []
+
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        anchor_clauses: list[str] = []
+        params: list[Any] = [domain, *scope_params]
+        if interpretation_ids:
+            anchor_clauses.append(
+                "(anchor->>'layer' = 'interpretation' AND anchor->>'id' = ANY(%s))"
+            )
+            params.append(interpretation_ids)
+        if fact_ids:
+            anchor_clauses.append(
+                "(anchor->>'layer' = 'fact' AND anchor->>'id' = ANY(%s))"
+            )
+            params.append(fact_ids)
+
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id,
+                    domain,
+                    kind,
+                    title,
+                    summary,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    fact_snapshot_id,
+                    interpretation_snapshot_id,
+                    profile_version,
+                    body_path,
+                    status,
+                    schema_version,
+                    anchors_json,
+                    provenance_json
+                FROM personal.record
+                WHERE domain = %s
+                  AND {scope_sql}
+                  AND EXISTS (
+                      SELECT 1
+                      FROM jsonb_array_elements(COALESCE(anchors_json, '[]'::jsonb)) AS anchor
+                      WHERE {" OR ".join(anchor_clauses)}
+                  )
+                ORDER BY updated_at DESC, id ASC
+                LIMIT %s
+                """,
+                [*params, limit],
+            )
+            return [self._row_to_personal_record(row) for row in cursor.fetchall()]
+
     def save_record(self, record: PersonalRecord) -> str:
         self._validate_personal_record(record)
         scope_ref = record["scope_ref"]
