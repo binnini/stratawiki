@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from wiki_mcp.schemas.dependency_impact import DependencyImpact
@@ -65,6 +66,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
                 f"""
                 SELECT
                     id,
+                    layer,
                     domain,
                     entity_type,
                     canonical_key,
@@ -72,6 +74,10 @@ class PostgresFactRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     tenant_id,
                     user_id,
+                    status,
+                    version,
+                    created_at,
+                    updated_at,
                     schema_version,
                     attributes_json,
                     provenance_json
@@ -96,6 +102,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
                 f"""
                 SELECT
                     id,
+                    layer,
                     domain,
                     entity_type,
                     canonical_key,
@@ -103,6 +110,10 @@ class PostgresFactRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     tenant_id,
                     user_id,
+                    status,
+                    version,
+                    created_at,
+                    updated_at,
                     schema_version,
                     attributes_json,
                     provenance_json
@@ -144,6 +155,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
                 f"""
                 SELECT
                     id,
+                    layer,
                     domain,
                     entity_type,
                     canonical_key,
@@ -151,6 +163,10 @@ class PostgresFactRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     tenant_id,
                     user_id,
+                    status,
+                    version,
+                    created_at,
+                    updated_at,
                     schema_version,
                     attributes_json,
                     provenance_json
@@ -177,12 +193,21 @@ class PostgresFactRepository(PostgresRepositoryBase):
         affected_fact_ids: list[str] = []
 
         with managed_cursor(self.connection) as cursor:
-            for record in records:
-                self._validate_fact_record(record, fact_snapshot_id=fact_snapshot_id)
+            prepared_records = [
+                self._prepare_fact_record_for_write(
+                    cursor=cursor,
+                    record=record,
+                    fact_snapshot_id=fact_snapshot_id,
+                )
+                for record in records
+            ]
+
+            for record in prepared_records:
                 cursor.execute(
                     """
                     INSERT INTO fact.record_envelopes (
                         id,
+                        layer,
                         domain,
                         entity_type,
                         canonical_key,
@@ -190,13 +215,18 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         fact_snapshot_id,
                         tenant_id,
                         user_id,
+                        status,
+                        version,
+                        created_at,
+                        updated_at,
                         schema_version,
                         attributes_json,
                         provenance_json
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
                     )
                     ON CONFLICT (id) DO UPDATE SET
+                        layer = EXCLUDED.layer,
                         domain = EXCLUDED.domain,
                         entity_type = EXCLUDED.entity_type,
                         canonical_key = EXCLUDED.canonical_key,
@@ -204,14 +234,17 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         fact_snapshot_id = EXCLUDED.fact_snapshot_id,
                         tenant_id = EXCLUDED.tenant_id,
                         user_id = EXCLUDED.user_id,
+                        status = EXCLUDED.status,
+                        version = EXCLUDED.version,
+                        updated_at = EXCLUDED.updated_at,
                         schema_version = EXCLUDED.schema_version,
                         attributes_json = EXCLUDED.attributes_json,
-                        provenance_json = EXCLUDED.provenance_json,
-                        updated_at = NOW()
+                        provenance_json = EXCLUDED.provenance_json
                     RETURNING (xmax = 0) AS inserted
                     """,
                     (
                         record["id"],
+                        record["layer"],
                         record["domain"],
                         record["entity_type"],
                         record["canonical_key"],
@@ -219,6 +252,10 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         fact_snapshot_id,
                         record.get("tenant_id"),
                         record.get("user_id"),
+                        record["status"],
+                        record["version"],
+                        record["created_at"],
+                        record["updated_at"],
                         record["schema_version"],
                         self._json(record["attributes"]),
                         self._json(record["provenance"]),
@@ -272,10 +309,136 @@ class PostgresFactRepository(PostgresRepositoryBase):
             "affected_fact_ids": affected_fact_ids,
         }
 
+    def _prepare_fact_record_for_write(
+        self,
+        *,
+        cursor: Any,
+        record: FactRecord,
+        fact_snapshot_id: str,
+    ) -> FactRecord:
+        self._validate_fact_record(record, fact_snapshot_id=fact_snapshot_id)
+
+        existing_by_id = self._load_existing_fact_by_id(cursor=cursor, record_id=record["id"])
+        existing_by_key = self._load_existing_fact_by_canonical_identity(
+            cursor=cursor,
+            canonical_key=record["canonical_key"],
+            scope_ref=self._scope_ref_for_fact(record),
+        )
+        if existing_by_key is not None and existing_by_key["id"] != record["id"]:
+            raise ValueError(
+                "Canonical Fact identity conflict at storage boundary for "
+                f"{record['canonical_key']!r}: existing id {existing_by_key['id']!r}, "
+                f"incoming id {record['id']!r}."
+            )
+
+        timestamp = self._now_timestamp()
+        current = existing_by_id or existing_by_key
+        created_at = str(record.get("created_at") or (current or {}).get("created_at") or timestamp)
+        version = int(record.get("version") or (current or {}).get("version") or 0) + (
+            0 if "version" in record else 1
+        )
+        if current is None and "version" not in record:
+            version = 1
+
+        normalized = dict(record)
+        normalized["layer"] = "fact"
+        normalized["fact_snapshot_id"] = fact_snapshot_id
+        normalized["status"] = str(record.get("status") or (current or {}).get("status") or "active")
+        normalized["version"] = version
+        normalized["created_at"] = created_at
+        normalized["updated_at"] = str(record.get("updated_at") or timestamp)
+        return normalized  # type: ignore[return-value]
+
+    def _load_existing_fact_by_id(
+        self,
+        *,
+        cursor: Any,
+        record_id: str,
+    ) -> FactRecord | None:
+        cursor.execute(
+            """
+            SELECT
+                id,
+                layer,
+                domain,
+                entity_type,
+                canonical_key,
+                scope,
+                fact_snapshot_id,
+                tenant_id,
+                user_id,
+                status,
+                version,
+                created_at,
+                updated_at,
+                schema_version,
+                attributes_json,
+                provenance_json
+            FROM fact.record_envelopes
+            WHERE id = %s
+            """,
+            [record_id],
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return self._row_to_fact_record(row)
+
+    def _load_existing_fact_by_canonical_identity(
+        self,
+        *,
+        cursor: Any,
+        canonical_key: str,
+        scope_ref: ScopeRef,
+    ) -> FactRecord | None:
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        cursor.execute(
+            f"""
+            SELECT
+                id,
+                layer,
+                domain,
+                entity_type,
+                canonical_key,
+                scope,
+                fact_snapshot_id,
+                tenant_id,
+                user_id,
+                status,
+                version,
+                created_at,
+                updated_at,
+                schema_version,
+                attributes_json,
+                provenance_json
+            FROM fact.record_envelopes
+            WHERE canonical_key = %s AND {scope_sql}
+            ORDER BY updated_at DESC, id ASC
+            LIMIT 1
+            """,
+            [canonical_key, *scope_params],
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return self._row_to_fact_record(row)
+
+    def _scope_ref_for_fact(self, record: FactRecord) -> ScopeRef:
+        scope_ref: ScopeRef = {"scope": record["scope"]}
+        if record.get("tenant_id") is not None:
+            scope_ref["tenant_id"] = record["tenant_id"]
+        if record.get("user_id") is not None:
+            scope_ref["user_id"] = record["user_id"]
+        return scope_ref
+
+    def _now_timestamp(self) -> str:
+        return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
     def _row_to_fact_record(self, row: Any) -> FactRecord:
         data = self._row_to_dict(row)
         return {
             "id": data["id"],
+            "layer": str(data.get("layer") or "fact"),
             "domain": data["domain"],
             "entity_type": data["entity_type"],
             "canonical_key": data["canonical_key"],
@@ -288,6 +451,10 @@ class PostgresFactRepository(PostgresRepositoryBase):
             ),
             **({"tenant_id": data["tenant_id"]} if data.get("tenant_id") else {}),
             **({"user_id": data["user_id"]} if data.get("user_id") else {}),
+            "status": str(data.get("status") or "active"),
+            "version": int(data.get("version") or 1),
+            **({"created_at": str(data["created_at"])} if data.get("created_at") else {}),
+            **({"updated_at": str(data["updated_at"])} if data.get("updated_at") else {}),
             "schema_version": data["schema_version"],
             "provenance": self._load_json(data["provenance_json"]),
         }
@@ -318,6 +485,15 @@ class PostgresFactRepository(PostgresRepositoryBase):
             raise ValueError(
                 f"FactRecord {record['id']} fact_snapshot_id does not match the write snapshot."
             )
+        if "status" in record:
+            ensure_non_empty_string(record["status"], label=f"FactRecord {record['id']}.status")
+        if "version" in record:
+            version = record["version"]
+            if not isinstance(version, int) or version <= 0:
+                raise ValueError(f"FactRecord {record['id']}.version must be a positive integer.")
+        for field in ("created_at", "updated_at"):
+            if field in record:
+                ensure_non_empty_string(record[field], label=f"FactRecord {record['id']}.{field}")
         if not isinstance(record.get("attributes"), dict):
             raise ValueError(f"FactRecord {record['id']}.attributes must be a mapping.")
 

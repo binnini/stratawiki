@@ -59,14 +59,52 @@ class InMemoryFactRepository:
         *,
         fact_snapshot_id: str,
     ) -> dict[str, Any]:
+        facts_created = 0
+        facts_updated = 0
+        timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
         for record in records:
+            scope = str(record["scope"])
+            existing_by_key = next(
+                (
+                    existing
+                    for existing in self.records.values()
+                    if existing["canonical_key"] == record["canonical_key"]
+                    and existing["scope"] == scope
+                    and existing.get("tenant_id") == record.get("tenant_id")
+                    and existing.get("user_id") == record.get("user_id")
+                ),
+                None,
+            )
+            if existing_by_key is not None and existing_by_key["id"] != record["id"]:
+                raise ValueError(
+                    "Canonical Fact identity conflict at storage boundary for "
+                    f"{record['canonical_key']!r}: existing id {existing_by_key['id']!r}, "
+                    f"incoming id {record['id']!r}."
+                )
+
+            existing_by_id = self.records.get(record["id"])
+            current = existing_by_id or existing_by_key
             persisted = dict(record)
+            persisted["layer"] = "fact"
             persisted["fact_snapshot_id"] = fact_snapshot_id
+            persisted["status"] = str(record.get("status") or (current or {}).get("status") or "active")
+            persisted["version"] = (
+                int(record["version"])
+                if "version" in record
+                else int((current or {}).get("version") or 0) + 1
+            )
+            persisted["created_at"] = str(record.get("created_at") or (current or {}).get("created_at") or timestamp)
+            persisted["updated_at"] = str(record.get("updated_at") or timestamp)
             self.records[persisted["id"]] = persisted
+            if current is None:
+                facts_created += 1
+            else:
+                facts_updated += 1
         self.relations.extend(dict(relation) for relation in relations)
         return {
-            "facts_created": len(records),
-            "facts_updated": 0,
+            "facts_created": facts_created,
+            "facts_updated": facts_updated,
             "relations_created": len(relations),
             "affected_fact_ids": [record["id"] for record in records],
         }

@@ -92,7 +92,7 @@ def _build_fact_record(
         "canonical_key": canonical_key,
         "attributes": attributes,
         "scope": "shared",
-        "schema_version": "v1",
+        "schema_version": "fact.v1",
         "provenance": provenance,
     }
 
@@ -115,7 +115,7 @@ class RecruitingSourceIngestionPlugin:
     """
 
     domain_name = "recruiting"
-    schema_version = "v1"
+    schema_version = "fact.v1"
 
     def accepts(self, source: SourceRecord) -> bool:
         return source["domain"] == self.domain_name
