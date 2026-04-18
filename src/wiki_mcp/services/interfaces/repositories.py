@@ -174,6 +174,14 @@ class SnapshotRepository(Protocol):
     ) -> str:
         """Publish the current snapshot pointer for a layer or partition."""
 
+    def get_snapshot_status(
+        self,
+        *,
+        layer: str | None = None,
+        domain: str,
+    ) -> dict[str, object] | None:
+        """Return the current published snapshot status for a domain or one layer."""
+
 
 class OutboxRepository(Protocol):
     """Persistence boundary for asynchronous projection events."""
