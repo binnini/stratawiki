@@ -48,6 +48,7 @@ from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.personal_query_answer import (
     PersonalQueryAnswer,
     PersonalQueryCitation,
+    PersonalQueryProvenance,
     PersonalQueryRationaleItem,
 )
 from wiki_mcp.schemas.personal_query_bundle import (
@@ -105,6 +106,7 @@ __all__ = [
     "PersonalQueryBundle",
     "PersonalQueryBundleItem",
     "PersonalQueryCitation",
+    "PersonalQueryProvenance",
     "PersonalQueryRationaleItem",
     "ProfileContext",
     "GeneratedBy",
