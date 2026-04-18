@@ -62,6 +62,16 @@ class StubPersonalRepository:
         return list(self.search_results)
 
 
+class StubRenderingRepository:
+    def __init__(self, *, bodies_by_path: dict[str, str] | None = None) -> None:
+        self.bodies_by_path = bodies_by_path or {}
+        self.read_calls: list[dict[str, Any]] = []
+
+    def read_body(self, *, path: str, scope_ref: dict[str, Any]) -> str | None:
+        self.read_calls.append({"path": path, "scope_ref": dict(scope_ref)})
+        return self.bodies_by_path.get(path)
+
+
 def _scope_ref() -> dict[str, str]:
     return {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"}
 
@@ -302,6 +312,93 @@ def test_curated_retrieval_uses_fact_search_fallback_when_no_evidence_exists() -
     assert fact_repository.search_calls[0]["query_text"] == "Need evidence fallback"
     assert result["retrieval_metadata"]["fact_source"] == "search_fallback"
     assert result["fact_explanations"][0]["match_type"] == "curated_repository_search"
+
+
+def test_curated_retrieval_rehydrates_saved_answer_anchors_from_rendered_body() -> None:
+    personal_repository = StubPersonalRepository(
+        search_results=[
+            {
+                "id": "personal:saved:1",
+                "domain": "recruiting",
+                "kind": "query_answer",
+                "title": "Saved answer",
+                "summary": "Persisted personal answer",
+                "snapshot_ref": {
+                    "fact_snapshot_id": "fact_snap:1",
+                    "interpretation_snapshot_id": "interp_snap:1",
+                    "profile_version": "profile:v1",
+                },
+                "body_path": "wiki/users/user-1/answers/saved-answer.md",
+            }
+        ]
+    )
+    rendering_repository = StubRenderingRepository(
+        bodies_by_path={
+            "wiki/users/user-1/answers/saved-answer.md": """<!-- stratawiki:personal_query_answer
+{
+  "anchor_details": [
+    {
+      "id": "interp:saved:1",
+      "layer": "interpretation",
+      "title": "Saved interpretation"
+    },
+    {
+      "id": "fact:saved:1",
+      "layer": "fact",
+      "title": "Saved fact"
+    }
+  ],
+  "anchors": [
+    "interp:saved:1",
+    "fact:saved:1"
+  ],
+  "answer_type": "personal_query_answer",
+  "provenance": {
+    "fact_snapshot": "fact_snap:1",
+    "interpretation_snapshot": "interp_snap:1",
+    "profile_version": "profile:v1"
+  },
+  "question": "What should I focus on next?"
+}
+-->
+
+## Answer
+
+Saved answer body.
+"""
+        }
+    )
+    interpretation_repository = StubInterpretationRepository(
+        by_id={"interp:saved:1": _interpretation("interp:saved:1", evidence=[])},
+    )
+    fact_repository = StubFactRepository(
+        by_id={"fact:saved:1": _fact("fact:saved:1", "Saved fact")},
+        search_results=[],
+    )
+    service = CuratedRetrievalService(
+        fact_repository=fact_repository,
+        interpretation_repository=interpretation_repository,
+        personal_repository=personal_repository,
+        rendering_repository=rendering_repository,
+    )
+
+    result = service.retrieve_for_query(
+        domain="recruiting",
+        question="Saved answer",
+        scope_ref=_scope_ref(),
+    )
+
+    assert result["interpretation_ids"] == ["interp:saved:1"]
+    assert result["fact_ids"] == ["fact:saved:1"]
+    assert result["retrieval_metadata"]["personal_anchor_status"] == "present"
+    assert rendering_repository.read_calls == [
+        {
+            "path": "wiki/users/user-1/answers/saved-answer.md",
+            "scope_ref": _scope_ref(),
+        }
+    ]
+    assert result["retrieval_metadata"]["fact_source"] == "personal_anchors"
+    assert result["fact_explanations"][0]["match_type"] == "personal_anchor_expansion"
 
 
 def test_personal_query_bundle_carries_retrieval_metadata() -> None:

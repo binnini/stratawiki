@@ -142,6 +142,14 @@ class RenderingRepository(Protocol):
     def write_artifact(self, artifact: RenderedArtifact) -> str:
         """Persist one rendered artifact and return its path."""
 
+    def read_body(
+        self,
+        *,
+        path: str,
+        scope_ref: ScopeRef,
+    ) -> str | None:
+        """Read one rendered artifact body by path with scope filtering."""
+
     def get_page(
         self,
         *,

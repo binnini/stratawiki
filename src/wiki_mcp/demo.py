@@ -123,6 +123,7 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
         fact_repository=fact_repository,
         interpretation_repository=interpretation_repository,
         personal_repository=personal_repository,
+        rendering_repository=rendering_repository,
     )
     personal_query_orchestrator = PersonalQueryOrchestrator(retrieval_service=retrieval_service)
     personal_query_service = PersonalKnowledgeQueryService(
