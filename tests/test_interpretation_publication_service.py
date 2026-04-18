@@ -132,6 +132,8 @@ def test_publish_proposal_promotes_validated_market_trend_and_supersedes_prior_r
                 **_validated_record("interp:published:older"),
                 "status": "published",
                 "title": "Older trend",
+                "claim": "Production AI hiring momentum is stabilizing.",
+                "summary": "Demand is flattening for backend roles with production AI exposure.",
             },
         }
     )
@@ -209,6 +211,86 @@ def test_query_service_returns_only_published_records_by_default() -> None:
     assert hidden is None
     assert [record["id"] for record in matches] == ["interp:published:1"]
     assert matches[0]["interpretation_snapshot_id"] == "interp_snap:published:1"
+
+
+def test_publish_proposal_marks_exact_duplicate_against_current_published_as_superseded() -> None:
+    interpretation_repository = FakeInterpretationRepository(
+        {
+            "interp:proposal:duplicate": _validated_record("interp:proposal:duplicate"),
+            "interp:published:1": {
+                **_validated_record("interp:published:1"),
+                "status": "published",
+                "interpretation_snapshot_id": "interp_snap:published:1",
+            },
+        }
+    )
+    proposal_service = InterpretationProposalService(
+        family_registry=InterpretationFamilyRegistry(),
+        interpretation_repository=interpretation_repository,
+        fact_repository=_fact_repository(),
+    )
+    snapshot_repository = FakeSnapshotRepository()
+    publication_service = InterpretationPublicationService(
+        proposal_service=proposal_service,
+        interpretation_repository=interpretation_repository,
+        snapshot_repository=snapshot_repository,
+    )
+
+    result = publication_service.publish_proposal(
+        proposal_id="interp:proposal:duplicate",
+        scope_ref={"scope": "shared"},
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "superseded"
+    assert result["duplicate_of"] == "interp:published:1"
+    assert result["errors"][0]["code"] == "duplicate_published_interpretation"
+    assert interpretation_repository.records["interp:proposal:duplicate"]["status"] == "superseded"
+    assert interpretation_repository.records["interp:published:1"]["status"] == "published"
+    assert snapshot_repository.published == []
+
+
+def test_publish_proposal_blocks_near_duplicate_against_current_published_until_review() -> None:
+    interpretation_repository = FakeInterpretationRepository(
+        {
+            "interp:proposal:near-duplicate": {
+                **_validated_record("interp:proposal:near-duplicate"),
+                "claim": "Production LLM experience demand keeps rising.",
+                "summary": "Demand keeps trending upward.",
+                "title": "Production LLM experience demand keeps rising",
+            },
+            "interp:published:1": {
+                **_validated_record("interp:published:1"),
+                "status": "published",
+                "interpretation_snapshot_id": "interp_snap:published:1",
+                "title": "Production LLM experience demand is rising",
+            },
+        }
+    )
+    proposal_service = InterpretationProposalService(
+        family_registry=InterpretationFamilyRegistry(),
+        interpretation_repository=interpretation_repository,
+        fact_repository=_fact_repository(),
+    )
+    snapshot_repository = FakeSnapshotRepository()
+    publication_service = InterpretationPublicationService(
+        proposal_service=proposal_service,
+        interpretation_repository=interpretation_repository,
+        snapshot_repository=snapshot_repository,
+    )
+
+    result = publication_service.publish_proposal(
+        proposal_id="interp:proposal:near-duplicate",
+        scope_ref={"scope": "shared"},
+    )
+
+    assert result["ok"] is False
+    assert result["status"] == "validated"
+    assert result["duplicate_of"] == "interp:published:1"
+    assert result["errors"][0]["code"] == "near_duplicate_published_interpretation"
+    assert interpretation_repository.records["interp:proposal:near-duplicate"]["status"] == "validated"
+    assert interpretation_repository.records["interp:published:1"]["status"] == "published"
+    assert snapshot_repository.published == []
 
 
 def _validated_record(record_id: str) -> dict[str, Any]:
