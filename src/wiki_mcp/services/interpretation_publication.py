@@ -19,6 +19,7 @@ from wiki_mcp.services.interfaces.repositories import (
     OutboxRepository,
     SnapshotRepository,
 )
+from wiki_mcp.services.interpretation_rendering import InterpretationRenderingService
 from wiki_mcp.services.interpretation_proposals import InterpretationProposalService
 
 
@@ -32,11 +33,13 @@ class InterpretationPublicationService:
         interpretation_repository: InterpretationRepository,
         snapshot_repository: SnapshotRepository,
         outbox_repository: OutboxRepository,
+        interpretation_rendering_service: InterpretationRenderingService | None = None,
     ) -> None:
         self.proposal_service = proposal_service
         self.interpretation_repository = interpretation_repository
         self.snapshot_repository = snapshot_repository
         self.outbox_repository = outbox_repository
+        self.interpretation_rendering_service = interpretation_rendering_service
 
     def publish_proposal(
         self,
@@ -130,6 +133,11 @@ class InterpretationPublicationService:
             record["domain"],
             snapshot_ref,
         )
+        if self.interpretation_rendering_service is not None:
+            self.interpretation_rendering_service.render_shared_page(
+                record_id=record["id"],
+                scope_ref=scope_ref,
+            )
         outbox_event_ids = self.outbox_repository.append_events(
             [
                 self._build_interpretation_snapshot_published_event(

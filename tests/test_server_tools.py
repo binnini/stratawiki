@@ -15,6 +15,7 @@ from wiki_mcp.services import (
     InterpretationProposalService,
     InterpretationPublicationService,
     InterpretationQueryService,
+    InterpretationRenderingService,
     PersonalKnowledgeQueryService,
     PersonalQueryOrchestrator,
 )
@@ -172,6 +173,17 @@ class FakePersonalRepository:
 
     def search_for_retrieval(self, **_: Any) -> list[dict[str, Any]]:
         return [dict(self.records["personal:1"])]
+
+    def search_by_anchors(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any],
+        interpretation_ids: list[str],
+        fact_ids: list[str],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        return []
 
     def save_record(self, record: dict[str, Any]) -> str:
         self.saved_records.append(dict(record))
@@ -483,11 +495,16 @@ def build_fake_server(tmp_path: Path) -> StrataWikiServer:
         interpretation_repository=interpretation_repository,
         fact_repository=fact_repository,
     )
+    interpretation_rendering_service = InterpretationRenderingService(
+        interpretation_repository=interpretation_repository,
+        rendering_repository=rendering_repository,
+    )
     publication_service = InterpretationPublicationService(
         proposal_service=proposal_service,
         interpretation_repository=interpretation_repository,
         snapshot_repository=snapshot_repository,
         outbox_repository=outbox_repository,
+        interpretation_rendering_service=interpretation_rendering_service,
     )
     query_service = InterpretationQueryService(
         interpretation_repository=interpretation_repository,
@@ -594,6 +611,13 @@ def test_server_builds_interpretation_and_reads_snapshot_status(tmp_path: Path) 
     assert result["interpretation_snapshot"].startswith("interp_snap:recruiting:market_trend:")
     assert snapshot["status"] == "ok"
     assert snapshot["interpretation_snapshot"] == result["interpretation_snapshot"]
+    rendered_page = (
+        tmp_path / "wiki" / "shared" / "interpretations" / "market_trend" / "backend-japan-midlevel.md"
+    )
+    assert rendered_page.exists()
+    assert f"Interpretation Snapshot: `{result['interpretation_snapshot']}`" in rendered_page.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_server_validates_and_ingests_external_domain_proposals(tmp_path: Path) -> None:

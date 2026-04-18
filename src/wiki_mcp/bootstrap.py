@@ -19,6 +19,7 @@ from wiki_mcp.services import (
     InterpretationProposalService,
     InterpretationPublicationService,
     InterpretationQueryService,
+    InterpretationRenderingService,
     PersonalKnowledgeQueryService,
     PersonalQueryOrchestrator,
 )
@@ -74,6 +75,7 @@ class BootstrapContext:
     interpretation_family_registry: Any | None = None
     interpretation_proposal_service: Any | None = None
     interpretation_publication_service: Any | None = None
+    interpretation_rendering_service: Any | None = None
     interpretation_query_service: Any | None = None
 
     def close(self) -> None:
@@ -204,11 +206,16 @@ def bootstrap_application(
         interpretation_repository=interpretation_repository,
         fact_repository=fact_repository,
     )
+    interpretation_rendering_service = InterpretationRenderingService(
+        interpretation_repository=interpretation_repository,
+        rendering_repository=rendering_repository,
+    )
     interpretation_publication_service = InterpretationPublicationService(
         proposal_service=interpretation_proposal_service,
         interpretation_repository=interpretation_repository,
         snapshot_repository=snapshot_repository,
         outbox_repository=outbox_repository,
+        interpretation_rendering_service=interpretation_rendering_service,
     )
     interpretation_query_service = InterpretationQueryService(
         interpretation_repository=interpretation_repository,
@@ -239,5 +246,6 @@ def bootstrap_application(
         interpretation_family_registry=interpretation_family_registry,
         interpretation_proposal_service=interpretation_proposal_service,
         interpretation_publication_service=interpretation_publication_service,
+        interpretation_rendering_service=interpretation_rendering_service,
         interpretation_query_service=interpretation_query_service,
     )

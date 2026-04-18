@@ -133,6 +133,19 @@ class FakeOutboxRepository:
         return [f"evt-{index}" for index, _ in enumerate(events, start=1)]
 
 
+class FakeInterpretationRenderingService:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def render_shared_page(self, *, record_id: str, scope_ref: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append({"record_id": record_id, "scope_ref": dict(scope_ref)})
+        return {
+            "record_id": record_id,
+            "scope_ref": dict(scope_ref),
+            "path": "wiki/shared/interpretations/market_trend/backend-japan-midlevel.md",
+        }
+
+
 def test_publish_proposal_promotes_validated_market_trend_and_supersedes_prior_record() -> None:
     interpretation_repository = FakeInterpretationRepository(
         {
@@ -153,11 +166,13 @@ def test_publish_proposal_promotes_validated_market_trend_and_supersedes_prior_r
     )
     snapshot_repository = FakeSnapshotRepository()
     outbox_repository = FakeOutboxRepository()
+    interpretation_rendering_service = FakeInterpretationRenderingService()
     publication_service = InterpretationPublicationService(
         proposal_service=proposal_service,
         interpretation_repository=interpretation_repository,
         snapshot_repository=snapshot_repository,
         outbox_repository=outbox_repository,
+        interpretation_rendering_service=interpretation_rendering_service,
     )
 
     result = publication_service.publish_proposal(
@@ -204,6 +219,12 @@ def test_publish_proposal_promotes_validated_market_trend_and_supersedes_prior_r
                 },
             }
         ]
+    ]
+    assert interpretation_rendering_service.calls == [
+        {
+            "record_id": "interp:proposal:1",
+            "scope_ref": {"scope": "shared"},
+        }
     ]
 
 
