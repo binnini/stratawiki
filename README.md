@@ -28,8 +28,54 @@ This repository currently contains:
 - a lightweight development notebook in `dev-wiki/`
 - initial source tree scaffolding under `src/`
 - empty data directories under `data/`
+- an MVP CLI and tool runtime for the Week 1 flow
 
-Implementation is planned around an MCP-native server rather than the earlier single-user markdown-only workflow.
+## Local MVP Demo
+
+The fastest local path does not require Postgres or external LLM credentials.
+It uses the built-in deterministic demo runtime and the sample seed at `examples/demo/mvp-seed.json`.
+
+Install the package into your venv:
+
+```bash
+/Users/yebin/venv/bin/python -m pip install -e .
+```
+
+List the MVP tools in demo mode:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli --demo list-tools
+```
+
+Run the full Week 1 MVP flow in one process:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli --demo demo-mvp
+```
+
+That demo flow will:
+
+- load the sample seed file
+- ingest the sample recruiting source into `Fact`
+- build and publish one `Interpretation` snapshot
+- run `query_personal_knowledge`
+- write the saved personal answer markdown under `data/wiki/users/user-1/answers/`
+
+You can also override the seed and render paths:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --demo \
+  --seed-path examples/demo/mvp-seed.json \
+  --render-root data \
+  demo-mvp
+```
+
+## Postgres Runtime
+
+The non-demo runtime still expects a PostgreSQL database reachable through `DATABASE_URL` or the default local URL in `src/wiki_mcp/bootstrap.py`.
+
+Use demo mode for the Week 1 MVP walkthrough unless you have already provisioned the database schema locally.
 
 ## Key Documents
 

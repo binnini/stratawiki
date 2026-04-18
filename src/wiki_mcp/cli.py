@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TextIO
 
+from wiki_mcp.demo import DEFAULT_DEMO_SEED_PATH, load_demo_seed
 from wiki_mcp.server import StrataWikiServer, build_server
 
 
@@ -27,49 +28,41 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default="data",
         help="Render root passed into the StrataWiki bootstrap.",
     )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Run against the local in-memory demo runtime instead of Postgres.",
+    )
+    parser.add_argument(
+        "--seed-path",
+        default=str(DEFAULT_DEMO_SEED_PATH),
+        help="Seed path used by demo mode and the demo-mvp command.",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    list_tools = subparsers.add_parser(
-        "list-tools",
-        help="List the currently registered tools.",
-    )
-    list_tools.add_argument(
-        "--group",
-        help="Optional tool group filter.",
-    )
+    list_tools = subparsers.add_parser("list-tools", help="List the currently registered tools.")
+    list_tools.add_argument("--group", help="Optional tool group filter.")
     list_tools.add_argument(
         "--schemas",
         action="store_true",
         help="Emit the full exported schemas instead of the compact tool list.",
     )
 
-    show_tool = subparsers.add_parser(
-        "show-tool",
-        help="Show one exported tool schema.",
-    )
+    show_tool = subparsers.add_parser("show-tool", help="Show one exported tool schema.")
     show_tool.add_argument("name", help="Tool name to inspect.")
 
-    call_tool = subparsers.add_parser(
-        "call",
-        help="Call one tool with JSON arguments.",
-    )
+    call_tool = subparsers.add_parser("call", help="Call one tool with JSON arguments.")
     call_tool.add_argument("name", help="Tool name to invoke.")
-    call_tool.add_argument(
-        "--args",
-        default="{}",
-        help="Inline JSON object of tool arguments.",
-    )
-    call_tool.add_argument(
-        "--args-file",
-        help="Path to a JSON file containing tool arguments.",
-    )
+    call_tool.add_argument("--args", default="{}", help="Inline JSON object of tool arguments.")
+    call_tool.add_argument("--args-file", help="Path to a JSON file containing tool arguments.")
     call_tool.add_argument(
         "--envelope",
         action="store_true",
         help="Wrap the response in the registry ok/error envelope.",
     )
 
+    subparsers.add_parser("demo-mvp", help="Run the Week 1 MVP flow locally with the demo seed in one process.")
     return parser
 
 
@@ -94,6 +87,8 @@ def run_cli(
     server = server_factory(
         database_url=args.database_url,
         render_root=Path(args.render_root),
+        demo_mode=args.demo,
+        seed_path=args.seed_path,
     )
     try:
         result: object
@@ -102,26 +97,16 @@ def run_cli(
         elif args.command == "show-tool":
             result = _show_tool(server, args.name)
         elif args.command == "call":
-            if args.envelope:
-                result = server.call_tool_with_envelope(args.name, tool_arguments)
-            else:
-                result = server.call_tool(args.name, tool_arguments)
+            result = server.call_tool_with_envelope(args.name, tool_arguments) if args.envelope else server.call_tool(args.name, tool_arguments)
+        elif args.command == "demo-mvp":
+            result = _run_demo_mvp(server, seed_path=args.seed_path)
         else:
             raise ValueError(f"Unsupported command: {args.command}")
     except KeyError as exc:
         resolved_stderr.write(json.dumps({"ok": False, "error": str(exc)}) + "\n")
         return 1
     except Exception as exc:
-        resolved_stderr.write(
-            json.dumps(
-                {
-                    "ok": False,
-                    "error": exc.__class__.__name__,
-                    "message": str(exc),
-                }
-            )
-            + "\n"
-        )
+        resolved_stderr.write(json.dumps({"ok": False, "error": exc.__class__.__name__, "message": str(exc)}) + "\n")
         return 1
     finally:
         server.close()
@@ -164,12 +149,7 @@ def _parse_json_object(raw_text: str, *, source: str) -> dict[str, object]:
     return payload
 
 
-def _list_tools(
-    server: StrataWikiServer,
-    *,
-    group: str | None,
-    full_schemas: bool,
-) -> object:
+def _list_tools(server: StrataWikiServer, *, group: str | None, full_schemas: bool) -> object:
     if full_schemas:
         schemas = server.export_tool_schemas()
         if group is None:
@@ -198,6 +178,46 @@ def _show_tool(server: StrataWikiServer, name: str) -> dict[str, object]:
     raise KeyError(f"Unknown tool: {name}")
 
 
+def _run_demo_mvp(server: StrataWikiServer, *, seed_path: str) -> dict[str, object]:
+    seed = load_demo_seed(seed_path)
+    query = seed.demo_query
+    partition = seed.demo_partition
+    ingest = server.call_tool(
+        "ingest_fact_batch",
+        {"domain": query["domain"], "source_records": seed.source_records},
+    )
+    build = server.call_tool(
+        "build_interpretation_snapshot",
+        {
+            "domain": query["domain"],
+            "partition": partition,
+            "fact_ids": ingest["affected_fact_ids"],
+            "fact_snapshot": ingest["fact_snapshot"],
+            "model_profile": query["model_profile"],
+            "publish": True,
+        },
+    )
+    personal_query = server.call_tool("query_personal_knowledge", query)
+    snapshot = server.call_tool(
+        "get_snapshot_status",
+        {"domain": query["domain"], "partition": {"family": partition["family"]}},
+    )
+    return {
+        "status": "ok",
+        "seed_path": seed_path,
+        "steps": {
+            "ingest_fact_batch": ingest,
+            "build_interpretation_snapshot": build,
+            "query_personal_knowledge": personal_query,
+            "get_snapshot_status": snapshot,
+        },
+    }
+
+
 def _write_json(stream: TextIO, payload: object) -> None:
     json.dump(payload, stream, indent=2, sort_keys=True)
     stream.write("\n")
+
+
+if __name__ == "__main__":
+    main()

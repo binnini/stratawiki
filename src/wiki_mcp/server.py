@@ -122,12 +122,6 @@ def _tool_definitions() -> list[ToolDefinition]:
 
 @dataclass(slots=True)
 class StrataWikiServer:
-    """Thin runtime shell for the migration stage.
-
-    Tool wiring and orchestration are intentionally deferred until the new
-    service boundaries are rebuilt from the current specs.
-    """
-
     bootstrap: BootstrapContext
 
     def list_tools(self) -> list[ToolDefinition]:
@@ -158,19 +152,11 @@ class StrataWikiServer:
             return self._get_snapshot_status(args)
         raise KeyError(f"Unknown tool: {name}")
 
-    def call_tool_with_envelope(
-        self,
-        name: str,
-        arguments: dict[str, object] | None = None,
-    ) -> dict[str, object]:
+    def call_tool_with_envelope(self, name: str, arguments: dict[str, object] | None = None) -> dict[str, object]:
         try:
             result = self.call_tool(name, arguments)
         except Exception as exc:
-            return {
-                "ok": False,
-                "error": exc.__class__.__name__,
-                "message": str(exc),
-            }
+            return {"ok": False, "error": exc.__class__.__name__, "message": str(exc)}
         return {"ok": True, "result": result}
 
     def close(self) -> None:
@@ -182,7 +168,7 @@ class StrataWikiServer:
             raise ValueError("ingest_fact_batch requires a non-empty source_records list.")
         domain = self._required_string(arguments, "domain")
         plugin = RecruitingSourceIngestionPlugin()
-        aggregate = {
+        aggregate: dict[str, Any] = {
             "status": "ok",
             "fact_snapshot": "",
             "facts_created": 0,
@@ -205,8 +191,7 @@ class StrataWikiServer:
     def _get_fact_record(self, arguments: dict[str, object]) -> dict[str, object]:
         self._required_string(arguments, "domain")
         fact_id = self._required_string(arguments, "fact_id")
-        scope_ref = self._scope_ref(arguments, default_scope="shared")
-        records = self.bootstrap.fact_repository.get_by_ids([fact_id], scope_ref)
+        records = self.bootstrap.fact_repository.get_by_ids([fact_id], self._scope_ref(arguments, default_scope="shared"))
         if not records:
             raise KeyError(f"Unknown fact record: {fact_id}")
         return {"status": "ok", "record": records[0]}
@@ -217,18 +202,11 @@ class StrataWikiServer:
         if not isinstance(partition, dict):
             raise ValueError("build_interpretation_snapshot requires a partition object.")
         family = self._normalize_family(self._required_string(partition, "family"))
-        subject_id = self._required_string(
-            partition,
-            "segment",
-            fallback_key="subject_id",
-        )
+        subject_id = self._required_string(partition, "segment", fallback_key="subject_id")
         fact_ids = arguments.get("fact_ids")
         if not isinstance(fact_ids, list) or not fact_ids:
             raise ValueError("build_interpretation_snapshot requires a non-empty fact_ids list.")
-        facts = self.bootstrap.fact_repository.get_by_ids(
-            [str(item) for item in fact_ids],
-            {"scope": "shared"},
-        )
+        facts = self.bootstrap.fact_repository.get_by_ids([str(item) for item in fact_ids], {"scope": "shared"})
         if not facts:
             raise ValueError("No facts were found for the supplied fact_ids.")
         fact_snapshot = self._required_string(
@@ -254,19 +232,15 @@ class StrataWikiServer:
             schema_version="interpretation.v2",
             facts=facts,
             provenance={
-                "generated_by": {
-                    "kind": "llm",
-                    "prompt_version": "interp.market_trend.v1",
-                },
+                "generated_by": {"kind": "llm", "prompt_version": "interp.market_trend.v1"},
                 "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             },
         )
         proposals = self.bootstrap.interpretation_proposal_service.create_proposals(context)
         if not proposals:
             raise ValueError("No interpretation proposals were generated for the supplied partition.")
-        records_updated = 0
-        records_superseded = 0
         interpretation_snapshot = ""
+        records_superseded = 0
         if publish:
             for proposal in proposals:
                 publication = self.bootstrap.interpretation_publication_service.publish_proposal(
@@ -281,7 +255,7 @@ class StrataWikiServer:
             "status": "ok",
             "interpretation_snapshot": interpretation_snapshot,
             "records_created": len(proposals),
-            "records_updated": records_updated,
+            "records_updated": 0,
             "records_superseded": records_superseded,
         }
 
@@ -303,15 +277,9 @@ class StrataWikiServer:
         question = self._required_string(arguments, "question")
         requested_profile_version = self._required_string(arguments, "profile_version")
         model_profile = self._required_string(arguments, "model_profile")
-        profile_context = self.bootstrap.profile_context_repository.get_profile_context(
-            domain,
-            tenant_id,
-            user_id,
-        )
+        profile_context = self.bootstrap.profile_context_repository.get_profile_context(domain, tenant_id, user_id)
         if profile_context["profile_version"] != requested_profile_version:
-            raise ValueError(
-                "Requested profile_version does not match the current stored profile context."
-            )
+            raise ValueError("Requested profile_version does not match the current stored profile context.")
         answer = self.bootstrap.personal_query_service.query_personal_knowledge(
             domain=domain,
             question=question,
@@ -333,20 +301,13 @@ class StrataWikiServer:
         domain = self._required_string(arguments, "domain")
         partition = arguments.get("partition")
         layer = "interpretation" if isinstance(partition, dict) else None
-        status = self.bootstrap.snapshot_repository.get_snapshot_status(
-            domain=domain,
-            layer=layer,
-        )
+        status = self.bootstrap.snapshot_repository.get_snapshot_status(domain=domain, layer=layer)
         if status is None:
             raise KeyError(f"No published snapshot status exists for domain {domain!r}.")
         return {
             "status": "ok",
             "fact_snapshot": status["fact_snapshot_id"],
-            **(
-                {"interpretation_snapshot": status["interpretation_snapshot_id"]}
-                if "interpretation_snapshot_id" in status
-                else {}
-            ),
+            **({"interpretation_snapshot": status["interpretation_snapshot_id"]} if "interpretation_snapshot_id" in status else {}),
             **({"published_at": status["published_at"]} if "published_at" in status else {}),
         }
 
@@ -367,12 +328,7 @@ class StrataWikiServer:
             raise ValueError(f"Missing required string argument: {key}")
         return value.strip()
 
-    def _scope_ref(
-        self,
-        arguments: dict[str, object],
-        *,
-        default_scope: str,
-    ) -> dict[str, str]:
+    def _scope_ref(self, arguments: dict[str, object], *, default_scope: str) -> dict[str, str]:
         scope = str(arguments.get("scope") or default_scope)
         scope_ref: dict[str, str] = {"scope": scope}
         tenant_id = arguments.get("tenant_id")
@@ -395,11 +351,15 @@ def build_server(
     connection: Any | None = None,
     database_url: str | None = None,
     render_root: str = "data",
+    demo_mode: bool = False,
+    seed_path: str | None = None,
 ) -> StrataWikiServer:
     bootstrap = bootstrap_application(
         connection=connection,
         database_url=database_url,
         render_root=render_root,
+        demo_mode=demo_mode,
+        seed_path=seed_path,
     )
     return StrataWikiServer(bootstrap=bootstrap)
 
