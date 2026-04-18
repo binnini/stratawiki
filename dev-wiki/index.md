@@ -34,6 +34,7 @@ Use `dev-wiki/` for working state and promote only stable conclusions into `docs
 - `dev-wiki/logs/2026-04-17-issue-4-recruiting-fact-normalization.md`
 - `dev-wiki/logs/2026-04-17-issue-5-interpretation-proposal-validation.md`
 - `dev-wiki/logs/2026-04-17-phase-2-llm-gateway-handoff.md`
+- `dev-wiki/logs/2026-04-18-issues-1-10-audit-and-manual-test-guide.md`
 - `dev-wiki/decisions/2026-04-17-llm-gateway-operations-note.md`
 
 ## Note
