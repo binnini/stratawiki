@@ -5,6 +5,7 @@ from wiki_mcp.schemas import (
     INTERPRETATION_STATUS_PUBLISHED,
     FactRecord,
     InterpretationRecord,
+    PersonalAnchor,
     PersonalRecord,
     Provenance,
     ScopeRef,
@@ -33,6 +34,10 @@ def test_shared_schema_examples_are_constructible() -> None:
         "interpretation_snapshot_id": "interp_snap_2026_04_17_0905",
         "profile_version": "profile_v7",
     }
+    personal_anchors: list[PersonalAnchor] = [
+        {"layer": "interpretation", "id": "interp:market_trend:123"},
+        {"layer": "fact", "id": "fact:job_posting:123"},
+    ]
 
     fact: FactRecord = {
         "id": "fact:job_posting:123",
@@ -88,6 +93,7 @@ def test_shared_schema_examples_are_constructible() -> None:
         "snapshot_ref": snapshot_ref,
         "profile_version": "profile_v7",
         "body_path": "personal/recruiting/summary.md",
+        "anchors": personal_anchors,
         "status": "active",
         "schema_version": "personal.v1",
         "version": 1,

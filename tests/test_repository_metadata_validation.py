@@ -129,6 +129,36 @@ def test_personal_repository_requires_user_scope_and_matching_profile_version() 
         raise AssertionError("Expected ValueError for invalid personal metadata.")
 
 
+def test_personal_repository_rejects_invalid_anchor_shape() -> None:
+    repository = PostgresPersonalRepository(FakeConnection())
+
+    try:
+        repository.save_record(
+            {
+                "id": "personal:1",
+                "domain": "recruiting",
+                "kind": "plan",
+                "title": "Q2 plan",
+                "summary": "summary",
+                "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+                "snapshot_ref": {
+                    "fact_snapshot_id": "fact_snap:1",
+                    "profile_version": "profile_v1",
+                },
+                "profile_version": "profile_v1",
+                "body_path": "personal/q2-plan.md",
+                "anchors": [{"layer": "personal", "id": "personal:2"}],
+                "status": "active",
+                "schema_version": "personal.v1",
+                "provenance": {"generated_by": {"kind": "user"}},
+            }
+        )
+    except ValueError as exc:
+        assert "anchors[0].layer" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for invalid personal anchor metadata.")
+
+
 def test_snapshot_repository_rejects_empty_fact_snapshot_id() -> None:
     repository = PostgresSnapshotRepository(FakeConnection())
 

@@ -207,7 +207,7 @@ class CuratedRetrievalService:
                 for record in records:
                     source_by_id[record["id"]] = {
                         "match_type": "personal_anchor_expansion",
-                        "matched_fields": ["body.anchors"],
+                        "matched_fields": ["anchors"],
                         "matched_token_count": 0,
                     }
                 return records, source_by_id, "personal_anchors"
@@ -304,7 +304,7 @@ class CuratedRetrievalService:
             else:
                 source_by_id[fact_id] = {
                     "match_type": "personal_anchor_expansion",
-                    "matched_fields": ["body.anchors"],
+                    "matched_fields": ["anchors"],
                     "matched_token_count": 0,
                 }
 
@@ -535,6 +535,18 @@ class CuratedRetrievalService:
         interpretation_ids: list[str] = []
         fact_ids: list[str] = []
         for record in records:
+            interpretation_ids.extend(
+                self._extract_anchor_ids(
+                    record.get("anchors"),
+                    expected_layer="interpretation",
+                )
+            )
+            fact_ids.extend(
+                self._extract_anchor_ids(
+                    record.get("anchors"),
+                    expected_layer="fact",
+                )
+            )
             body = record.get("body")
             if not isinstance(body, dict):
                 continue

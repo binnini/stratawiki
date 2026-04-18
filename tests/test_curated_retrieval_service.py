@@ -114,12 +114,10 @@ def test_curated_retrieval_expands_personal_anchors_then_interpretation_evidence
                     "interpretation_snapshot_id": "interp_snap:1",
                     "profile_version": "profile:v1",
                 },
-                "body": {
-                    "anchors": [
-                        {"layer": "interpretation", "id": "interp:1"},
-                        {"layer": "fact", "id": "fact:personal-anchor"},
-                    ]
-                },
+                "anchors": [
+                    {"layer": "interpretation", "id": "interp:1"},
+                    {"layer": "fact", "id": "fact:personal-anchor"},
+                ],
             }
         ]
     )
@@ -234,6 +232,50 @@ def test_curated_retrieval_falls_back_to_interpretation_search_when_personal_anc
     assert result["retrieval_metadata"]["personal_anchor_status"] == "absent"
     assert result["retrieval_metadata"]["interpretation_source"] == "search_fallback"
     assert result["retrieval_metadata"]["fact_source"] == "interpretation_evidence"
+
+
+def test_curated_retrieval_keeps_body_anchor_compatibility_when_metadata_absent() -> None:
+    personal_repository = StubPersonalRepository(
+        search_results=[
+            {
+                "id": "personal:legacy:1",
+                "domain": "recruiting",
+                "kind": "note",
+                "title": "Legacy note",
+                "summary": "Still stores anchors in body metadata",
+                "snapshot_ref": {"fact_snapshot_id": "fact_snap:1"},
+                "body": {
+                    "anchors": [
+                        {"layer": "interpretation", "id": "interp:legacy"},
+                        {"layer": "fact", "id": "fact:legacy"},
+                    ]
+                },
+            }
+        ]
+    )
+    interpretation_repository = StubInterpretationRepository(
+        by_id={"interp:legacy": _interpretation("interp:legacy", evidence=[])},
+    )
+    fact_repository = StubFactRepository(
+        by_id={"fact:legacy": _fact("fact:legacy", "Legacy anchored fact")},
+        search_results=[],
+    )
+
+    service = CuratedRetrievalService(
+        fact_repository=fact_repository,
+        interpretation_repository=interpretation_repository,
+        personal_repository=personal_repository,
+    )
+
+    result = service.retrieve_for_query(
+        domain="recruiting",
+        question="Legacy anchored answer",
+        scope_ref=_scope_ref(),
+    )
+
+    assert result["interpretation_ids"] == ["interp:legacy"]
+    assert result["fact_ids"] == ["fact:legacy"]
+    assert result["retrieval_metadata"]["personal_anchor_status"] == "present"
 
 
 def test_curated_retrieval_uses_fact_search_fallback_when_no_evidence_exists() -> None:

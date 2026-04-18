@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, NotRequired, TypedDict
 
+from wiki_mcp.schemas.personal_anchor import PersonalAnchor
 from wiki_mcp.schemas.provenance import Provenance
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
@@ -21,6 +22,7 @@ class PersonalRecord(TypedDict):
     profile_version: str
     body_path: str
     body: NotRequired[dict[str, Any] | str]
+    anchors: NotRequired[list[PersonalAnchor]]
     status: str
     schema_version: str
     created_at: NotRequired[str]

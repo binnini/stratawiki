@@ -415,6 +415,7 @@ class PersonalKnowledgeQueryService:
             "snapshot_ref": snapshot_ref,
         }
         persisted_body_path = self.rendering_repository.write_artifact(artifact)
+        anchors = self._anchor_metadata(answer)
         self.personal_repository.save_record(
             {
                 "id": record_id,
@@ -427,6 +428,7 @@ class PersonalKnowledgeQueryService:
                 "snapshot_ref": snapshot_ref,
                 "profile_version": profile_context["profile_version"],
                 "body_path": persisted_body_path,
+                "anchors": anchors,
                 "status": "active",
                 "schema_version": "personal.v1",
                 "provenance": {
@@ -453,11 +455,27 @@ class PersonalKnowledgeQueryService:
         )
         return record_id
 
+    def _anchor_metadata(self, answer: PersonalQueryAnswer) -> list[dict[str, str]]:
+        seen: set[tuple[str, str]] = set()
+        anchors: list[dict[str, str]] = []
+        for layer, record_ids in (
+            ("interpretation", answer["interpretation_records_used"]),
+            ("fact", answer["fact_records_used"]),
+        ):
+            for record_id in record_ids:
+                key = (layer, record_id)
+                if key in seen:
+                    continue
+                anchors.append({"layer": layer, "id": record_id})
+                seen.add(key)
+        return anchors
+
     def _render_persisted_body(self, answer: PersonalQueryAnswer) -> str:
+        anchors = self._anchor_metadata(answer)
         metadata = {
             "answer_type": answer["answer_type"],
             "question": answer["question"],
-            "anchors": answer["interpretation_records_used"] + answer["fact_records_used"],
+            "anchors": [anchor["id"] for anchor in anchors],
             "anchor_details": [
                 {
                     "layer": citation["layer"],

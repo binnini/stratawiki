@@ -82,6 +82,7 @@ from wiki_mcp.schemas.outbox_event import (
     PersonalRecordsMarkedStalePayload,
     PersonalRecordsRegeneratedPayload,
 )
+from wiki_mcp.schemas.personal_anchor import PersonalAnchor
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.personal_query_answer import (
     PersonalQueryAnswer,
@@ -162,6 +163,7 @@ __all__ = [
     "InterpretationSnapshotPublishedPayload",
     "OutboxEvent",
     "OutboxEventRecord",
+    "PersonalAnchor",
     "PersonalRecordsMarkedStalePayload",
     "PersonalRecordsRegeneratedPayload",
     "PersonalRecord",

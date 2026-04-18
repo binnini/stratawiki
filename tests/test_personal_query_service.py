@@ -226,6 +226,10 @@ def test_query_personal_knowledge_save_persists_metadata_and_markdown_body(
     }
     assert saved_record["profile_version"] == "profile:v1"
     assert saved_record["body_path"].startswith("wiki/users/user-1/answers/")
+    assert saved_record["anchors"] == [
+        {"layer": "interpretation", "id": "interp:1"},
+        {"layer": "fact", "id": "fact:1"},
+    ]
 
     persisted_path = tmp_path / saved_record["body_path"]
     assert persisted_path.exists()

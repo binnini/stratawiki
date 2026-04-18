@@ -93,6 +93,30 @@ def ensure_snapshot_ref(snapshot_ref: Any, *, label: str) -> dict[str, Any]:
     return data
 
 
+def ensure_personal_anchors(value: Any, *, label: str) -> list[dict[str, str]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{label} must be a list.")
+
+    anchors: list[dict[str, str]] = []
+    for index, item in enumerate(value):
+        anchor = ensure_mapping(item, label=f"{label}[{index}]")
+        ensure_non_empty_string(anchor.get("layer"), label=f"{label}[{index}].layer")
+        if anchor["layer"] not in {"interpretation", "fact"}:
+            raise ValueError(
+                f"{label}[{index}].layer must be 'interpretation' or 'fact', got {anchor['layer']!r}."
+            )
+        ensure_non_empty_string(anchor.get("id"), label=f"{label}[{index}].id")
+        anchors.append(
+            {
+                "layer": anchor["layer"].strip(),
+                "id": anchor["id"].strip(),
+            }
+        )
+    return anchors
+
+
 def ensure_interpretation_status(status: Any, *, label: str) -> None:
     ensure_non_empty_string(status, label=label)
     if status not in INTERPRETATION_LIFECYCLE_STATUSES:

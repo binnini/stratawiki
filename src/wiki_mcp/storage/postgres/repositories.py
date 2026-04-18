@@ -13,6 +13,7 @@ from wiki_mcp.schemas.interpretation_record import InterpretationRecord
 from wiki_mcp.schemas.metadata_validation import (
     ensure_interpretation_status,
     ensure_non_empty_string,
+    ensure_personal_anchors,
     ensure_provenance,
     ensure_scope_ref,
     ensure_scope_shape,
@@ -957,6 +958,7 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     body_path,
                     status,
                     schema_version,
+                    anchors_json,
                     provenance_json
                 FROM personal.record
                 WHERE id = ANY(%s) AND {scope_sql}
@@ -1005,6 +1007,7 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     body_path,
                     status,
                     schema_version,
+                    anchors_json,
                     provenance_json
                 FROM personal.record
                 WHERE domain = %s AND {scope_sql} AND {vector_sql} @@ {query_sql}
@@ -1040,9 +1043,10 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     body_path,
                     status,
                     schema_version,
+                    anchors_json,
                     provenance_json
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     title = EXCLUDED.title,
@@ -1056,6 +1060,7 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     body_path = EXCLUDED.body_path,
                     status = EXCLUDED.status,
                     schema_version = EXCLUDED.schema_version,
+                    anchors_json = EXCLUDED.anchors_json,
                     provenance_json = EXCLUDED.provenance_json,
                     updated_at = NOW()
                 """,
@@ -1074,6 +1079,7 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     record["body_path"],
                     record["status"],
                     record["schema_version"],
+                    self._json(record.get("anchors", [])),
                     self._json(record["provenance"]),
                 ),
             )
@@ -1081,6 +1087,9 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
 
     def _row_to_personal_record(self, row: Any) -> PersonalRecord:
         data = self._row_to_dict(row)
+        raw_anchors = data.get("anchors_json")
+        if isinstance(raw_anchors, str):
+            raw_anchors = json.loads(raw_anchors)
         return {
             "id": data["id"],
             "domain": data["domain"],
@@ -1103,6 +1112,11 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             },
             "profile_version": data["profile_version"],
             "body_path": data["body_path"],
+            **(
+                {"anchors": ensure_personal_anchors(raw_anchors, label=f"PersonalRecord {data['id']}.anchors")}
+                if raw_anchors is not None
+                else {}
+            ),
             "status": data["status"],
             "schema_version": data["schema_version"],
             "provenance": self._load_json(data["provenance_json"]),
@@ -1124,6 +1138,11 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             record["schema_version"],
             label="PersonalRecord.schema_version",
         )
+        if "anchors" in record:
+            ensure_personal_anchors(
+                record.get("anchors"),
+                label=f"PersonalRecord {record['id']}.anchors",
+            )
         scope_ref = ensure_scope_ref(
             record.get("scope_ref"),
             label=f"PersonalRecord {record['id']}.scope_ref",
