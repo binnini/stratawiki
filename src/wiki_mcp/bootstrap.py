@@ -14,6 +14,7 @@ from wiki_mcp.services import (
     DefaultDomainPackApprovalService,
     DefaultDomainPackCompatibilityChecker,
     DefaultDomainPackValidator,
+    DomainProposalIngestionGateway,
     InMemoryDomainPackRegistry,
     InterpretationProposalService,
     InterpretationPublicationService,
@@ -22,6 +23,7 @@ from wiki_mcp.services import (
     PersonalQueryOrchestrator,
 )
 from wiki_mcp.services.core_ingestion import DefaultCoreIngestionService
+from wiki_mcp.services.domain_pack_artifacts import load_and_register_domain_packs
 from wiki_mcp.services.interpretation_families import (
     InterpretationFamilyRegistry,
     MarketTrendInterpretationBuilder,
@@ -60,6 +62,8 @@ class BootstrapContext:
     domain_pack_validator: Any | None = None
     domain_pack_compatibility_checker: Any | None = None
     domain_pack_approval_service: Any | None = None
+    domain_proposal_ingestion_service: Any | None = None
+    domain_pack_load_reports: list[dict[str, Any]] | None = None
     retrieval_service: Any | None = None
     personal_query_orchestrator: Any | None = None
     personal_query_service: Any | None = None
@@ -94,9 +98,22 @@ def bootstrap_application(
     render_root: str | Path = "data",
     demo_mode: bool = False,
     seed_path: str | Path | None = None,
+    domain_pack_paths: list[str | Path] | None = None,
+    active_domain_pack_versions: dict[str, str] | None = None,
 ) -> BootstrapContext:
     if demo_mode:
         runtime = build_demo_runtime(render_root=render_root, seed_path=seed_path)
+        domain_proposal_ingestion_service = DomainProposalIngestionGateway(
+            domain_pack_registry=runtime["domain_pack_registry"],
+            fact_repository=runtime["fact_repository"],
+            core_ingestion_service=runtime["core_ingestion_service"],
+        )
+        domain_pack_load_reports = load_and_register_domain_packs(
+            approval_service=runtime["domain_pack_approval_service"],
+            domain_pack_paths=domain_pack_paths,
+            active_domain_pack_versions=active_domain_pack_versions,
+            review_log_path=Path(render_root) / "domain-pack-reviews.jsonl",
+        )
         return BootstrapContext(
             connection=connection or object(),
             owns_connection=False,
@@ -114,6 +131,8 @@ def bootstrap_application(
             domain_pack_validator=runtime["domain_pack_validator"],
             domain_pack_compatibility_checker=runtime["domain_pack_compatibility_checker"],
             domain_pack_approval_service=runtime["domain_pack_approval_service"],
+            domain_proposal_ingestion_service=domain_proposal_ingestion_service,
+            domain_pack_load_reports=domain_pack_load_reports,
             retrieval_service=runtime["retrieval_service"],
             personal_query_orchestrator=runtime["personal_query_orchestrator"],
             personal_query_service=runtime["personal_query_service"],
@@ -145,6 +164,17 @@ def bootstrap_application(
         domain_pack_registry=domain_pack_registry,
         validator=domain_pack_validator,
         compatibility_checker=domain_pack_compatibility_checker,
+    )
+    domain_proposal_ingestion_service = DomainProposalIngestionGateway(
+        domain_pack_registry=domain_pack_registry,
+        fact_repository=fact_repository,
+        core_ingestion_service=core_ingestion_service,
+    )
+    domain_pack_load_reports = load_and_register_domain_packs(
+        approval_service=domain_pack_approval_service,
+        domain_pack_paths=domain_pack_paths,
+        active_domain_pack_versions=active_domain_pack_versions,
+        review_log_path=Path(render_root) / "domain-pack-reviews.jsonl",
     )
     retrieval_service = CuratedRetrievalService(
         fact_repository=fact_repository,
@@ -191,6 +221,8 @@ def bootstrap_application(
         domain_pack_validator=domain_pack_validator,
         domain_pack_compatibility_checker=domain_pack_compatibility_checker,
         domain_pack_approval_service=domain_pack_approval_service,
+        domain_proposal_ingestion_service=domain_proposal_ingestion_service,
+        domain_pack_load_reports=domain_pack_load_reports,
         retrieval_service=retrieval_service,
         personal_query_orchestrator=personal_query_orchestrator,
         personal_query_service=personal_query_service,

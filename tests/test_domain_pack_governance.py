@@ -93,6 +93,63 @@ def test_validator_accepts_structurally_valid_pack() -> None:
     assert report["warnings"] == []
 
 
+def test_validator_accepts_jobs_wiki_style_external_pack_shape() -> None:
+    validator = DefaultDomainPackValidator()
+    external_pack = {
+        "manifest": {
+            "domain": "recruiting",
+            "packVersion": "2026-04-18",
+            "status": "draft",
+            "compatibility": {
+                "minStrataWikiVersion": "0.2.0",
+            },
+            "owner": {
+                "system": "jobs-wiki",
+            },
+            "sourceProfiles": ["worknet.open_recruitment"],
+        },
+        "proposalSurface": {
+            "accepts": {"factProposal": True, "relationProposal": True},
+            "strictUnknownAttributes": True,
+            "batchMode": "atomic",
+        },
+        "entityTypes": {
+            "job_posting": {
+                "name": "job_posting",
+                "attributes": {
+                    "title": {"type": "string"},
+                    "summary": {"type": "markdown", "nullable": True},
+                    "opens_at": {"type": "datetime", "nullable": True},
+                    "closes_at": {"type": "datetime", "nullable": True},
+                },
+                "requiredAttributes": ["title"],
+                "identity": {
+                    "mode": "hint_priority",
+                    "strategies": [{"hint": "source_id", "prefix": "job_posting"}],
+                    "fallback": "reject",
+                },
+                "mergePolicy": {
+                    "mode": "upsert",
+                    "conflictStrategy": "prefer_newer_source",
+                },
+            }
+        },
+        "relationTypes": {},
+        "projectionHints": {
+            "defaultTitleAttribute": {"job_posting": "title"},
+            "searchableAttributes": {"job_posting": ["title", "summary"]},
+            "summaryAttributes": {"job_posting": ["summary"]},
+            "temporalAttributes": {"job_posting": {"start": "opens_at", "end": "closes_at"}},
+            "defaultFamilyByEntityType": {"job_posting": "opportunity"},
+        },
+    }
+
+    report = validator.validate(external_pack)
+
+    assert report["ok"] is True
+    assert report["errors"] == []
+
+
 def test_validator_rejects_unknown_fields_and_malformed_definitions() -> None:
     validator = DefaultDomainPackValidator()
     pack = {
@@ -270,6 +327,7 @@ def test_approval_service_blocks_invalid_pack_registration() -> None:
 
 def test_approval_service_blocks_activation_for_breaking_candidate() -> None:
     registry = InMemoryDomainPackRegistry([_valid_pack("2026-04-18")])
+    registry.set_active_version("recruiting", "2026-04-18")
     approval_service = DefaultDomainPackApprovalService(domain_pack_registry=registry)
     candidate_pack = _valid_pack("2026-05-01")
     candidate_pack["entity_types"]["job_posting"]["identity"] = {
@@ -289,6 +347,7 @@ def test_approval_service_blocks_activation_for_breaking_candidate() -> None:
 
 def test_approval_service_can_register_incompatible_version_without_activation() -> None:
     registry = InMemoryDomainPackRegistry([_valid_pack("2026-04-18")])
+    registry.set_active_version("recruiting", "2026-04-18")
     approval_service = DefaultDomainPackApprovalService(domain_pack_registry=registry)
     candidate_pack = _valid_pack("2026-05-01")
     candidate_pack["entity_types"]["job_posting"]["identity"] = {
@@ -308,6 +367,7 @@ def test_approval_service_can_register_incompatible_version_without_activation()
 
 def test_approval_service_blocks_activation_when_manual_review_is_required() -> None:
     registry = InMemoryDomainPackRegistry([_valid_pack("2026-04-18")])
+    registry.set_active_version("recruiting", "2026-04-18")
     approval_service = DefaultDomainPackApprovalService(domain_pack_registry=registry)
     candidate_pack = _valid_pack("2026-05-01")
     candidate_pack["entity_types"]["organization"] = {
@@ -342,6 +402,7 @@ def test_approval_service_blocks_activation_when_manual_review_is_required() -> 
 
 def test_approval_service_allows_review_required_activation_with_review_audit() -> None:
     registry = InMemoryDomainPackRegistry([_valid_pack("2026-04-18")])
+    registry.set_active_version("recruiting", "2026-04-18")
     approval_service = DefaultDomainPackApprovalService(domain_pack_registry=registry)
     candidate_pack = _valid_pack("2026-05-01")
     candidate_pack["entity_types"]["organization"] = {

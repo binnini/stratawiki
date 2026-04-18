@@ -7,6 +7,11 @@ from typing import Any
 from wiki_mcp.adapters.llm import DeterministicLLMGateway
 from wiki_mcp.server import StrataWikiServer
 from wiki_mcp.services import (
+    DefaultDomainPackApprovalService,
+    DefaultDomainPackCompatibilityChecker,
+    DefaultDomainPackValidator,
+    DomainProposalIngestionGateway,
+    InMemoryDomainPackRegistry,
     InterpretationProposalService,
     InterpretationPublicationService,
     InterpretationQueryService,
@@ -250,6 +255,11 @@ class FakeBootstrap:
     outbox_repository: Any
     rendering_repository: Any
     core_ingestion_service: Any
+    domain_pack_registry: Any
+    domain_pack_validator: Any
+    domain_pack_compatibility_checker: Any
+    domain_pack_approval_service: Any
+    domain_proposal_ingestion_service: Any
     retrieval_service: Any
     personal_query_orchestrator: Any
     personal_query_service: Any
@@ -260,6 +270,128 @@ class FakeBootstrap:
 
     def close(self) -> None:
         return None
+
+
+def _external_pack() -> dict[str, Any]:
+    return {
+        "manifest": {
+            "domain": "recruiting",
+            "packVersion": "2026-04-18",
+            "status": "active",
+            "compatibility": {"minStrataWikiVersion": "0.2.0"},
+            "owner": {"system": "jobs-wiki"},
+        },
+        "entityTypes": {
+            "job_posting": {
+                "name": "job_posting",
+                "attributes": {
+                    "title": {"type": "string"},
+                    "summary": {"type": "markdown", "nullable": True},
+                },
+                "requiredAttributes": ["title"],
+                "identity": {
+                    "mode": "hint_priority",
+                    "strategies": [{"hint": "source_id", "prefix": "job_posting"}],
+                    "fallback": "reject",
+                },
+                "mergePolicy": {
+                    "mode": "upsert",
+                    "conflictStrategy": "prefer_newer_source",
+                },
+            },
+            "company": {
+                "name": "company",
+                "attributes": {
+                    "name": {"type": "string"},
+                    "normalized_name": {"type": "string", "nullable": True},
+                },
+                "requiredAttributes": ["name"],
+                "identity": {
+                    "mode": "hint_priority",
+                    "strategies": [
+                        {
+                            "hint": "normalized_name",
+                            "prefix": "company",
+                            "normalization": ["trim", "lowercase", "slugify"],
+                        }
+                    ],
+                    "fallback": "reject",
+                },
+                "mergePolicy": {
+                    "mode": "upsert",
+                    "conflictStrategy": "manual_review",
+                },
+            },
+        },
+        "relationTypes": {
+            "posted_by": {
+                "name": "posted_by",
+                "fromEntityTypes": ["job_posting"],
+                "toEntityTypes": ["company"],
+                "evidencePolicy": "required",
+            }
+        },
+    }
+
+
+def _external_batch() -> dict[str, Any]:
+    return {
+        "domain": "recruiting",
+        "packVersion": "2026-04-18",
+        "producer": "jobs-wiki.tests",
+        "facts": [
+            {
+                "proposalId": "job_posting:worknet:EMP-2",
+                "domain": "recruiting",
+                "entityType": "job_posting",
+                "attributes": {
+                    "title": "Platform Backend Engineer",
+                    "summary": "Production AI platform delivery",
+                },
+                "identityHints": {"source_id": "EMP-2"},
+                "evidence": [
+                    {
+                        "connector": "worknet.open_recruitment",
+                        "sourceId": "EMP-2",
+                        "pointer": "posting",
+                    }
+                ],
+            },
+            {
+                "proposalId": "company:name:jobswiki",
+                "domain": "recruiting",
+                "entityType": "company",
+                "attributes": {
+                    "name": "JobsWiki",
+                    "normalized_name": "jobswiki",
+                },
+                "identityHints": {"normalized_name": "jobswiki"},
+                "evidence": [
+                    {
+                        "connector": "worknet.open_recruitment",
+                        "sourceId": "EMP-2",
+                        "pointer": "company",
+                    }
+                ],
+            },
+        ],
+        "relations": [
+            {
+                "proposalId": "relation:posted_by:job_posting:worknet:EMP-2:company:name:jobswiki",
+                "domain": "recruiting",
+                "relationType": "posted_by",
+                "fromRef": {"proposalId": "job_posting:worknet:EMP-2"},
+                "toRef": {"proposalId": "company:name:jobswiki"},
+                "evidence": [
+                    {
+                        "connector": "worknet.open_recruitment",
+                        "sourceId": "EMP-2",
+                        "pointer": "company",
+                    }
+                ],
+            }
+        ],
+    }
 
 
 def build_fake_server(tmp_path: Path) -> StrataWikiServer:
@@ -297,6 +429,21 @@ def build_fake_server(tmp_path: Path) -> StrataWikiServer:
         fact_repository=fact_repository,
         snapshot_repository=snapshot_repository,
         outbox_repository=outbox_repository,
+    )
+    domain_pack_registry = InMemoryDomainPackRegistry()
+    domain_pack_validator = DefaultDomainPackValidator()
+    domain_pack_compatibility_checker = DefaultDomainPackCompatibilityChecker()
+    domain_pack_approval_service = DefaultDomainPackApprovalService(
+        domain_pack_registry=domain_pack_registry,
+        validator=domain_pack_validator,
+        compatibility_checker=domain_pack_compatibility_checker,
+    )
+    report = domain_pack_approval_service.register_pack(_external_pack(), activate=True)
+    assert report["ok"] is True
+    domain_proposal_ingestion_service = DomainProposalIngestionGateway(
+        domain_pack_registry=domain_pack_registry,
+        fact_repository=fact_repository,
+        core_ingestion_service=core_ingestion_service,
     )
     retrieval_service = CuratedRetrievalService(
         fact_repository=fact_repository,
@@ -354,6 +501,11 @@ def build_fake_server(tmp_path: Path) -> StrataWikiServer:
         outbox_repository=outbox_repository,
         rendering_repository=rendering_repository,
         core_ingestion_service=core_ingestion_service,
+        domain_pack_registry=domain_pack_registry,
+        domain_pack_validator=domain_pack_validator,
+        domain_pack_compatibility_checker=domain_pack_compatibility_checker,
+        domain_pack_approval_service=domain_pack_approval_service,
+        domain_proposal_ingestion_service=domain_proposal_ingestion_service,
         retrieval_service=retrieval_service,
         personal_query_orchestrator=orchestrator,
         personal_query_service=personal_query_service,
@@ -372,6 +524,8 @@ def test_server_lists_mvp_tools(tmp_path: Path) -> None:
 
     assert [tool.name for tool in tools] == [
         "ingest_fact_batch",
+        "validate_domain_proposal_batch",
+        "ingest_domain_proposal_batch",
         "get_fact_record",
         "build_interpretation_snapshot",
         "get_interpretation_record",
@@ -432,3 +586,23 @@ def test_server_builds_interpretation_and_reads_snapshot_status(tmp_path: Path) 
     assert result["interpretation_snapshot"].startswith("interp_snap:recruiting:market_trend:")
     assert snapshot["status"] == "ok"
     assert snapshot["interpretation_snapshot"] == result["interpretation_snapshot"]
+
+
+def test_server_validates_and_ingests_external_domain_proposals(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    dry_run = server.call_tool(
+        "validate_domain_proposal_batch",
+        {"batch": _external_batch()},
+    )
+    commit = server.call_tool(
+        "ingest_domain_proposal_batch",
+        {"batch": _external_batch()},
+    )
+
+    assert dry_run["ok"] is True
+    assert dry_run["committed"] is False
+    assert dry_run["audit"]["evaluated_pack_version"] == "2026-04-18"
+    assert commit["ok"] is True
+    assert commit["committed"] is True
+    assert "fact:job_posting:EMP-2" in commit["affected_fact_ids"]

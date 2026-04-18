@@ -14,6 +14,7 @@ from wiki_mcp.schemas.domain_pack_review import (
     DomainPackValidationIssue,
     DomainPackValidationReport,
 )
+from wiki_mcp.services.domain_contract_normalization import normalize_domain_pack
 from wiki_mcp.services.domain_pack_registry import DomainPackRegistryError
 from wiki_mcp.services.interfaces.domain_pack_governance import (
     DomainPackApprovalService,
@@ -22,8 +23,14 @@ from wiki_mcp.services.interfaces.domain_pack_governance import (
 )
 from wiki_mcp.services.interfaces.domain_pack_registry import DomainPackRegistry
 
-_TOP_LEVEL_KEYS = {"manifest", "entity_types", "relation_types", "projection_hints"}
-_MANIFEST_KEYS = {"domain", "pack_version", "compatibility", "owner"}
+_TOP_LEVEL_KEYS = {
+    "manifest",
+    "entity_types",
+    "relation_types",
+    "projection_hints",
+    "proposal_surface",
+}
+_MANIFEST_KEYS = {"domain", "pack_version", "compatibility", "owner", "status", "source_profiles"}
 _COMPATIBILITY_KEYS = {"min_stratawiki_version", "max_stratawiki_version"}
 _OWNER_KEYS = {"system", "team"}
 _ENTITY_KEYS = {"name", "description", "attributes", "required_attributes", "identity", "merge_policy"}
@@ -39,12 +46,30 @@ _RELATION_KEYS = {
 _ATTRIBUTE_KEYS = {"type", "description", "enum", "nullable"}
 _EXTERNAL_IDENTITY_KEYS = {"mode", "field", "prefix"}
 _COMPOSITE_IDENTITY_KEYS = {"mode", "fields", "prefix", "normalization"}
+_HINT_PRIORITY_IDENTITY_KEYS = {"mode", "strategies", "fallback"}
+_HINT_PRIORITY_STRATEGY_KEYS = {"hint", "prefix", "normalization", "description"}
 _MERGE_POLICY_KEYS = {"mode", "conflict_strategy", "source_timestamp_attribute"}
-_PROJECTION_HINT_KEYS = {"default_title_attribute", "searchable_attributes", "default_families"}
+_PROJECTION_HINT_KEYS = {
+    "default_title_attribute",
+    "searchable_attributes",
+    "default_families",
+    "summary_attributes",
+    "temporal_attributes",
+    "default_family_by_entity_type",
+}
+_PROPOSAL_SURFACE_KEYS = {"accepts", "strict_unknown_attributes", "batch_mode"}
+_PROPOSAL_SURFACE_ACCEPTS_KEYS = {"fact_proposal", "relation_proposal"}
 
 _ATTRIBUTE_TYPES = {"string", "markdown", "datetime", "url", "integer", "number", "boolean", "json"}
-_IDENTITY_MODES = {"external_id", "composite"}
-_IDENTITY_NORMALIZATION_RULES = {"trim", "lowercase", "slugify"}
+_IDENTITY_MODES = {"external_id", "composite", "hint_priority"}
+_IDENTITY_NORMALIZATION_RULES = {
+    "trim",
+    "lowercase",
+    "slugify",
+    "digits_only",
+    "collapse_whitespace",
+}
+_IDENTITY_FALLBACKS = {"reject", "manual_review"}
 _MERGE_MODES = {"upsert", "append_only"}
 _MERGE_CONFLICT_STRATEGIES = {"prefer_newer_source", "prefer_existing", "manual_review"}
 _RELATION_CARDINALITIES = {"one_to_one", "one_to_many", "many_to_many"}
@@ -72,7 +97,7 @@ class DefaultDomainPackValidator(DomainPackValidator):
             )
             return self._report(issues)
 
-        pack_data = dict(pack)
+        pack_data = dict(normalize_domain_pack(pack))
         self._check_unknown_keys(pack_data, _TOP_LEVEL_KEYS, "$", issues)
         self._check_required_keys(
             pack_data,
@@ -89,6 +114,7 @@ class DefaultDomainPackValidator(DomainPackValidator):
             issues,
         )
         projection_hints = pack_data.get("projection_hints")
+        proposal_surface = pack_data.get("proposal_surface")
 
         entity_attribute_index: dict[str, set[str]] = {}
         if manifest is not None:
@@ -107,6 +133,8 @@ class DefaultDomainPackValidator(DomainPackValidator):
                 entity_attribute_index=entity_attribute_index,
                 issues=issues,
             )
+        if proposal_surface is not None:
+            self._validate_proposal_surface(proposal_surface, issues)
 
         return self._report(issues)
 
@@ -182,6 +210,38 @@ class DefaultDomainPackValidator(DomainPackValidator):
                     "manifest.owner.team",
                     issues,
                 )
+
+        if "status" in manifest:
+            status = manifest.get("status")
+            if status not in {"draft", "approved", "active", "deprecated", "archived", "closed"}:
+                issues.append(
+                    self._issue(
+                        code="invalid_manifest_status",
+                        path="manifest.status",
+                        message=(
+                            "manifest.status must be one of "
+                            "['active', 'approved', 'archived', 'closed', 'deprecated', 'draft']."
+                        ),
+                    )
+                )
+
+        if "source_profiles" in manifest:
+            source_profiles = manifest.get("source_profiles")
+            if not isinstance(source_profiles, list):
+                issues.append(
+                    self._issue(
+                        code="invalid_source_profiles",
+                        path="manifest.source_profiles",
+                        message="manifest.source_profiles must be a list of non-empty strings.",
+                    )
+                )
+            else:
+                for index, profile in enumerate(source_profiles):
+                    self._require_non_empty_string(
+                        profile,
+                        f"manifest.source_profiles[{index}]",
+                        issues,
+                    )
 
     def _validate_entity_types(
         self,
@@ -408,6 +468,156 @@ class DefaultDomainPackValidator(DomainPackValidator):
                         issues,
                     )
 
+        summary_attributes = projection_hints.get("summary_attributes")
+        if summary_attributes is not None:
+            summary_mapping = self._require_mapping(
+                summary_attributes,
+                "projection_hints.summary_attributes",
+                issues,
+            )
+            if summary_mapping is not None:
+                for entity_name, attribute_names in summary_mapping.items():
+                    path = f"projection_hints.summary_attributes.{entity_name}"
+                    if not isinstance(attribute_names, list):
+                        issues.append(
+                            self._issue(
+                                code="invalid_projection_hint",
+                                path=path,
+                                message="summary_attributes entries must be string lists.",
+                            )
+                        )
+                        continue
+                    for index, attribute_name in enumerate(attribute_names):
+                        self._validate_projection_attribute_ref(
+                            entity_name=entity_name,
+                            attribute_name=attribute_name,
+                            entity_attribute_index=entity_attribute_index,
+                            path=f"{path}[{index}]",
+                            issues=issues,
+                        )
+
+        temporal_attributes = projection_hints.get("temporal_attributes")
+        if temporal_attributes is not None:
+            temporal_mapping = self._require_mapping(
+                temporal_attributes,
+                "projection_hints.temporal_attributes",
+                issues,
+            )
+            if temporal_mapping is not None:
+                for entity_name, window in temporal_mapping.items():
+                    path = f"projection_hints.temporal_attributes.{entity_name}"
+                    window_mapping = self._require_mapping(window, path, issues)
+                    if window_mapping is None:
+                        continue
+                    self._check_unknown_keys(window_mapping, {"start", "end"}, path, issues)
+                    if "start" in window_mapping:
+                        self._validate_projection_attribute_ref(
+                            entity_name=entity_name,
+                            attribute_name=window_mapping.get("start"),
+                            entity_attribute_index=entity_attribute_index,
+                            path=f"{path}.start",
+                            issues=issues,
+                        )
+                    if "end" in window_mapping:
+                        self._validate_projection_attribute_ref(
+                            entity_name=entity_name,
+                            attribute_name=window_mapping.get("end"),
+                            entity_attribute_index=entity_attribute_index,
+                            path=f"{path}.end",
+                            issues=issues,
+                        )
+
+        default_family_by_entity_type = projection_hints.get("default_family_by_entity_type")
+        if default_family_by_entity_type is not None:
+            family_mapping = self._require_mapping(
+                default_family_by_entity_type,
+                "projection_hints.default_family_by_entity_type",
+                issues,
+            )
+            if family_mapping is not None:
+                for entity_name, family in family_mapping.items():
+                    if entity_name not in entity_attribute_index:
+                        issues.append(
+                            self._issue(
+                                code="invalid_projection_hint",
+                                path=f"projection_hints.default_family_by_entity_type.{entity_name}",
+                                message=(
+                                    f"default_family_by_entity_type references unknown entity_type "
+                                    f"{entity_name!r}."
+                                ),
+                            )
+                        )
+                        continue
+                    self._require_non_empty_string(
+                        family,
+                        f"projection_hints.default_family_by_entity_type.{entity_name}",
+                        issues,
+                    )
+
+    def _validate_proposal_surface(
+        self,
+        raw_proposal_surface: Any,
+        issues: list[DomainPackValidationIssue],
+    ) -> None:
+        proposal_surface = self._require_mapping(raw_proposal_surface, "proposal_surface", issues)
+        if proposal_surface is None:
+            return
+
+        self._check_unknown_keys(
+            proposal_surface,
+            _PROPOSAL_SURFACE_KEYS,
+            "proposal_surface",
+            issues,
+        )
+
+        accepts = proposal_surface.get("accepts")
+        if accepts is not None:
+            accepts_mapping = self._require_mapping(
+                accepts,
+                "proposal_surface.accepts",
+                issues,
+            )
+            if accepts_mapping is not None:
+                self._check_unknown_keys(
+                    accepts_mapping,
+                    _PROPOSAL_SURFACE_ACCEPTS_KEYS,
+                    "proposal_surface.accepts",
+                    issues,
+                )
+                for key in _PROPOSAL_SURFACE_ACCEPTS_KEYS:
+                    if key in accepts_mapping and not isinstance(accepts_mapping.get(key), bool):
+                        issues.append(
+                            self._issue(
+                                code="invalid_proposal_surface",
+                                path=f"proposal_surface.accepts.{key}",
+                                message="proposal_surface.accepts values must be boolean flags.",
+                            )
+                        )
+
+        if "strict_unknown_attributes" in proposal_surface and not isinstance(
+            proposal_surface.get("strict_unknown_attributes"),
+            bool,
+        ):
+            issues.append(
+                self._issue(
+                    code="invalid_proposal_surface",
+                    path="proposal_surface.strict_unknown_attributes",
+                    message="proposal_surface.strict_unknown_attributes must be a boolean.",
+                )
+            )
+
+        if "batch_mode" in proposal_surface and proposal_surface.get("batch_mode") not in {
+            "atomic",
+            "best_effort",
+        }:
+            issues.append(
+                self._issue(
+                    code="invalid_proposal_surface",
+                    path="proposal_surface.batch_mode",
+                    message="proposal_surface.batch_mode must be 'atomic' or 'best_effort'.",
+                )
+            )
+
     def _validate_attribute_definitions(
         self,
         raw_attributes: Any,
@@ -593,6 +803,91 @@ class DefaultDomainPackValidator(DomainPackValidator):
                 )
             return
 
+        if mode == "hint_priority":
+            self._check_unknown_keys(identity_rule, _HINT_PRIORITY_IDENTITY_KEYS, path, issues)
+            self._check_required_keys(identity_rule, ("mode", "strategies", "fallback"), path, issues)
+            fallback = identity_rule.get("fallback")
+            if fallback not in _IDENTITY_FALLBACKS:
+                issues.append(
+                    self._issue(
+                        code="invalid_identity_fallback",
+                        path=f"{path}.fallback",
+                        message=(
+                            "Identity fallback must be one of "
+                            f"{sorted(_IDENTITY_FALLBACKS)}, got {fallback!r}."
+                        ),
+                    )
+                )
+
+            strategies = identity_rule.get("strategies")
+            if not isinstance(strategies, list) or not strategies:
+                issues.append(
+                    self._issue(
+                        code="invalid_identity_strategies",
+                        path=f"{path}.strategies",
+                        message="hint_priority strategies must be a non-empty list.",
+                    )
+                )
+                return
+
+            seen_hints: set[str] = set()
+            for index, raw_strategy in enumerate(strategies):
+                strategy_path = f"{path}.strategies[{index}]"
+                strategy = self._require_mapping(raw_strategy, strategy_path, issues)
+                if strategy is None:
+                    continue
+                self._check_unknown_keys(
+                    strategy,
+                    _HINT_PRIORITY_STRATEGY_KEYS,
+                    strategy_path,
+                    issues,
+                )
+                hint = self._require_non_empty_string(
+                    strategy.get("hint"),
+                    f"{strategy_path}.hint",
+                    issues,
+                )
+                if hint is not None:
+                    if hint in seen_hints:
+                        issues.append(
+                            self._issue(
+                                code="duplicate_identity_field",
+                                path=f"{strategy_path}.hint",
+                                message=f"Identity hint {hint!r} is duplicated.",
+                            )
+                        )
+                    seen_hints.add(hint)
+                    if not self._is_known_identity_field(hint, available_attributes):
+                        issues.append(
+                            self._issue(
+                                code="unknown_identity_field",
+                                path=f"{strategy_path}.hint",
+                                message=(
+                                    f"Identity hint {hint!r} is not declared as an attribute and "
+                                    "is not part of the reserved identity hint surface."
+                                ),
+                            )
+                        )
+                if "prefix" in strategy:
+                    self._require_non_empty_string(
+                        strategy.get("prefix"),
+                        f"{strategy_path}.prefix",
+                        issues,
+                    )
+                if "description" in strategy and strategy.get("description") is not None:
+                    self._require_non_empty_string(
+                        strategy.get("description"),
+                        f"{strategy_path}.description",
+                        issues,
+                    )
+                if "normalization" in strategy:
+                    self._validate_identity_normalization(
+                        strategy.get("normalization"),
+                        path=f"{strategy_path}.normalization",
+                        issues=issues,
+                    )
+            return
+
         self._check_unknown_keys(identity_rule, _COMPOSITE_IDENTITY_KEYS, path, issues)
         self._check_required_keys(identity_rule, ("mode", "fields", "prefix"), path, issues)
         self._require_non_empty_string(
@@ -646,40 +941,53 @@ class DefaultDomainPackValidator(DomainPackValidator):
                     )
 
         if "normalization" in identity_rule:
-            normalization_rules = identity_rule.get("normalization")
-            if not isinstance(normalization_rules, list):
+            self._validate_identity_normalization(
+                identity_rule.get("normalization"),
+                path=f"{path}.normalization",
+                issues=issues,
+            )
+
+    def _validate_identity_normalization(
+        self,
+        normalization_rules: Any,
+        *,
+        path: str,
+        issues: list[DomainPackValidationIssue],
+    ) -> None:
+        if not isinstance(normalization_rules, list):
+            issues.append(
+                self._issue(
+                    code="invalid_identity_normalization",
+                    path=path,
+                    message="Identity normalization must be a list of supported rules.",
+                )
+            )
+            return
+
+        seen_rules: set[str] = set()
+        for index, rule in enumerate(normalization_rules):
+            rule_path = f"{path}[{index}]"
+            if rule not in _IDENTITY_NORMALIZATION_RULES:
                 issues.append(
                     self._issue(
                         code="invalid_identity_normalization",
-                        path=f"{path}.normalization",
-                        message="Identity normalization must be a list of supported rules.",
+                        path=rule_path,
+                        message=(
+                            "Identity normalization rules must be one of "
+                            f"{sorted(_IDENTITY_NORMALIZATION_RULES)}, got {rule!r}."
+                        ),
                     )
                 )
-            else:
-                seen_rules: set[str] = set()
-                for index, rule in enumerate(normalization_rules):
-                    rule_path = f"{path}.normalization[{index}]"
-                    if rule not in _IDENTITY_NORMALIZATION_RULES:
-                        issues.append(
-                            self._issue(
-                                code="invalid_identity_normalization",
-                                path=rule_path,
-                                message=(
-                                    "Identity normalization rules must be one of "
-                                    f"{sorted(_IDENTITY_NORMALIZATION_RULES)}, got {rule!r}."
-                                ),
-                            )
-                        )
-                        continue
-                    if rule in seen_rules:
-                        issues.append(
-                            self._issue(
-                                code="duplicate_identity_normalization",
-                                path=rule_path,
-                                message=f"Identity normalization rule {rule!r} is duplicated.",
-                            )
-                        )
-                    seen_rules.add(rule)
+                continue
+            if rule in seen_rules:
+                issues.append(
+                    self._issue(
+                        code="duplicate_identity_normalization",
+                        path=rule_path,
+                        message=f"Identity normalization rule {rule!r} is duplicated.",
+                    )
+                )
+            seen_rules.add(rule)
 
     def _validate_merge_policy(
         self,
@@ -971,6 +1279,8 @@ class DefaultDomainPackCompatibilityChecker(DomainPackCompatibilityChecker):
         active_pack: DomainPack,
         candidate_pack: DomainPack,
     ) -> DomainPackCompatibilityReport:
+        active_pack = normalize_domain_pack(active_pack)
+        candidate_pack = normalize_domain_pack(candidate_pack)
         issues: list[DomainPackCompatibilityIssue] = []
 
         active_domain = _manifest_value(active_pack, "domain")
@@ -1213,9 +1523,10 @@ class DefaultDomainPackApprovalService(DomainPackApprovalService):
         candidate_pack: DomainPack,
         review_audit: DomainPackReviewAudit | None = None,
     ) -> DomainPackApprovalReport:
-        validation = self.validator.validate(candidate_pack)
-        domain = _manifest_value(candidate_pack, "domain") or ""
-        candidate_pack_version = _manifest_value(candidate_pack, "pack_version") or ""
+        normalized_candidate_pack = normalize_domain_pack(candidate_pack)
+        validation = self.validator.validate(normalized_candidate_pack)
+        domain = _manifest_value(normalized_candidate_pack, "domain") or ""
+        candidate_pack_version = _manifest_value(normalized_candidate_pack, "pack_version") or ""
         active_pack_version = self.domain_pack_registry.get_active_version(domain) if domain else None
 
         report: DomainPackApprovalReport = {
@@ -1251,7 +1562,7 @@ class DefaultDomainPackApprovalService(DomainPackApprovalService):
 
         compatibility = self.compatibility_checker.compare(
             active_pack=active_pack,
-            candidate_pack=candidate_pack,
+            candidate_pack=normalized_candidate_pack,
         )
         report["compatibility"] = compatibility
         report["review_required"] = compatibility["review_required"]
@@ -1269,7 +1580,8 @@ class DefaultDomainPackApprovalService(DomainPackApprovalService):
         activate: bool = False,
         review_audit: DomainPackReviewAudit | None = None,
     ) -> DomainPackApprovalReport:
-        report = self.review_registration(candidate_pack, review_audit=review_audit)
+        normalized_candidate_pack = normalize_domain_pack(candidate_pack)
+        report = self.review_registration(normalized_candidate_pack, review_audit=review_audit)
         if not report["validation"]["ok"]:
             report["ok"] = False
             return report
@@ -1283,7 +1595,7 @@ class DefaultDomainPackApprovalService(DomainPackApprovalService):
             return report
 
         try:
-            self.domain_pack_registry.register(candidate_pack, activate=activate)
+            self.domain_pack_registry.register(normalized_candidate_pack, activate=activate)
         except DomainPackRegistryError as exc:
             report["ok"] = False
             report["registration_error"] = self._registration_error(exc)
@@ -1374,6 +1686,23 @@ def _normalize_identity_rule(value: Any) -> tuple[Any, ...]:
             tuple(_string_list(value.get("fields"))),
             value.get("prefix"),
             tuple(_string_list(value.get("normalization"))),
+        )
+    if mode == "hint_priority":
+        strategies = []
+        for item in value.get("strategies") or []:
+            if not isinstance(item, Mapping):
+                continue
+            strategies.append(
+                (
+                    item.get("hint"),
+                    item.get("prefix"),
+                    tuple(_string_list(item.get("normalization"))),
+                )
+            )
+        return (
+            "hint_priority",
+            tuple(strategies),
+            value.get("fallback"),
         )
     return ("invalid",)
 

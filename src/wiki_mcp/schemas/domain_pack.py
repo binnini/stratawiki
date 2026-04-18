@@ -12,7 +12,13 @@ DomainAttributeType = Literal[
     "boolean",
     "json",
 ]
-IdentityNormalizationRule = Literal["trim", "lowercase", "slugify"]
+IdentityNormalizationRule = Literal[
+    "trim",
+    "lowercase",
+    "slugify",
+    "digits_only",
+    "collapse_whitespace",
+]
 RelationCardinality = Literal["one_to_one", "one_to_many", "many_to_many"]
 EvidencePolicy = Literal["required", "optional"]
 MergeMode = Literal["upsert", "append_only"]
@@ -21,6 +27,15 @@ MergeConflictStrategy = Literal[
     "prefer_existing",
     "manual_review",
 ]
+DomainPackStatus = Literal[
+    "draft",
+    "approved",
+    "active",
+    "deprecated",
+    "archived",
+    "closed",
+]
+ProposalBatchMode = Literal["atomic", "best_effort"]
 
 
 class _DomainPackCompatibilityOptional(TypedDict, total=False):
@@ -39,7 +54,12 @@ class DomainPackOwner(_DomainPackOwnerOptional):
     system: str
 
 
-class DomainPackManifest(TypedDict):
+class _DomainPackManifestOptional(TypedDict, total=False):
+    status: DomainPackStatus
+    source_profiles: list[str]
+
+
+class DomainPackManifest(_DomainPackManifestOptional):
     """Top-level metadata that identifies one registered pack artifact."""
 
     domain: str
@@ -76,7 +96,23 @@ class CompositeIdentityRule(TypedDict):
     normalization: NotRequired[list[IdentityNormalizationRule]]
 
 
-IdentityRule = ExternalIdIdentityRule | CompositeIdentityRule
+class _HintPriorityStrategyOptional(TypedDict, total=False):
+    prefix: str
+    normalization: list[IdentityNormalizationRule]
+    description: str
+
+
+class HintPriorityStrategy(_HintPriorityStrategyOptional):
+    hint: str
+
+
+class HintPriorityIdentityRule(TypedDict):
+    mode: Literal["hint_priority"]
+    strategies: list[HintPriorityStrategy]
+    fallback: Literal["reject", "manual_review"]
+
+
+IdentityRule = ExternalIdIdentityRule | CompositeIdentityRule | HintPriorityIdentityRule
 
 
 class _MergePolicyOptional(TypedDict, total=False):
@@ -113,16 +149,36 @@ class RelationTypeDefinition(_RelationTypeDefinitionOptional):
     to_entity_types: list[str]
 
 
+class ProjectionTemporalWindow(TypedDict, total=False):
+    start: str
+    end: str
+
+
 class ProjectionHints(TypedDict, total=False):
     """Read-side hints that should not affect canonical truth decisions."""
 
     default_title_attribute: dict[str, str]
     searchable_attributes: dict[str, list[str]]
     default_families: list[str]
+    summary_attributes: dict[str, list[str]]
+    temporal_attributes: dict[str, ProjectionTemporalWindow]
+    default_family_by_entity_type: dict[str, str]
+
+
+class ProposalSurfaceAccepts(TypedDict, total=False):
+    fact_proposal: bool
+    relation_proposal: bool
+
+
+class ProposalSurface(TypedDict, total=False):
+    accepts: ProposalSurfaceAccepts
+    strict_unknown_attributes: bool
+    batch_mode: ProposalBatchMode
 
 
 class _DomainPackOptional(TypedDict, total=False):
     projection_hints: ProjectionHints
+    proposal_surface: ProposalSurface
 
 
 class DomainPack(_DomainPackOptional):

@@ -28,6 +28,8 @@ def test_demo_cli_lists_tools_without_postgres(tmp_path: Path) -> None:
     payload = json.loads(stdout.getvalue())
     assert [tool["name"] for tool in payload] == [
         "ingest_fact_batch",
+        "validate_domain_proposal_batch",
+        "ingest_domain_proposal_batch",
         "get_fact_record",
         "build_interpretation_snapshot",
         "get_interpretation_record",

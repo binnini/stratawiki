@@ -95,7 +95,7 @@ def test_registry_registers_and_resolves_by_domain_and_version() -> None:
     v1 = _pack("2026-04-18")
     v2 = _pack("2026-05-01")
 
-    registry.register(v1)
+    registry.register(v1, activate=True)
     registry.register(v2, activate=True)
 
     assert registry.get_active_version("recruiting") == "2026-05-01"
@@ -107,6 +107,8 @@ def test_registry_registers_and_resolves_by_domain_and_version() -> None:
 
 def test_registry_can_switch_active_version() -> None:
     registry = InMemoryDomainPackRegistry([_pack("2026-04-18"), _pack("2026-05-01")])
+
+    registry.set_active_version("recruiting", "2026-04-18")
 
     assert registry.get("recruiting")["manifest"]["pack_version"] == "2026-04-18"
 

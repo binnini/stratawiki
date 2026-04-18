@@ -38,6 +38,18 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=str(DEFAULT_DEMO_SEED_PATH),
         help="Seed path used by demo mode and the demo-mvp command.",
     )
+    parser.add_argument(
+        "--domain-pack-path",
+        action="append",
+        default=[],
+        help="Path to a Domain Pack artifact to load during bootstrap. Repeat to load multiple packs.",
+    )
+    parser.add_argument(
+        "--activate-domain-pack",
+        action="append",
+        default=[],
+        help="Explicit active domain pack mapping in domain=version form. Repeat for multiple domains.",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -80,6 +92,9 @@ def run_cli(
 
     try:
         tool_arguments = _load_tool_arguments(args)
+        active_domain_pack_versions = _parse_active_domain_pack_versions(
+            args.activate_domain_pack
+        )
     except ValueError as exc:
         parser.exit(2, f"{parser.prog}: error: {exc}\n")
         return 2
@@ -89,6 +104,8 @@ def run_cli(
         render_root=Path(args.render_root),
         demo_mode=args.demo,
         seed_path=args.seed_path,
+        domain_pack_paths=[Path(path) for path in args.domain_pack_path],
+        active_domain_pack_versions=active_domain_pack_versions,
     )
     try:
         result: object
@@ -217,6 +234,24 @@ def _run_demo_mvp(server: StrataWikiServer, *, seed_path: str) -> dict[str, obje
 def _write_json(stream: TextIO, payload: object) -> None:
     json.dump(payload, stream, indent=2, sort_keys=True)
     stream.write("\n")
+
+
+def _parse_active_domain_pack_versions(raw_values: Sequence[str]) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for item in raw_values:
+        if "=" not in item:
+            raise ValueError(
+                "--activate-domain-pack entries must use domain=version format."
+            )
+        domain, pack_version = item.split("=", 1)
+        normalized_domain = domain.strip()
+        normalized_version = pack_version.strip()
+        if not normalized_domain or not normalized_version:
+            raise ValueError(
+                "--activate-domain-pack entries must use domain=version format."
+            )
+        mapping[normalized_domain] = normalized_version
+    return mapping
 
 
 if __name__ == "__main__":

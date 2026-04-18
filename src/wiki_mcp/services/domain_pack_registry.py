@@ -92,7 +92,7 @@ class InMemoryDomainPackRegistry:
             raise DomainPackVersionAlreadyRegisteredError(domain, pack_version)
 
         versions[pack_version] = pack
-        if activate or domain not in self._active_versions:
+        if activate:
             self._active_versions[domain] = pack_version
 
     def get(self, domain: str, pack_version: str | None = None) -> DomainPack:

@@ -28,6 +28,34 @@ def _tool_definitions() -> list[ToolDefinition]:
             },
         ),
         ToolDefinition(
+            name="validate_domain_proposal_batch",
+            group="fact",
+            status="mvp",
+            description="Validate one DomainProposalBatch against the active Domain Pack.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["batch"],
+                "properties": {
+                    "batch": {"type": "object"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="ingest_domain_proposal_batch",
+            group="fact",
+            status="mvp",
+            description="Ingest one DomainProposalBatch through the canonical proposal gateway.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["batch"],
+                "properties": {
+                    "batch": {"type": "object"},
+                },
+            },
+        ),
+        ToolDefinition(
             name="get_fact_record",
             group="fact",
             status="mvp",
@@ -140,6 +168,10 @@ class StrataWikiServer:
         args = arguments or {}
         if name == "ingest_fact_batch":
             return self._ingest_fact_batch(args)
+        if name == "validate_domain_proposal_batch":
+            return self._validate_domain_proposal_batch(args)
+        if name == "ingest_domain_proposal_batch":
+            return self._ingest_domain_proposal_batch(args)
         if name == "get_fact_record":
             return self._get_fact_record(args)
         if name == "build_interpretation_snapshot":
@@ -195,6 +227,24 @@ class StrataWikiServer:
         if not records:
             raise KeyError(f"Unknown fact record: {fact_id}")
         return {"status": "ok", "record": records[0]}
+
+    def _validate_domain_proposal_batch(self, arguments: dict[str, object]) -> dict[str, object]:
+        batch = arguments.get("batch")
+        if not isinstance(batch, dict):
+            raise ValueError("validate_domain_proposal_batch requires a batch object.")
+        service = self.bootstrap.domain_proposal_ingestion_service
+        if service is None:
+            raise ValueError("Domain proposal ingestion service is not configured.")
+        return service.validate_batch(batch)
+
+    def _ingest_domain_proposal_batch(self, arguments: dict[str, object]) -> dict[str, object]:
+        batch = arguments.get("batch")
+        if not isinstance(batch, dict):
+            raise ValueError("ingest_domain_proposal_batch requires a batch object.")
+        service = self.bootstrap.domain_proposal_ingestion_service
+        if service is None:
+            raise ValueError("Domain proposal ingestion service is not configured.")
+        return service.ingest_batch(batch)
 
     def _build_interpretation_snapshot(self, arguments: dict[str, object]) -> dict[str, object]:
         domain = self._required_string(arguments, "domain")
@@ -353,6 +403,8 @@ def build_server(
     render_root: str = "data",
     demo_mode: bool = False,
     seed_path: str | None = None,
+    domain_pack_paths: list[str] | None = None,
+    active_domain_pack_versions: dict[str, str] | None = None,
 ) -> StrataWikiServer:
     bootstrap = bootstrap_application(
         connection=connection,
@@ -360,6 +412,8 @@ def build_server(
         render_root=render_root,
         demo_mode=demo_mode,
         seed_path=seed_path,
+        domain_pack_paths=domain_pack_paths,
+        active_domain_pack_versions=active_domain_pack_versions,
     )
     return StrataWikiServer(bootstrap=bootstrap)
 

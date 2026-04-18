@@ -33,6 +33,7 @@ from wiki_mcp.schemas.ingestion_batch import IngestionBatch
 from wiki_mcp.schemas.metadata_validation import ensure_scope_ref
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.source_record import SourceRecord
+from wiki_mcp.services.domain_contract_normalization import normalize_domain_proposal_batch
 from wiki_mcp.services.domain_pack_registry import DomainPackRegistryError
 from wiki_mcp.services.interfaces.core_ingestion import CoreIngestionService
 from wiki_mcp.services.interfaces.domain_pack_registry import DomainPackRegistry
@@ -105,6 +106,7 @@ class DomainProposalIngestionGateway:
         *,
         dry_run: bool = False,
     ) -> DomainProposalIngestionResult:
+        batch = normalize_domain_proposal_batch(batch)
         audit = self._build_audit(batch, dry_run=dry_run)
         rejections: list[DomainProposalRejection] = []
         fact_decisions: list[DomainProposalFactDecision] = []
@@ -1124,6 +1126,45 @@ class DomainProposalIngestionGateway:
             prefix = self._as_non_empty_string(identity_rule.get("prefix")) or entity_type
             return f"{prefix}:{value}"
 
+        if identity_rule["mode"] == "hint_priority":
+            for strategy in identity_rule.get("strategies", []):
+                hint_name = self._as_non_empty_string(strategy.get("hint"))
+                if hint_name is None:
+                    continue
+                value = self._identity_value(
+                    hint_name,
+                    attributes=attributes,
+                    identity_hints=identity_hints,
+                )
+                if value is None:
+                    continue
+                prefix = self._as_non_empty_string(strategy.get("prefix")) or entity_type
+                normalized_value = self._normalize_identity_component(
+                    value,
+                    strategy.get("normalization", []),
+                )
+                if normalized_value:
+                    return f"{prefix}:{normalized_value}"
+
+            fallback = identity_rule.get("fallback", "reject")
+            rejection_code = (
+                "identity_manual_review_required"
+                if fallback == "manual_review"
+                else "identity_field_missing"
+            )
+            rejections.append(
+                self._rejection(
+                    code=rejection_code,
+                    message=(
+                        f"Fact proposal {proposal_id!r} could not resolve a stable identity for "
+                        f"entity_type {entity_type!r} using the configured hint_priority rule."
+                    ),
+                    proposal_id=proposal_id,
+                    field=field,
+                )
+            )
+            return None
+
         values: list[str] = []
         for identity_field in identity_rule["fields"]:
             value = self._identity_value(
@@ -1177,6 +1218,10 @@ class DomainProposalIngestionGateway:
                 normalized = normalized.strip()
             elif rule == "lowercase":
                 normalized = normalized.lower()
+            elif rule == "digits_only":
+                normalized = re.sub(r"\D+", "", normalized)
+            elif rule == "collapse_whitespace":
+                normalized = " ".join(normalized.split())
             elif rule == "slugify":
                 normalized = _slugify(normalized)
         return normalized.strip()
