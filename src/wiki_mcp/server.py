@@ -282,6 +282,38 @@ def _tool_definitions() -> list[ToolDefinition]:
                 },
             },
         ),
+        ToolDefinition(
+            name="get_job_status",
+            group="operator",
+            status="mvp",
+            description="Inspect one queued or processed background job.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["job_id"],
+                "properties": {
+                    "job_id": {"type": "string"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="explain_result",
+            group="operator",
+            status="mvp",
+            description="Explain which snapshots and anchors produced one result, and why it changed.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["domain", "result_id"],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "result_id": {"type": "string"},
+                    "layer": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                },
+            },
+        ),
     ]
 
 
@@ -331,6 +363,10 @@ class StrataWikiServer:
             return self._get_snapshot_status(args)
         if name == "get_cache_status":
             return self._get_cache_status(args)
+        if name == "get_job_status":
+            return self._get_job_status(args)
+        if name == "explain_result":
+            return self._explain_result(args)
         raise KeyError(f"Unknown tool: {name}")
 
     def call_tool_with_envelope(self, name: str, arguments: dict[str, object] | None = None) -> dict[str, object]:
@@ -765,41 +801,11 @@ class StrataWikiServer:
             }
 
         record = records[0]
-        record_snapshot_ref = dict(record.get("snapshot_ref") or {})
-        record_snapshots = {
-            "fact_snapshot": record_snapshot_ref.get("fact_snapshot_id"),
-            **(
-                {"interpretation_snapshot": record_snapshot_ref.get("interpretation_snapshot_id")}
-                if record_snapshot_ref.get("interpretation_snapshot_id")
-                else {}
-            ),
-            **(
-                {"profile_version": record_snapshot_ref.get("profile_version") or record.get("profile_version")}
-                if (record_snapshot_ref.get("profile_version") or record.get("profile_version"))
-                else {}
-            ),
-        }
-
-        cache_state = "fresh"
-        reason = "match"
-        if (
-            current_snapshots.get("profile_version")
-            and record_snapshots.get("profile_version") != current_snapshots.get("profile_version")
-        ):
-            cache_state = "invalid"
-            reason = "profile_version_changed"
-        elif (
-            current_snapshots.get("interpretation_snapshot")
-            and record_snapshots.get("interpretation_snapshot") != current_snapshots.get("interpretation_snapshot")
-        ):
-            cache_state = "stale"
-            reason = "interpretation_snapshot_changed"
-        elif (
-            current_snapshots.get("fact_snapshot")
-            and record_snapshots.get("fact_snapshot") != current_snapshots.get("fact_snapshot")
-        ):
-            cache_state = "stale"
-            reason = "fact_snapshot_changed"
+        record_snapshots = self._personal_record_snapshots(record)
+        cache_state, reason = self._personal_cache_state(
+            current_snapshots=current_snapshots,
+            record_snapshots=record_snapshots,
+        )
 
         return {
             "status": "ok",
@@ -809,6 +815,60 @@ class StrataWikiServer:
             "current_snapshots": current_snapshots,
             "record_snapshots": record_snapshots,
         }
+
+    def _get_job_status(self, arguments: dict[str, object]) -> dict[str, object]:
+        job_id = self._required_string(arguments, "job_id")
+        outbox_repository = self.bootstrap.outbox_repository
+        if outbox_repository is None:
+            raise ValueError("Outbox repository is not configured for this runtime.")
+        event = outbox_repository.get_event(job_id)
+        return {
+            "status": "ok",
+            "job": {
+                "job_id": event["id"],
+                "state": event["status"],
+                "kind": self._job_kind(str(event["event_type"])),
+                "event_type": event["event_type"],
+                "aggregate_layer": event["aggregate_layer"],
+                "aggregate_id": event["aggregate_id"],
+                "attempt_count": event["attempt_count"],
+                "available_at": event["available_at"],
+                "claimed_at": event["claimed_at"],
+                "processed_at": event["processed_at"],
+                "last_error": event["last_error"],
+                "payload": dict(event["payload"]),
+            },
+        }
+
+    def _explain_result(self, arguments: dict[str, object]) -> dict[str, object]:
+        domain = self._required_string(arguments, "domain")
+        result_id = self._required_string(arguments, "result_id")
+        layer = arguments.get("layer")
+        if layer is None:
+            if isinstance(arguments.get("tenant_id"), str) and isinstance(arguments.get("user_id"), str):
+                try:
+                    return self._explain_personal_result(
+                        domain=domain,
+                        result_id=result_id,
+                        tenant_id=self._required_string(arguments, "tenant_id"),
+                        user_id=self._required_string(arguments, "user_id"),
+                    )
+                except KeyError:
+                    pass
+            return self._explain_interpretation_result(domain=domain, result_id=result_id)
+        if not isinstance(layer, str) or not layer.strip():
+            raise ValueError("layer must be a non-empty string when provided.")
+        normalized_layer = layer.strip().lower()
+        if normalized_layer == "interpretation":
+            return self._explain_interpretation_result(domain=domain, result_id=result_id)
+        if normalized_layer == "personal":
+            return self._explain_personal_result(
+                domain=domain,
+                result_id=result_id,
+                tenant_id=self._required_string(arguments, "tenant_id"),
+                user_id=self._required_string(arguments, "user_id"),
+            )
+        raise ValueError("layer must be one of ['interpretation', 'personal'] when provided.")
 
     def _snapshot_layers(self, snapshot_status: dict[str, object]) -> dict[str, dict[str, object]]:
         raw_layers = snapshot_status.get("layers")
@@ -859,6 +919,89 @@ class StrataWikiServer:
             current_snapshots["profile_version"] = profile_context["profile_version"]
         return current_snapshots
 
+    def _explain_interpretation_result(
+        self,
+        *,
+        domain: str,
+        result_id: str,
+    ) -> dict[str, object]:
+        record = self._require_shared_interpretation_record(domain=domain, interpretation_id=result_id)
+        snapshot_status = self.bootstrap.snapshot_repository.get_snapshot_status(domain=domain, layer=None)
+        current_snapshots = self._shared_current_snapshots(snapshot_status)
+        current_partition_records = self.bootstrap.interpretation_repository.list_records(
+            domain=domain,
+            scope_ref={"scope": "shared"},
+            family=str(record.get("family") or ""),
+            subject_id=str(record.get("subject_id") or ""),
+            statuses=[INTERPRETATION_STATUS_PUBLISHED],
+            limit=20,
+        )
+        current_partition_ids = [str(item["id"]) for item in current_partition_records]
+        return {
+            "status": "ok",
+            "layer": "interpretation",
+            "result_id": result_id,
+            "explanation": {
+                "based_on": self._interpretation_record_snapshots(record),
+                "anchors": self._result_anchor_ids(record),
+                "change_reason": self._interpretation_change_reason(
+                    record=record,
+                    current_snapshots=current_snapshots,
+                    current_partition_ids=current_partition_ids,
+                ),
+                "lifecycle_state": record["status"],
+                "review_state": self._proposal_review_state(str(record["status"])),
+                "current_snapshots": current_snapshots,
+                "current_partition_publication": {
+                    "published_result_ids": current_partition_ids,
+                },
+                **({"provenance": dict(record["provenance"])} if isinstance(record.get("provenance"), dict) else {}),
+            },
+        }
+
+    def _explain_personal_result(
+        self,
+        *,
+        domain: str,
+        result_id: str,
+        tenant_id: str,
+        user_id: str,
+    ) -> dict[str, object]:
+        scope_ref = {"scope": "user", "tenant_id": tenant_id, "user_id": user_id}
+        records = self.bootstrap.personal_repository.get_by_ids([result_id], scope_ref)
+        if not records or records[0].get("domain") != domain:
+            raise KeyError(f"Unknown personal result {result_id!r} for domain {domain!r}.")
+        record = dict(records[0])
+        snapshot_status = self.bootstrap.snapshot_repository.get_snapshot_status(domain=domain, layer=None)
+        current_snapshots = (
+            self._current_cache_snapshots(
+                domain=domain,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                snapshot_status=snapshot_status,
+            )
+            if snapshot_status is not None
+            else {}
+        )
+        record_snapshots = self._personal_record_snapshots(record)
+        cache_state, reason = self._personal_cache_state(
+            current_snapshots=current_snapshots,
+            record_snapshots=record_snapshots,
+        )
+        return {
+            "status": "ok",
+            "layer": "personal",
+            "result_id": result_id,
+            "explanation": {
+                "based_on": record_snapshots,
+                "anchors": self._result_anchor_ids(record),
+                "change_reason": reason if reason != "match" else "current_result",
+                "cache_state": cache_state,
+                "current_snapshots": current_snapshots,
+                **({"provenance": dict(record["provenance"])} if isinstance(record.get("provenance"), dict) else {}),
+            },
+        }
+
     def _require_interpretation_record(
         self,
         *,
@@ -872,6 +1015,22 @@ class StrataWikiServer:
         if not records or records[0].get("domain") != domain:
             raise KeyError(
                 f"Unknown interpretation proposal {proposal_id!r} for domain {domain!r}."
+            )
+        return dict(records[0])
+
+    def _require_shared_interpretation_record(
+        self,
+        *,
+        domain: str,
+        interpretation_id: str,
+    ) -> dict[str, object]:
+        records = self.bootstrap.interpretation_repository.get_by_ids(
+            [interpretation_id],
+            {"scope": "shared"},
+        )
+        if not records or records[0].get("domain") != domain:
+            raise KeyError(
+                f"Unknown interpretation result {interpretation_id!r} for domain {domain!r}."
             )
         return dict(records[0])
 
@@ -932,6 +1091,162 @@ class StrataWikiServer:
                 fallback_key="subject_id",
             ),
         }
+
+    def _shared_current_snapshots(
+        self,
+        snapshot_status: dict[str, object] | None,
+    ) -> dict[str, object]:
+        if snapshot_status is None:
+            return {}
+        layers = self._snapshot_layers(snapshot_status)
+        fact_status = layers.get("fact")
+        interpretation_status = layers.get("interpretation")
+        return {
+            **(
+                {"fact_snapshot": fact_status["fact_snapshot_id"]}
+                if fact_status is not None
+                else {}
+            ),
+            **(
+                {"interpretation_snapshot": interpretation_status["interpretation_snapshot_id"]}
+                if interpretation_status is not None
+                and "interpretation_snapshot_id" in interpretation_status
+                else {}
+            ),
+        }
+
+    def _interpretation_record_snapshots(
+        self,
+        record: dict[str, object],
+    ) -> dict[str, object]:
+        return {
+            "fact_snapshot": record.get("fact_snapshot_id"),
+            **(
+                {"interpretation_snapshot": record.get("interpretation_snapshot_id")}
+                if record.get("interpretation_snapshot_id")
+                else {}
+            ),
+        }
+
+    def _personal_record_snapshots(
+        self,
+        record: dict[str, object],
+    ) -> dict[str, object]:
+        record_snapshot_ref = dict(record.get("snapshot_ref") or {})
+        return {
+            "fact_snapshot": record_snapshot_ref.get("fact_snapshot_id"),
+            **(
+                {"interpretation_snapshot": record_snapshot_ref.get("interpretation_snapshot_id")}
+                if record_snapshot_ref.get("interpretation_snapshot_id")
+                else {}
+            ),
+            **(
+                {"profile_version": record_snapshot_ref.get("profile_version") or record.get("profile_version")}
+                if (record_snapshot_ref.get("profile_version") or record.get("profile_version"))
+                else {}
+            ),
+        }
+
+    def _personal_cache_state(
+        self,
+        *,
+        current_snapshots: dict[str, object],
+        record_snapshots: dict[str, object],
+    ) -> tuple[str, str]:
+        if (
+            current_snapshots.get("profile_version")
+            and record_snapshots.get("profile_version") != current_snapshots.get("profile_version")
+        ):
+            return "invalid", "profile_version_changed"
+        if (
+            current_snapshots.get("interpretation_snapshot")
+            and record_snapshots.get("interpretation_snapshot") != current_snapshots.get("interpretation_snapshot")
+        ):
+            return "stale", "interpretation_snapshot_changed"
+        if (
+            current_snapshots.get("fact_snapshot")
+            and record_snapshots.get("fact_snapshot") != current_snapshots.get("fact_snapshot")
+        ):
+            return "stale", "fact_snapshot_changed"
+        return "fresh", "match"
+
+    def _interpretation_change_reason(
+        self,
+        *,
+        record: dict[str, object],
+        current_snapshots: dict[str, object],
+        current_partition_ids: list[str],
+    ) -> str:
+        lifecycle_state = str(record["status"])
+        if lifecycle_state == INTERPRETATION_STATUS_PROPOSED:
+            return "proposal_pending_validation"
+        if lifecycle_state == INTERPRETATION_STATUS_VALIDATED:
+            return "validated_waiting_for_publication"
+        if lifecycle_state == INTERPRETATION_STATUS_REJECTED:
+            return "proposal_rejected"
+        if lifecycle_state == INTERPRETATION_STATUS_STALE:
+            return "marked_stale"
+        if lifecycle_state == INTERPRETATION_STATUS_SUPERSEDED:
+            return "superseded"
+        if (
+            current_partition_ids
+            and str(record["id"]) not in current_partition_ids
+            and lifecycle_state == INTERPRETATION_STATUS_PUBLISHED
+        ):
+            return "superseded_by_partition_publication"
+        if (
+            current_snapshots.get("interpretation_snapshot")
+            and record.get("interpretation_snapshot_id") != current_snapshots.get("interpretation_snapshot")
+        ):
+            return "new_interpretation_snapshot"
+        if (
+            current_snapshots.get("fact_snapshot")
+            and record.get("fact_snapshot_id") != current_snapshots.get("fact_snapshot")
+        ):
+            return "new_fact_snapshot"
+        return "current_result"
+
+    def _result_anchor_ids(self, record: dict[str, object]) -> list[str]:
+        anchors: list[str] = []
+        seen: set[str] = set()
+        raw_anchors = record.get("anchors")
+        if not isinstance(raw_anchors, list):
+            body = record.get("body")
+            if isinstance(body, dict) and isinstance(body.get("anchors"), list):
+                raw_anchors = body.get("anchors")
+        if isinstance(raw_anchors, list):
+            for anchor in raw_anchors:
+                if not isinstance(anchor, dict):
+                    continue
+                anchor_id = anchor.get("id")
+                if not isinstance(anchor_id, str) or not anchor_id.strip():
+                    continue
+                normalized = anchor_id.strip()
+                if normalized not in seen:
+                    anchors.append(normalized)
+                    seen.add(normalized)
+        evidence = record.get("evidence")
+        if isinstance(evidence, list):
+            for item in evidence:
+                if not isinstance(item, dict):
+                    continue
+                fact_id = item.get("fact_id")
+                if not isinstance(fact_id, str) or not fact_id.strip():
+                    continue
+                normalized = fact_id.strip()
+                if normalized not in seen:
+                    anchors.append(normalized)
+                    seen.add(normalized)
+        return anchors
+
+    def _job_kind(self, event_type: str) -> str:
+        if event_type == "interpretation_snapshot_build_requested":
+            return "interpretation_build"
+        if event_type == "interpretation_snapshot_published":
+            return "interpretation_publish"
+        if event_type == "fact_ingested":
+            return "fact_ingest"
+        return event_type
 
     def _interpretation_status(self, value: object, *, field: str) -> str:
         if not isinstance(value, str) or not value.strip():

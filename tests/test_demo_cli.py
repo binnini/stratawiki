@@ -41,6 +41,8 @@ def test_demo_cli_lists_tools_without_postgres(tmp_path: Path) -> None:
         "query_personal_knowledge",
         "get_snapshot_status",
         "get_cache_status",
+        "get_job_status",
+        "explain_result",
     ]
     tool_by_name = {tool["name"]: tool for tool in payload}
     assert tool_by_name["ingest_fact_batch"]["contract_status"] == "legacy_transition"

@@ -57,6 +57,8 @@ The repository currently exposes these runtime tools:
 - `query_personal_knowledge`
 - `get_snapshot_status`
 - `get_cache_status`
+- `get_job_status`
+- `explain_result`
 
 Current MVP caveats:
 
@@ -70,6 +72,8 @@ Current MVP caveats:
 - `query_personal_knowledge` now has a runtime-owned profile provisioning path through `upsert_profile_context`
 - `get_snapshot_status` now returns the per-layer registry when called with only `domain`, while partition-filtered calls still return the interpretation layer pointer
 - `get_cache_status` currently inspects saved Personal outputs by comparing their stored snapshot tuple against the current published snapshot tuple and current profile version
+- `get_job_status` currently reports runtime-owned outbox jobs, starting with interpretation build requests
+- `explain_result` currently explains shared Interpretation results and saved Personal outputs; broader rendered-page and graph explainability remains follow-up work
 - the Domain Proposal tools are implemented even though they were not part of the original narrow Week 1 MVP tool list
 
 ### Current External Write Guidance
@@ -1332,6 +1336,9 @@ Input:
 ```json
 {
   "domain": "recruiting",
+  "layer": "personal",
+  "tenant_id": "tenant-1",
+  "user_id": "user-1",
   "result_id": "personal_plan_123"
 }
 ```
@@ -1341,6 +1348,8 @@ Output:
 ```json
 {
   "status": "ok",
+  "layer": "personal",
+  "result_id": "personal_plan_123",
   "explanation": {
     "based_on": {
       "fact_snapshot": "fact_snap_2026_04_15",
@@ -1351,10 +1360,18 @@ Output:
       "interp_123",
       "fact_job_posting_999"
     ],
-    "change_reason": "new interpretation snapshot"
+    "change_reason": "interpretation_snapshot_changed",
+    "cache_state": "stale"
   }
 }
 ```
+
+Current MVP note:
+
+- `layer` may be `personal` or `interpretation`
+- Personal explanations currently require `tenant_id` and `user_id`
+- Personal explanations reuse the same snapshot drift reasons as `get_cache_status`
+- Interpretation explanations currently summarize lifecycle state, current published partition ids, evidence-backed anchors, and snapshot drift against the current shared registry
 
 ## Admin Tools
 
@@ -1394,20 +1411,18 @@ Output:
   "status": "ok",
   "job": {
     "job_id": "job_123",
-    "state": "running",
-    "kind": "interpretation_publish"
+    "state": "processed",
+    "kind": "interpretation_build",
+    "event_type": "interpretation_snapshot_build_requested"
   }
 }
 ```
 
-Output:
+Current MVP note:
 
-```json
-{
-  "status": "ok",
-  "job_id": "job_123"
-}
-```
+- the first implementation reads the runtime-owned outbox store directly
+- it currently reports queued or processed interpretation build jobs
+- broader job families will show up here as the worker surface expands
 
 ### `mark_records_stale`
 

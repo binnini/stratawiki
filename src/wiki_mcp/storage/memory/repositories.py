@@ -399,6 +399,9 @@ class InMemoryOutboxRepository:
             stored_ids.append(event_id)
         return stored_ids
 
+    def get_event(self, event_id: str) -> dict[str, Any]:
+        return dict(self._get_event(event_id))
+
     def claim_pending(
         self,
         *,

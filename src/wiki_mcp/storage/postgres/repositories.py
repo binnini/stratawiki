@@ -1775,6 +1775,33 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
 
 
 class PostgresOutboxRepository(PostgresRepositoryBase):
+    def get_event(self, event_id: str) -> OutboxEventRecord:
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    idempotency_key,
+                    event_type,
+                    aggregate_layer,
+                    aggregate_id,
+                    payload_json,
+                    status,
+                    attempt_count,
+                    available_at,
+                    claimed_at,
+                    processed_at,
+                    last_error
+                FROM ops.outbox_event
+                WHERE id = %s
+                """,
+                (event_id,),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise KeyError(f"Unknown outbox event: {event_id}")
+        return self._row_to_outbox_event_record(row)
+
     def append_events(self, events: list[OutboxEvent]) -> list[str]:
         stored_ids: list[str] = []
         with managed_cursor(self.connection) as cursor:

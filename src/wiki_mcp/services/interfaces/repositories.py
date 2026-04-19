@@ -220,6 +220,9 @@ class OutboxRepository(Protocol):
     def append_events(self, events: list[OutboxEvent]) -> list[str]:
         """Append outbox events and return stored event ids."""
 
+    def get_event(self, event_id: str) -> OutboxEventRecord:
+        """Return one stored outbox event for operator visibility."""
+
     def claim_pending(
         self,
         *,

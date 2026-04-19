@@ -370,6 +370,17 @@ Current baseline:
 - `cache_state` can currently be `fresh`, `stale`, `invalid`, or `missing`
 - `profile_version` drift is treated as `invalid`
 
+## Job and Result Visibility
+
+The runtime now exposes a first operator-facing job and explainability surface.
+
+Current baseline:
+
+- `get_job_status` reads the runtime-owned outbox job record for one background request, starting with interpretation build jobs
+- `explain_result` explains one saved Personal output or shared Interpretation result in terms of snapshots, anchors, lifecycle, and change reason
+- Personal explanations currently mirror `get_cache_status` snapshot drift reasons
+- Interpretation explanations currently summarize lifecycle state, current shared partition publication, and evidence-backed fact anchors
+
 ## Key Documents
 
 - `docs/mcp-architecture.md`

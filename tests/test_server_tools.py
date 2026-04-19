@@ -291,6 +291,12 @@ class FakeOutboxRepository:
             stored_ids.append(event_id)
         return stored_ids
 
+    def get_event(self, event_id: str) -> dict[str, Any]:
+        for stored in self.events:
+            if stored["id"] == event_id:
+                return dict(stored)
+        raise KeyError(event_id)
+
     def claim_pending(
         self,
         *,
@@ -651,6 +657,8 @@ def test_server_lists_mvp_tools(tmp_path: Path) -> None:
         "query_personal_knowledge",
         "get_snapshot_status",
         "get_cache_status",
+        "get_job_status",
+        "explain_result",
     ]
     tool_by_name = {tool.name: tool for tool in tools}
     assert tool_by_name["ingest_fact_batch"].contract_status == "legacy_transition"
@@ -1047,6 +1055,122 @@ def test_server_get_cache_status_marks_missing_record(tmp_path: Path) -> None:
             "profile_version": "profile:v1",
         },
     }
+
+
+def test_server_get_job_status_tracks_background_job_lifecycle(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    queued = server.call_tool(
+        "build_interpretation_snapshot",
+        {
+            "domain": "recruiting",
+            "partition": {"family": "market_trends", "segment": "backend-japan-midlevel"},
+            "fact_ids": ["fact:job:1"],
+            "fact_snapshot": "fact_snap:seed",
+            "model_profile": "balanced_default",
+            "publish": True,
+            "execution_mode": "background",
+        },
+    )
+    pending = server.call_tool("get_job_status", {"job_id": queued["job_id"]})
+    worker = run_cli(
+        ["worker", "--limit", "5"],
+        server_factory=lambda **kwargs: server,
+        runtime_validator=lambda **kwargs: {"status": "ok"},
+        stdout=StringIO(),
+        stderr=StringIO(),
+    )
+    processed = server.call_tool("get_job_status", {"job_id": queued["job_id"]})
+
+    assert worker == 0
+    assert pending["job"]["job_id"] == queued["job_id"]
+    assert pending["job"]["state"] == "pending"
+    assert pending["job"]["kind"] == "interpretation_build"
+    assert pending["job"]["payload"]["partition"]["family"] == "market_trend"
+    assert processed["job"]["state"] == "processed"
+    assert processed["job"]["processed_at"] == "2026-04-18T00:10:00Z"
+    assert processed["job"]["last_error"] is None
+
+
+def test_server_explain_result_reports_personal_snapshot_drift_and_anchors(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+    server.bootstrap.snapshot_repository.status_by_layer["interpretation"] = {
+        "layer": "interpretation",
+        "domain": "recruiting",
+        "current_snapshot_id": "interp_snap:new",
+        "fact_snapshot_id": "fact_snap:seed",
+        "interpretation_snapshot_id": "interp_snap:new",
+        "published_at": "2026-04-18T00:20:00Z",
+    }
+
+    explanation = server.call_tool(
+        "explain_result",
+        {
+            "domain": "recruiting",
+            "layer": "personal",
+            "result_id": "personal:1",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+        },
+    )
+
+    assert explanation["status"] == "ok"
+    assert explanation["layer"] == "personal"
+    assert explanation["explanation"]["change_reason"] == "interpretation_snapshot_changed"
+    assert explanation["explanation"]["cache_state"] == "stale"
+    assert explanation["explanation"]["anchors"] == ["interp:published:1", "fact:job:1"]
+    assert explanation["explanation"]["based_on"] == {
+        "fact_snapshot": "fact_snap:seed",
+        "interpretation_snapshot": "interp_snap:seed",
+        "profile_version": "profile:v1",
+    }
+    assert explanation["explanation"]["current_snapshots"]["interpretation_snapshot"] == "interp_snap:new"
+
+
+def test_server_explain_result_reports_interpretation_publication_context(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    build = server.call_tool(
+        "build_interpretation_snapshot",
+        {
+            "domain": "recruiting",
+            "partition": {"family": "market_trends", "segment": "backend-japan-midlevel"},
+            "fact_ids": ["fact:job:1"],
+            "fact_snapshot": "fact_snap:seed",
+            "model_profile": "balanced_default",
+            "publish": True,
+        },
+    )
+    published = server.bootstrap.interpretation_repository.list_records(
+        domain="recruiting",
+        scope_ref={"scope": "shared"},
+        family="market_trend",
+        subject_id="backend-japan-midlevel",
+        statuses=["published"],
+        limit=10,
+    )[0]
+
+    explanation = server.call_tool(
+        "explain_result",
+        {
+            "domain": "recruiting",
+            "layer": "interpretation",
+            "result_id": published["id"],
+        },
+    )
+
+    assert build["status"] == "ok"
+    assert explanation["status"] == "ok"
+    assert explanation["layer"] == "interpretation"
+    assert explanation["explanation"]["change_reason"] == "current_result"
+    assert explanation["explanation"]["lifecycle_state"] == "published"
+    assert explanation["explanation"]["review_state"] == "published"
+    assert explanation["explanation"]["anchors"] == ["fact:job:1"]
+    assert explanation["explanation"]["based_on"]["fact_snapshot"] == "fact_snap:seed"
+    assert (
+        explanation["explanation"]["current_snapshots"]["interpretation_snapshot"]
+        == build["interpretation_snapshot"]
+    )
 
 
 def test_server_validates_and_ingests_external_domain_proposals(tmp_path: Path) -> None:
