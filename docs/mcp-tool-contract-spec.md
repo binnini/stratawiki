@@ -58,6 +58,7 @@ The repository currently exposes these runtime tools:
 - `get_snapshot_status`
 - `get_cache_status`
 - `get_graph_neighbors`
+- `get_dependency_impact`
 - `get_job_status`
 - `explain_result`
 
@@ -74,6 +75,7 @@ Current MVP caveats:
 - `get_snapshot_status` now returns the per-layer registry when called with only `domain`, while partition-filtered calls still return the interpretation layer pointer
 - `get_cache_status` currently inspects saved Personal outputs by comparing their stored snapshot tuple against the current published snapshot tuple and current profile version
 - `get_graph_neighbors` currently exposes direct Fact, Interpretation, and Personal neighbors using existing evidence and anchor metadata
+- `get_dependency_impact` currently derives impact from existing evidence and anchor metadata and marks Personal records stale when an interpretation publish supersedes anchored shared records
 - `get_job_status` currently reports runtime-owned outbox jobs, starting with interpretation build requests
 - `explain_result` currently explains shared Interpretation results and saved Personal outputs; broader rendered-page and graph explainability remains follow-up work
 - the Domain Proposal tools are implemented even though they were not part of the original narrow Week 1 MVP tool list
@@ -1215,17 +1217,26 @@ Output:
 ```json
 {
   "status": "ok",
-  "affected_interpretations": [
+  "record_id": "job_posting_123",
+  "record_type": "fact",
+  "affected_interpretation_ids": [
     "interp_123"
   ],
-  "affected_rendered_pages": [
+  "affected_rendered_paths": [
     "wiki/shared/market/backend-japan-midlevel.md"
   ],
-  "affected_personal_records": [
+  "affected_personal_ids": [
     "personal_plan_123"
   ]
 }
 ```
+
+Current MVP note:
+
+- `record_type` currently supports `fact` and `interpretation`
+- Fact impact scans shared Interpretation evidence plus saved Personal anchors
+- Interpretation impact currently reports the shared rendered page path plus saved Personal anchors
+- when a new interpretation publish supersedes prior shared interpretations, anchored Personal records are marked `stale` immediately
 
 ### `build_graph_artifacts`
 

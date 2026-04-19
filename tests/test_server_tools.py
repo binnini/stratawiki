@@ -181,7 +181,7 @@ class FakePersonalRepository:
         self,
         *,
         domain: str,
-        scope_ref: dict[str, Any],
+        scope_ref: dict[str, Any] | None,
         interpretation_ids: list[str],
         fact_ids: list[str],
         limit: int,
@@ -192,7 +192,7 @@ class FakePersonalRepository:
         for record in self.records.values():
             if record["domain"] != domain:
                 continue
-            if record.get("scope_ref") != scope_ref:
+            if scope_ref is not None and record.get("scope_ref") != scope_ref:
                 continue
             body = record.get("body")
             raw_anchors = body.get("anchors") if isinstance(body, dict) else []
@@ -680,6 +680,7 @@ def test_server_lists_mvp_tools(tmp_path: Path) -> None:
         "get_snapshot_status",
         "get_cache_status",
         "get_graph_neighbors",
+        "get_dependency_impact",
         "get_job_status",
         "explain_result",
     ]
@@ -1148,6 +1149,51 @@ def test_server_get_graph_neighbors_returns_fact_reverse_neighbors(tmp_path: Pat
             "summary": "Anchored to shared context",
         },
     ]
+
+
+def test_server_get_dependency_impact_reports_fact_downstream_records(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    impact = server.call_tool(
+        "get_dependency_impact",
+        {
+            "domain": "recruiting",
+            "record_id": "fact:job:1",
+            "record_type": "fact",
+        },
+    )
+
+    assert impact == {
+        "status": "ok",
+        "record_id": "fact:job:1",
+        "record_type": "fact",
+        "affected_interpretation_ids": ["interp:published:1"],
+        "affected_rendered_paths": [
+            "wiki/shared/interpretations/market_trend/backend-japan-midlevel.md"
+        ],
+        "affected_personal_ids": ["personal:1"],
+    }
+
+
+def test_server_interpretation_publish_marks_anchored_personal_records_stale(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    result = server.call_tool(
+        "build_interpretation_snapshot",
+        {
+            "domain": "recruiting",
+            "partition": {"family": "market_trends", "segment": "backend-japan-midlevel"},
+            "fact_ids": ["fact:job:1"],
+            "fact_snapshot": "fact_snap:seed",
+            "model_profile": "balanced_default",
+            "publish": True,
+        },
+    )
+
+    assert result["status"] == "ok"
+    assert result["records_superseded"] == 1
+    assert result["stale_personal_ids"] == ["personal:1"]
+    assert server.bootstrap.personal_repository.records["personal:1"]["status"] == "stale"
 
 
 def test_server_get_job_status_tracks_background_job_lifecycle(tmp_path: Path) -> None:

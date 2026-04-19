@@ -271,7 +271,7 @@ class InMemoryPersonalRepository:
         self,
         *,
         domain: str,
-        scope_ref: dict[str, Any],
+        scope_ref: dict[str, Any] | None,
         interpretation_ids: list[str],
         fact_ids: list[str],
         limit: int,
@@ -285,8 +285,13 @@ class InMemoryPersonalRepository:
             dict(record)
             for record in self.records.values()
             if record["domain"] == domain
-            and record["scope_ref"].get("tenant_id") == scope_ref.get("tenant_id")
-            and record["scope_ref"].get("user_id") == scope_ref.get("user_id")
+            and (
+                scope_ref is None
+                or (
+                    record["scope_ref"].get("tenant_id") == scope_ref.get("tenant_id")
+                    and record["scope_ref"].get("user_id") == scope_ref.get("user_id")
+                )
+            )
             and any(
                 isinstance(anchor, dict)
                 and (

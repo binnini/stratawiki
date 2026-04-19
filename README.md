@@ -381,6 +381,17 @@ Current baseline:
 - Interpretation neighbors currently come from evidence fact ids and optionally user-scoped Personal anchors
 - Fact neighbors currently come from shared Interpretation evidence scans and optionally user-scoped Personal anchors
 
+## Dependency Impact and Stale Marking
+
+The runtime now exposes a first downstream impact surface and uses it to mark saved Personal outputs stale after shared interpretation refreshes.
+
+Current baseline:
+
+- `get_dependency_impact` reports downstream Interpretation ids, rendered shared paths, and Personal ids for one changed Fact or Interpretation record
+- Fact impact currently comes from shared Interpretation evidence and saved Personal anchors
+- Interpretation impact currently comes from the rendered shared page plus saved Personal anchors
+- when a new shared interpretation publish supersedes older shared records, anchored Personal outputs are immediately marked `stale`
+
 ## Job and Result Visibility
 
 The runtime now exposes a first operator-facing job and explainability surface.

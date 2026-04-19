@@ -1313,7 +1313,7 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
         self,
         *,
         domain: str,
-        scope_ref: ScopeRef,
+        scope_ref: ScopeRef | None,
         interpretation_ids: list[str],
         fact_ids: list[str],
         limit: int,
@@ -1321,7 +1321,11 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
         if limit <= 0 or (not interpretation_ids and not fact_ids):
             return []
 
-        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        if scope_ref is None:
+            scope_sql = "TRUE"
+            scope_params = []
+        else:
+            scope_sql, scope_params = self._scope_filter_sql(scope_ref)
         anchor_clauses: list[str] = []
         params: list[Any] = [domain, *scope_params]
         if interpretation_ids:

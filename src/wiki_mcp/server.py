@@ -301,6 +301,22 @@ def _tool_definitions() -> list[ToolDefinition]:
             },
         ),
         ToolDefinition(
+            name="get_dependency_impact",
+            group="graph",
+            status="mvp",
+            description="Return downstream records affected by one Fact or Interpretation change.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["domain", "record_id", "record_type"],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "record_id": {"type": "string"},
+                    "record_type": {"type": "string"},
+                },
+            },
+        ),
+        ToolDefinition(
             name="get_job_status",
             group="operator",
             status="mvp",
@@ -383,6 +399,8 @@ class StrataWikiServer:
             return self._get_cache_status(args)
         if name == "get_graph_neighbors":
             return self._get_graph_neighbors(args)
+        if name == "get_dependency_impact":
+            return self._get_dependency_impact(args)
         if name == "get_job_status":
             return self._get_job_status(args)
         if name == "explain_result":
@@ -552,6 +570,7 @@ class StrataWikiServer:
             raise ValueError("No interpretation proposals were generated for the supplied partition.")
         interpretation_snapshot = ""
         records_superseded = 0
+        stale_personal_ids: list[str] = []
         if publish:
             for proposal in proposals:
                 publication = self.bootstrap.interpretation_publication_service.publish_proposal(
@@ -562,12 +581,23 @@ class StrataWikiServer:
                     raise ValueError(f"Failed to publish interpretation proposal {proposal['id']}.")
                 interpretation_snapshot = publication["interpretation_snapshot_id"]
                 records_superseded += len(publication["superseded_ids"])
+                stale_personal_ids.extend(
+                    self._mark_personal_records_stale_for_interpretation_refresh(
+                        domain=domain,
+                        publication=publication,
+                    )
+                )
         return {
             "status": "ok",
             "interpretation_snapshot": interpretation_snapshot,
             "records_created": len(proposals),
             "records_updated": 0,
             "records_superseded": records_superseded,
+            **(
+                {"stale_personal_ids": self._dedupe_strings(stale_personal_ids)}
+                if stale_personal_ids
+                else {}
+            ),
         }
 
     def _build_interpretation_snapshot_requested_event(
@@ -667,6 +697,7 @@ class StrataWikiServer:
 
         published_proposal_ids: list[str] = []
         superseded_ids: list[str] = []
+        stale_personal_ids: list[str] = []
         failures: list[dict[str, object]] = []
         interpretation_snapshot = ""
         for candidate in candidates:
@@ -686,6 +717,12 @@ class StrataWikiServer:
             published_proposal_ids.append(str(candidate["id"]))
             superseded_ids.extend(str(record_id) for record_id in publication["superseded_ids"])
             interpretation_snapshot = str(publication["interpretation_snapshot_id"])
+            stale_personal_ids.extend(
+                self._mark_personal_records_stale_for_interpretation_refresh(
+                    domain=domain,
+                    publication=publication,
+                )
+            )
 
         return {
             "status": "ok" if not failures else "partial",
@@ -694,6 +731,11 @@ class StrataWikiServer:
             "published_proposal_ids": published_proposal_ids,
             **({"interpretation_snapshot": interpretation_snapshot} if interpretation_snapshot else {}),
             "superseded_ids": superseded_ids,
+            **(
+                {"stale_personal_ids": self._dedupe_strings(stale_personal_ids)}
+                if stale_personal_ids
+                else {}
+            ),
             **({"failures": failures} if failures else {}),
         }
 
@@ -874,6 +916,25 @@ class StrataWikiServer:
             "node_id": node_id,
             "layer": layer,
             "neighbors": neighbors[:limit],
+        }
+
+    def _get_dependency_impact(self, arguments: dict[str, object]) -> dict[str, object]:
+        domain = self._required_string(arguments, "domain")
+        record_id = self._required_string(arguments, "record_id")
+        record_type = self._required_string(arguments, "record_type").lower()
+        if record_type == "fact":
+            impact = self._dependency_impact_for_fact(domain=domain, record_id=record_id)
+        elif record_type == "interpretation":
+            impact = self._dependency_impact_for_interpretation(domain=domain, record_id=record_id)
+        else:
+            raise ValueError("record_type must be one of ['fact', 'interpretation'].")
+        return {
+            "status": "ok",
+            "record_id": record_id,
+            "record_type": record_type,
+            "affected_interpretation_ids": impact["affected_interpretation_ids"],
+            "affected_rendered_paths": impact["affected_rendered_paths"],
+            "affected_personal_ids": impact["affected_personal_ids"],
         }
 
     def _get_job_status(self, arguments: dict[str, object]) -> dict[str, object]:
@@ -1126,8 +1187,61 @@ class StrataWikiServer:
                     direction="incoming",
                 )
                 for item in personal_records
-            )
+        )
         return neighbors[:limit]
+
+    def _dependency_impact_for_fact(
+        self,
+        *,
+        domain: str,
+        record_id: str,
+    ) -> dict[str, object]:
+        fact_records = self.bootstrap.fact_repository.get_by_ids([record_id], {"scope": "shared"})
+        if not fact_records or fact_records[0].get("domain") != domain:
+            raise KeyError(f"Unknown fact node {record_id!r} for domain {domain!r}.")
+        interpretation_records = self.bootstrap.interpretation_repository.list_records(
+            domain=domain,
+            scope_ref={"scope": "shared"},
+            statuses=list(INTERPRETATION_LIFECYCLE_STATUSES),
+            limit=500,
+        )
+        affected_interpretations = [
+            dict(record)
+            for record in interpretation_records
+            if record_id in self._result_anchor_ids(record)
+        ]
+        personal_records = self.bootstrap.personal_repository.search_by_anchors(
+            domain=domain,
+            scope_ref=None,
+            interpretation_ids=[],
+            fact_ids=[record_id],
+            limit=500,
+        )
+        return {
+            "affected_interpretation_ids": [str(record["id"]) for record in affected_interpretations],
+            "affected_rendered_paths": self._rendered_paths_for_interpretations(affected_interpretations),
+            "affected_personal_ids": [str(record["id"]) for record in personal_records],
+        }
+
+    def _dependency_impact_for_interpretation(
+        self,
+        *,
+        domain: str,
+        record_id: str,
+    ) -> dict[str, object]:
+        record = self._require_shared_interpretation_record(domain=domain, interpretation_id=record_id)
+        personal_records = self.bootstrap.personal_repository.search_by_anchors(
+            domain=domain,
+            scope_ref=None,
+            interpretation_ids=[record_id],
+            fact_ids=[],
+            limit=500,
+        )
+        return {
+            "affected_interpretation_ids": [],
+            "affected_rendered_paths": self._rendered_paths_for_interpretations([record]),
+            "affected_personal_ids": [str(item["id"]) for item in personal_records],
+        }
 
     def _explain_interpretation_result(
         self,
@@ -1212,6 +1326,44 @@ class StrataWikiServer:
             },
         }
 
+    def _mark_personal_records_stale_for_interpretation_refresh(
+        self,
+        *,
+        domain: str,
+        publication: dict[str, object],
+    ) -> list[str]:
+        superseded_ids = [str(item) for item in publication.get("superseded_ids", []) if str(item)]
+        if not superseded_ids:
+            return []
+        personal_records = self.bootstrap.personal_repository.search_by_anchors(
+            domain=domain,
+            scope_ref=None,
+            interpretation_ids=superseded_ids,
+            fact_ids=[],
+            limit=500,
+        )
+        stale_ids: list[str] = []
+        for record in personal_records:
+            stale_ids.append(str(record["id"]))
+            if str(record.get("status") or "") == "stale":
+                continue
+            updated = dict(record)
+            updated["status"] = "stale"
+            self.bootstrap.personal_repository.save_record(updated)
+        stale_ids = self._dedupe_strings(stale_ids)
+        if stale_ids and self.bootstrap.outbox_repository is not None:
+            self.bootstrap.outbox_repository.append_events(
+                [
+                    self._build_personal_records_marked_stale_event(
+                        domain=domain,
+                        publication=publication,
+                        superseded_ids=superseded_ids,
+                        stale_ids=stale_ids,
+                    )
+                ]
+            )
+        return stale_ids
+
     def _require_interpretation_record(
         self,
         *,
@@ -1258,6 +1410,31 @@ class StrataWikiServer:
             "title": record.get("title"),
             "summary": record.get("summary"),
             "computed_at": record.get("computed_at"),
+        }
+
+    def _build_personal_records_marked_stale_event(
+        self,
+        *,
+        domain: str,
+        publication: dict[str, object],
+        superseded_ids: list[str],
+        stale_ids: list[str],
+    ) -> dict[str, object]:
+        record = dict(publication["record"])
+        outbox_event_ids = [str(item) for item in publication.get("outbox_event_ids", []) if str(item)]
+        return {
+            "event_type": "personal_records_marked_stale",
+            "aggregate_layer": "personal",
+            "aggregate_id": stale_ids[0],
+            "payload": {
+                "domain": domain,
+                "fact_snapshot_id": record["fact_snapshot_id"],
+                "interpretation_snapshot_id": record["interpretation_snapshot_id"],
+                "personal_record_ids": stale_ids,
+                "triggering_interpretation_ids": superseded_ids,
+                "source_event_id": outbox_event_ids[0] if outbox_event_ids else record["id"],
+                "scope": record["scope_ref"]["scope"],
+            },
         }
 
     def _proposal_review_state(self, lifecycle_state: str) -> str:
@@ -1512,6 +1689,32 @@ class StrataWikiServer:
             return "personal"
         raise ValueError("Unable to infer graph node layer from node_id; provide layer explicitly.")
 
+    def _rendered_paths_for_interpretations(
+        self,
+        records: list[dict[str, object]],
+    ) -> list[str]:
+        paths: list[str] = []
+        for record in records:
+            path = self._rendered_path_for_interpretation(record)
+            if path is not None:
+                paths.append(path)
+        return self._dedupe_strings(paths)
+
+    def _rendered_path_for_interpretation(
+        self,
+        record: dict[str, object],
+    ) -> str | None:
+        render_hints = record.get("render_hints")
+        if not isinstance(render_hints, dict):
+            return None
+        family = render_hints.get("page_family") or record.get("family")
+        key = render_hints.get("page_key") or record.get("subject_id")
+        if not isinstance(family, str) or not family.strip():
+            return None
+        if not isinstance(key, str) or not key.strip():
+            return None
+        return f"wiki/shared/interpretations/{family.strip()}/{key.strip()}.md"
+
     def _job_kind(self, event_type: str) -> str:
         if event_type == "interpretation_snapshot_build_requested":
             return "interpretation_build"
@@ -1563,6 +1766,16 @@ class StrataWikiServer:
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{key} must be a non-empty string when provided.")
         return value.strip()
+
+    def _dedupe_strings(self, values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for value in values:
+            if value in seen:
+                continue
+            ordered.append(value)
+            seen.add(value)
+        return ordered
 
     def _scope_ref(self, arguments: dict[str, object], *, default_scope: str) -> dict[str, str]:
         scope = str(arguments.get("scope") or default_scope)

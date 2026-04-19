@@ -124,12 +124,12 @@ class PersonalRepository(Protocol):
         self,
         *,
         domain: str,
-        scope_ref: ScopeRef,
+        scope_ref: ScopeRef | None,
         interpretation_ids: list[str],
         fact_ids: list[str],
         limit: int,
     ) -> list[PersonalRecord]:
-        """Search Personal records by persisted anchor targets."""
+        """Search Personal records by persisted anchor targets, optionally across all scopes."""
 
     def save_record(self, record: PersonalRecord) -> str:
         """Persist one Personal metadata record and return its id."""
