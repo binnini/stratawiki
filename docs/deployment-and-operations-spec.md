@@ -125,6 +125,7 @@ Current local baseline:
 - this gives external clients a stable process boundary without giving them direct database access
 - it is acceptable as the first long-lived runtime contract before a later networked deployment surface is chosen
 - the repository now also supports a minimal worker entrypoint through `stratawiki worker --limit N`
+- the repository now ships `.env.example` plus `stratawiki doctor` so another developer can validate the non-demo runtime before starting server and worker roles
 
 ### Single-Node Shared Environment
 
@@ -141,6 +142,15 @@ Goal:
 
 The single-node shared environment may still use the stdio runtime boundary when one upstream producer launches and owns the StrataWiki process.
 Later networked or queue-backed deployment surfaces can be added without changing ownership of canonical state.
+
+Current first deployment target:
+
+- `Dockerfile`
+- `docker-compose.yml`
+- one Postgres container
+- one interactive stdio server container
+- one looping worker container
+- shared render volume for filesystem artifacts
 
 ### Multi-Process Production-Like Environment
 
@@ -300,6 +310,7 @@ Current implementation baseline:
 
 - queued interpretation build requests use the outbox repository as the first job carrier
 - `stratawiki worker` claims queued interpretation build requests and executes them out of band
+- `stratawiki doctor` can validate that the Postgres bootstrap relations exist before the worker starts
 
 Heavyweight event infrastructure is not required on day one.
 
@@ -409,6 +420,14 @@ For early implementation, a reasonable target is:
 - optional local markdown artifact and index storage for development
 
 This is enough to validate the architecture without overcommitting to heavyweight infrastructure.
+
+Current repository baseline:
+
+- copy `.env.example` to `.env`
+- run `stratawiki init-db`
+- run `stratawiki doctor`
+- start one stdio server and one worker against the same durable store
+- use `docker compose` as the first checked-in deployment target for that baseline
 
 ## Open Deployment Questions
 

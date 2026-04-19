@@ -93,6 +93,7 @@ def test_serve_cli_processes_long_lived_runtime_requests() -> None:
     exit_code = run_cli(
         ["serve"],
         server_factory=lambda **kwargs: fake_server,
+        runtime_validator=lambda **kwargs: {"status": "ok"},
         stdin=stdin,
         stdout=stdout,
         stderr=stderr,
@@ -143,6 +144,7 @@ def test_serve_cli_emits_structured_request_errors_and_keeps_running() -> None:
     exit_code = run_cli(
         ["serve"],
         server_factory=lambda **kwargs: fake_server,
+        runtime_validator=lambda **kwargs: {"status": "ok"},
         stdin=stdin,
         stdout=stdout,
         stderr=stderr,

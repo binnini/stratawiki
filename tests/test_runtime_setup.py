@@ -164,6 +164,54 @@ def test_init_db_cli_uses_database_bootstrapper_without_creating_server() -> Non
     assert stderr.getvalue() == ""
 
 
+def test_doctor_cli_uses_runtime_validator_without_creating_server() -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+    captured: dict[str, object] = {}
+
+    def fake_runtime_validator(
+        *,
+        database_url: str | None,
+        render_root: str,
+        domain_pack_paths: list[str] | None,
+        require_bootstrap_tables: bool,
+    ) -> dict[str, object]:
+        captured["database_url"] = database_url
+        captured["render_root"] = render_root
+        captured["domain_pack_paths"] = domain_pack_paths
+        captured["require_bootstrap_tables"] = require_bootstrap_tables
+        return {"status": "ok", "render_root": render_root}
+
+    exit_code = run_cli(
+        [
+            "--database-url",
+            "postgresql://example/test",
+            "--render-root",
+            "data-runtime",
+            "doctor",
+        ],
+        server_factory=lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("server should not be created")
+        ),
+        runtime_validator=fake_runtime_validator,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+    assert exit_code == 0
+    assert captured == {
+        "database_url": "postgresql://example/test",
+        "render_root": "data-runtime",
+        "domain_pack_paths": None,
+        "require_bootstrap_tables": True,
+    }
+    assert json.loads(stdout.getvalue()) == {
+        "render_root": "data-runtime",
+        "status": "ok",
+    }
+    assert stderr.getvalue() == ""
+
+
 def test_seed_mvp_cli_uses_seed_runner_and_closes_server() -> None:
     stdout = StringIO()
     stderr = StringIO()

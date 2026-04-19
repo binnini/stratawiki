@@ -912,6 +912,7 @@ def test_worker_cli_processes_queued_interpretation_build_jobs(tmp_path: Path) -
     worker_exit_code = run_cli(
         ["worker", "--limit", "5"],
         server_factory=lambda **kwargs: server,
+        runtime_validator=lambda **kwargs: {"status": "ok"},
         stdout=worker_stdout,
         stderr=worker_stderr,
     )

@@ -92,6 +92,16 @@ The runtime can also load Domain Pack artifacts from configured file paths durin
 
 The repository now includes a checked-in bootstrap SQL artifact at `config/postgres/bootstrap.sql`.
 
+The repository now also includes a checked-in `.env.example` for non-demo local runs and the Docker/Compose baseline.
+
+Copy it first when you want a shared server/worker environment:
+
+```bash
+cp .env.example .env
+```
+
+For bare-metal local development, update `DATABASE_URL` from the container host `postgres` to your local host, for example `localhost`.
+
 Create a local database first, then initialize the schema from the repository:
 
 ```bash
@@ -100,6 +110,15 @@ createdb stratawiki_dev
 /Users/yebin/venv/bin/python -m wiki_mcp.cli \
   --database-url postgresql://stratawiki:stratawiki@localhost:5432/stratawiki_dev \
   init-db
+```
+
+Validate the non-demo runtime before starting the server or worker:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --database-url postgresql://stratawiki:stratawiki@localhost:5432/stratawiki_dev \
+  --render-root data-dev \
+  doctor
 ```
 
 Load the sample MVP seed into the real storage path:
@@ -134,6 +153,53 @@ If your existing venv was created before the Postgres runtime dependency was add
 ```bash
 /Users/yebin/venv/bin/python -m pip install -e .
 ```
+
+Current baseline:
+
+- `stratawiki doctor` validates the bootstrap SQL path, render root, configured Domain Pack paths, and Postgres bootstrap tables
+- `stratawiki serve` and `stratawiki worker` now run that validation automatically before startup
+- `STRATAWIKI_DOMAIN_PACK_PATHS` and `STRATAWIKI_ACTIVE_DOMAIN_PACKS` can now come from the environment without repeating CLI flags
+
+## Docker Compose Baseline
+
+The first repository-provided deployment target is `Dockerfile + docker-compose.yml`.
+
+Bring up Postgres first:
+
+```bash
+docker compose up -d postgres
+```
+
+Initialize the schema and validate the runtime:
+
+```bash
+docker compose run --rm init-db
+docker compose run --rm doctor
+```
+
+Seed the sample MVP data:
+
+```bash
+docker compose run --rm seed-mvp
+```
+
+Start the worker loop in one terminal:
+
+```bash
+docker compose up worker
+```
+
+Start the stdio server in another terminal:
+
+```bash
+docker compose run --rm server
+```
+
+Important notes:
+
+- the server container stays interactive because the current long-lived runtime contract is stdio, not HTTP
+- the Compose baseline is meant to validate server and worker separation on one machine before later networked deployment choices are made
+- rendered pages are written to the shared `stratawiki-render` volume
 
 ## External Write Contract
 

@@ -7,16 +7,20 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TextIO
 
-from wiki_mcp.demo import DEFAULT_DEMO_SEED_PATH
 from wiki_mcp.runtime_protocol import (
     list_tools_payload,
     run_stdio_runtime,
     show_tool_payload,
 )
 from wiki_mcp.runtime_setup import (
-    DEFAULT_POSTGRES_BOOTSTRAP_PATH,
     apply_postgres_bootstrap,
     run_mvp_seed_flow,
+)
+from wiki_mcp.runtime_validation import (
+    resolve_bootstrap_sql_path,
+    resolve_render_root,
+    resolve_seed_path,
+    validate_runtime_prerequisites,
 )
 from wiki_mcp.server import StrataWikiServer, build_server
 from wiki_mcp.worker import run_worker_once
@@ -26,6 +30,7 @@ ServerFactory = Callable[..., StrataWikiServer]
 DatabaseBootstrapper = Callable[..., dict[str, object]]
 MvpSeedRunner = Callable[..., dict[str, object]]
 WorkerRunner = Callable[..., dict[str, object]]
+RuntimeValidator = Callable[..., dict[str, object]]
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -39,7 +44,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--render-root",
-        default="data",
+        default=str(resolve_render_root()),
         help="Render root passed into the StrataWiki bootstrap.",
     )
     parser.add_argument(
@@ -49,19 +54,19 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--seed-path",
-        default=str(DEFAULT_DEMO_SEED_PATH),
+        default=str(resolve_seed_path()),
         help="Seed path used by demo mode, demo-mvp, and seed-mvp.",
     )
     parser.add_argument(
         "--domain-pack-path",
         action="append",
-        default=[],
+        default=None,
         help="Path to a Domain Pack artifact to load during bootstrap. Repeat to load multiple packs.",
     )
     parser.add_argument(
         "--activate-domain-pack",
         action="append",
-        default=[],
+        default=None,
         help="Explicit active domain pack mapping in domain=version form. Repeat for multiple domains.",
     )
 
@@ -94,8 +99,18 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     init_db.add_argument(
         "--bootstrap-sql",
-        default=str(DEFAULT_POSTGRES_BOOTSTRAP_PATH),
+        default=str(resolve_bootstrap_sql_path()),
         help="Path to the SQL file used to initialize the local Postgres schema.",
+    )
+
+    doctor = subparsers.add_parser(
+        "doctor",
+        help="Validate the non-demo runtime prerequisites for server and worker startup.",
+    )
+    doctor.add_argument(
+        "--skip-schema-check",
+        action="store_true",
+        help="Skip the Postgres bootstrap table check and only validate connectivity and paths.",
     )
 
     subparsers.add_parser(
@@ -127,6 +142,7 @@ def run_cli(
     database_bootstrapper: DatabaseBootstrapper = apply_postgres_bootstrap,
     mvp_seed_runner: MvpSeedRunner = run_mvp_seed_flow,
     worker_runner: WorkerRunner = run_worker_once,
+    runtime_validator: RuntimeValidator = validate_runtime_prerequisites,
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
@@ -139,9 +155,7 @@ def run_cli(
 
     try:
         tool_arguments = _load_tool_arguments(args)
-        active_domain_pack_versions = _parse_active_domain_pack_versions(
-            args.activate_domain_pack
-        )
+        active_domain_pack_versions = _parse_active_domain_pack_versions(args.activate_domain_pack)
     except ValueError as exc:
         parser.exit(2, f"{parser.prog}: error: {exc}\n")
         return 2
@@ -151,6 +165,9 @@ def run_cli(
         return 2
     if args.command == "init-db" and args.demo:
         parser.exit(2, f"{parser.prog}: error: init-db targets the Postgres runtime and cannot be combined with --demo.\n")
+        return 2
+    if args.command == "doctor" and args.demo:
+        parser.exit(2, f"{parser.prog}: error: doctor targets the Postgres runtime and cannot be combined with --demo.\n")
         return 2
 
     if args.command == "init-db":
@@ -165,12 +182,40 @@ def run_cli(
         _write_json(resolved_stdout, result)
         return 0
 
+    if args.command == "doctor":
+        try:
+            result = runtime_validator(
+                database_url=args.database_url,
+                render_root=args.render_root,
+                domain_pack_paths=args.domain_pack_path,
+                require_bootstrap_tables=not args.skip_schema_check,
+            )
+        except Exception as exc:
+            resolved_stderr.write(json.dumps({"ok": False, "error": exc.__class__.__name__, "message": str(exc)}) + "\n")
+            return 1
+        _write_json(resolved_stdout, result)
+        return 0
+
+    if not args.demo and args.command in {"serve", "worker"}:
+        try:
+            runtime_validator(
+                database_url=args.database_url,
+                render_root=args.render_root,
+                domain_pack_paths=args.domain_pack_path,
+                require_bootstrap_tables=True,
+            )
+        except Exception as exc:
+            resolved_stderr.write(json.dumps({"ok": False, "error": exc.__class__.__name__, "message": str(exc)}) + "\n")
+            return 1
+
     server = server_factory(
         database_url=args.database_url,
         render_root=Path(args.render_root),
         demo_mode=args.demo,
         seed_path=args.seed_path,
-        domain_pack_paths=[Path(path) for path in args.domain_pack_path],
+        domain_pack_paths=[Path(path) for path in args.domain_pack_path]
+        if args.domain_pack_path is not None
+        else None,
         active_domain_pack_versions=active_domain_pack_versions,
     )
     try:
@@ -236,13 +281,17 @@ def _parse_json_object(raw_text: str, *, source: str) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError(f"JSON arguments from {source} must decode to an object.")
     return payload
+
+
 def _write_json(stream: TextIO, payload: object) -> None:
     json.dump(payload, stream, indent=2, sort_keys=True)
     stream.write("\n")
 
 
-def _parse_active_domain_pack_versions(raw_values: Sequence[str]) -> dict[str, str]:
+def _parse_active_domain_pack_versions(raw_values: Sequence[str] | None) -> dict[str, str]:
     mapping: dict[str, str] = {}
+    if raw_values is None:
+        return mapping
     for item in raw_values:
         if "=" not in item:
             raise ValueError(
