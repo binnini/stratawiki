@@ -49,3 +49,56 @@ def test_get_snapshot_status_qualifies_domain_and_layer_columns() -> None:
     query, params = cursor.executed[0]
     assert "WHERE p.domain = %s AND p.layer = %s" in query
     assert params == ["recruiting", "interpretation"]
+
+
+def test_get_snapshot_status_returns_domain_registry_when_layer_is_omitted() -> None:
+    cursor = FakeCursor(
+        [
+            {
+                "fetchall": [
+                    {
+                        "layer": "fact",
+                        "domain": "recruiting",
+                        "current_snapshot_id": "fact_snap:seed",
+                        "fact_snapshot_id": "fact_snap:seed",
+                        "interpretation_snapshot_id": None,
+                        "profile_version": None,
+                        "published_at": "2026-04-18T00:00:00Z",
+                    },
+                    {
+                        "layer": "interpretation",
+                        "domain": "recruiting",
+                        "current_snapshot_id": "interp_snap:seed",
+                        "fact_snapshot_id": "fact_snap:seed",
+                        "interpretation_snapshot_id": "interp_snap:seed",
+                        "profile_version": None,
+                        "published_at": "2026-04-18T00:10:00Z",
+                    },
+                ]
+            }
+        ]
+    )
+    repository = PostgresSnapshotRepository(FakeConnection(cursor))
+
+    status = repository.get_snapshot_status(domain="recruiting", layer=None)
+
+    assert status == {
+        "domain": "recruiting",
+        "layers": {
+            "fact": {
+                "layer": "fact",
+                "domain": "recruiting",
+                "current_snapshot_id": "fact_snap:seed",
+                "fact_snapshot_id": "fact_snap:seed",
+                "published_at": "2026-04-18T00:00:00Z",
+            },
+            "interpretation": {
+                "layer": "interpretation",
+                "domain": "recruiting",
+                "current_snapshot_id": "interp_snap:seed",
+                "fact_snapshot_id": "fact_snap:seed",
+                "interpretation_snapshot_id": "interp_snap:seed",
+                "published_at": "2026-04-18T00:10:00Z",
+            },
+        },
+    }

@@ -61,6 +61,7 @@ Implemented today:
 - a local demo runtime and CLI that exercise the happy path end-to-end
 - a long-lived stdio runtime entrypoint for external clients that should not depend on one-shot subprocess execution
 - the MVP MCP tools for fact ingest, interpretation build and read, personal query, and snapshot status
+- a snapshot registry view plus minimal Personal cache-freshness inspection for operator-facing visibility
 - a profile context write path so external clients can provision Personal query prerequisites through the runtime
 - Domain Pack governance services for validation, compatibility review, approval gating, artifact loading, and proposal ingestion
 - a first worker entrypoint that can execute queued interpretation build requests outside the request path
@@ -154,12 +155,12 @@ Currently implemented:
 - `get_interpretation_record`
 - `query_personal_knowledge`
 - `get_snapshot_status`
+- `get_cache_status`
 
 Planned or partial follow-up examples:
 
 - `create_personal_plan`
 - `get_dependency_impact`
-- `get_cache_status`
 - `fetch_source`
 - `list_sources`
 

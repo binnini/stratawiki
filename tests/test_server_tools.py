@@ -255,7 +255,13 @@ class FakeSnapshotRepository:
 
     def get_snapshot_status(self, *, layer: str | None = None, domain: str) -> dict[str, Any] | None:
         if layer is None:
-            return dict(self.status_by_layer["fact"])
+            return {
+                "domain": domain,
+                "layers": {
+                    status_layer: dict(status)
+                    for status_layer, status in self.status_by_layer.items()
+                },
+            }
         return dict(self.status_by_layer.get(layer) or {})
 
 
@@ -640,6 +646,7 @@ def test_server_lists_mvp_tools(tmp_path: Path) -> None:
         "upsert_profile_context",
         "query_personal_knowledge",
         "get_snapshot_status",
+        "get_cache_status",
     ]
     tool_by_name = {tool.name: tool for tool in tools}
     assert tool_by_name["ingest_fact_batch"].contract_status == "legacy_transition"
@@ -810,12 +817,17 @@ def test_server_builds_interpretation_and_reads_snapshot_status(tmp_path: Path) 
         "get_snapshot_status",
         {"domain": "recruiting", "partition": {"family": "market_trends"}},
     )
+    domain_snapshot = server.call_tool("get_snapshot_status", {"domain": "recruiting"})
 
     assert result["status"] == "ok"
     assert result["records_created"] == 1
     assert result["interpretation_snapshot"].startswith("interp_snap:recruiting:market_trend:")
     assert snapshot["status"] == "ok"
     assert snapshot["interpretation_snapshot"] == result["interpretation_snapshot"]
+    assert domain_snapshot["status"] == "ok"
+    assert domain_snapshot["fact_snapshot"] == "fact_snap:seed"
+    assert domain_snapshot["interpretation_snapshot"] == result["interpretation_snapshot"]
+    assert set(domain_snapshot["layers"]) == {"fact", "interpretation"}
     rendered_page = (
         tmp_path / "wiki" / "shared" / "interpretations" / "market_trend" / "backend-japan-midlevel.md"
     )
@@ -823,6 +835,118 @@ def test_server_builds_interpretation_and_reads_snapshot_status(tmp_path: Path) 
     assert f"Interpretation Snapshot: `{result['interpretation_snapshot']}`" in rendered_page.read_text(
         encoding="utf-8"
     )
+
+
+def test_server_get_cache_status_marks_personal_record_fresh(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    status = server.call_tool(
+        "get_cache_status",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "record_id": "personal:1",
+        },
+    )
+
+    assert status == {
+        "status": "ok",
+        "record_id": "personal:1",
+        "cache_state": "fresh",
+        "reason": "match",
+        "current_snapshots": {
+            "fact_snapshot": "fact_snap:seed",
+            "interpretation_snapshot": "interp_snap:seed",
+            "profile_version": "profile:v1",
+        },
+        "record_snapshots": {
+            "fact_snapshot": "fact_snap:seed",
+            "interpretation_snapshot": "interp_snap:seed",
+            "profile_version": "profile:v1",
+        },
+    }
+
+
+def test_server_get_cache_status_marks_snapshot_drift_stale(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+    server.bootstrap.snapshot_repository.status_by_layer["interpretation"] = {
+        "layer": "interpretation",
+        "domain": "recruiting",
+        "current_snapshot_id": "interp_snap:new",
+        "fact_snapshot_id": "fact_snap:seed",
+        "interpretation_snapshot_id": "interp_snap:new",
+        "published_at": "2026-04-18T00:20:00Z",
+    }
+
+    status = server.call_tool(
+        "get_cache_status",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "record_id": "personal:1",
+        },
+    )
+
+    assert status["cache_state"] == "stale"
+    assert status["reason"] == "interpretation_snapshot_changed"
+    assert status["current_snapshots"]["interpretation_snapshot"] == "interp_snap:new"
+
+
+def test_server_get_cache_status_marks_profile_drift_invalid(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+    server.bootstrap.profile_context_repository.save_profile_context(
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "profile_version": "profile:v2",
+            "goals": ["switch into backend platform roles"],
+            "preferences": {"location": "tokyo"},
+            "attributes": {"level": "mid"},
+        }
+    )
+
+    status = server.call_tool(
+        "get_cache_status",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "record_id": "personal:1",
+        },
+    )
+
+    assert status["cache_state"] == "invalid"
+    assert status["reason"] == "profile_version_changed"
+    assert status["current_snapshots"]["profile_version"] == "profile:v2"
+
+
+def test_server_get_cache_status_marks_missing_record(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    status = server.call_tool(
+        "get_cache_status",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "record_id": "personal:missing",
+        },
+    )
+
+    assert status == {
+        "status": "ok",
+        "record_id": "personal:missing",
+        "cache_state": "missing",
+        "reason": "record_not_found",
+        "current_snapshots": {
+            "fact_snapshot": "fact_snap:seed",
+            "interpretation_snapshot": "interp_snap:seed",
+            "profile_version": "profile:v1",
+        },
+    }
 
 
 def test_server_validates_and_ingests_external_domain_proposals(tmp_path: Path) -> None:

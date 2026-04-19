@@ -211,7 +211,7 @@ class SnapshotRepository(Protocol):
         layer: str | None = None,
         domain: str,
     ) -> dict[str, object] | None:
-        """Return the current published snapshot status for a domain or one layer."""
+        """Return one layer status or the current per-layer snapshot registry for a domain."""
 
 
 class OutboxRepository(Protocol):

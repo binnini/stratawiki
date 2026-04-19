@@ -344,6 +344,19 @@ Current baseline:
 - interpretation record updates, snapshot pointer movement, and outbox append are committed as one DB publish bundle
 - if publish raises before the bundle completes, the prior rendered shared page is restored and the default canonical read target does not advance
 
+## Snapshot and Cache Visibility
+
+The runtime now exposes two operator-facing visibility paths:
+
+- `get_snapshot_status` returns the current published snapshot registry for a domain, or the interpretation-layer pointer when called with a partition family
+- `get_cache_status` compares one saved Personal output against the current fact/interpretation snapshot tuple and current profile version
+
+Current baseline:
+
+- `get_cache_status` is currently for saved Personal outputs, not broader retrieval or graph caches
+- `cache_state` can currently be `fresh`, `stale`, `invalid`, or `missing`
+- `profile_version` drift is treated as `invalid`
+
 ## Key Documents
 
 - `docs/mcp-architecture.md`

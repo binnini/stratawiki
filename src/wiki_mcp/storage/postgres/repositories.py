@@ -1718,8 +1718,7 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
             params.append(layer)
 
         with managed_cursor(self.connection) as cursor:
-            cursor.execute(
-                f"""
+            query = f"""
                 SELECT
                     p.layer,
                     p.domain,
@@ -1735,27 +1734,44 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
                     AND pub.domain = p.domain
                 WHERE {where_clause}
                 ORDER BY p.updated_at DESC, p.layer ASC
-                LIMIT 1
-                """,
+            """
+            cursor.execute(
+                query if layer is None else query + "\nLIMIT 1",
                 params,
             )
-            row = cursor.fetchone()
-            if row is None:
+            if layer is not None:
+                row = cursor.fetchone()
+                if row is None:
+                    return None
+                return self._snapshot_status_from_row(row)
+
+            rows = cursor.fetchall()
+            if not rows:
                 return None
-            data = self._row_to_dict(row)
+            layers: dict[str, dict[str, object]] = {}
+            for row in rows:
+                status = self._snapshot_status_from_row(row)
+                layers[str(status["layer"])] = status
             return {
-                "layer": data["layer"],
-                "domain": data["domain"],
-                "current_snapshot_id": data["current_snapshot_id"],
-                "fact_snapshot_id": data["fact_snapshot_id"],
-                **(
-                    {"interpretation_snapshot_id": data["interpretation_snapshot_id"]}
-                    if data.get("interpretation_snapshot_id")
-                    else {}
-                ),
-                **({"profile_version": data["profile_version"]} if data.get("profile_version") else {}),
-                **({"published_at": str(data["published_at"])} if data.get("published_at") else {}),
+                "domain": domain,
+                "layers": layers,
             }
+
+    def _snapshot_status_from_row(self, row: Mapping[str, Any] | Any) -> dict[str, object]:
+        data = self._row_to_dict(row)
+        return {
+            "layer": data["layer"],
+            "domain": data["domain"],
+            "current_snapshot_id": data["current_snapshot_id"],
+            "fact_snapshot_id": data["fact_snapshot_id"],
+            **(
+                {"interpretation_snapshot_id": data["interpretation_snapshot_id"]}
+                if data.get("interpretation_snapshot_id")
+                else {}
+            ),
+            **({"profile_version": data["profile_version"]} if data.get("profile_version") else {}),
+            **({"published_at": str(data["published_at"])} if data.get("published_at") else {}),
+        }
 
 
 class PostgresOutboxRepository(PostgresRepositoryBase):

@@ -342,7 +342,17 @@ class InMemorySnapshotRepository:
         return str(snapshot_id)
 
     def get_snapshot_status(self, *, layer: str | None = None, domain: str) -> dict[str, object] | None:
-        status = self.status_by_layer.get("fact") if layer is None else self.status_by_layer.get(layer)
+        if layer is None:
+            if not self.status_by_layer:
+                return None
+            return {
+                "domain": domain,
+                "layers": {
+                    status_layer: dict(status)
+                    for status_layer, status in self.status_by_layer.items()
+                },
+            }
+        status = self.status_by_layer.get(layer)
         if status is None:
             return None
         return dict(status)

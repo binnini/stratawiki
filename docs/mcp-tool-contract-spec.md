@@ -52,6 +52,7 @@ The repository currently exposes these runtime tools:
 - `upsert_profile_context`
 - `query_personal_knowledge`
 - `get_snapshot_status`
+- `get_cache_status`
 
 Current MVP caveats:
 
@@ -61,6 +62,8 @@ Current MVP caveats:
 - `build_interpretation_snapshot` still requires explicit `fact_ids` on the happy path
 - `build_interpretation_snapshot` now accepts `execution_mode: "background"` to queue worker execution, but broader async job families remain follow-up work
 - `query_personal_knowledge` now has a runtime-owned profile provisioning path through `upsert_profile_context`
+- `get_snapshot_status` now returns the per-layer registry when called with only `domain`, while partition-filtered calls still return the interpretation layer pointer
+- `get_cache_status` currently inspects saved Personal outputs by comparing their stored snapshot tuple against the current published snapshot tuple and current profile version
 - the Domain Proposal tools are implemented even though they were not part of the original narrow Week 1 MVP tool list
 
 ### Current External Write Guidance
@@ -1239,9 +1242,26 @@ Output:
   "status": "ok",
   "fact_snapshot": "fact_snap_2026_04_15",
   "interpretation_snapshot": "interp_snap_2026_04_15_market_trends",
-  "published_at": "2026-04-15T12:30:00Z"
+  "layers": {
+    "fact": {
+      "fact_snapshot_id": "fact_snap_2026_04_15",
+      "current_snapshot_id": "fact_snap_2026_04_15",
+      "published_at": "2026-04-15T12:00:00Z"
+    },
+    "interpretation": {
+      "fact_snapshot_id": "fact_snap_2026_04_15",
+      "interpretation_snapshot_id": "interp_snap_2026_04_15_market_trends",
+      "current_snapshot_id": "interp_snap_2026_04_15_market_trends",
+      "published_at": "2026-04-15T12:30:00Z"
+    }
+  }
 }
 ```
+
+Current MVP note:
+
+- `domain` only returns a domain-level snapshot registry with one entry per published layer
+- `partition.family` still narrows the lookup to the interpretation layer; true partition-granular snapshot registries remain follow-up work
 
 ### `get_cache_status`
 
@@ -1264,17 +1284,26 @@ Output:
 {
   "status": "ok",
   "cache_state": "stale",
-  "reason": "interpretation_refresh",
+  "reason": "interpretation_snapshot_changed",
   "current_snapshots": {
     "fact_snapshot": "fact_snap_2026_04_15",
-    "interpretation_snapshot": "interp_snap_2026_04_15"
+    "interpretation_snapshot": "interp_snap_2026_04_15",
+    "profile_version": "profile_v7"
   },
   "record_snapshots": {
     "fact_snapshot": "fact_snap_2026_04_14",
-    "interpretation_snapshot": "interp_snap_2026_04_14"
+    "interpretation_snapshot": "interp_snap_2026_04_14",
+    "profile_version": "profile_v6"
   }
 }
 ```
+
+Current MVP note:
+
+- the implemented cache inspection path is currently for saved Personal outputs only
+- missing records return `cache_state: "missing"`
+- `profile_version` drift is treated as `invalid`
+- broader retrieval, graph, and rendered-page cache families remain follow-up work
 
 ### `explain_result`
 

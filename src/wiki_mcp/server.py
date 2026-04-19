@@ -193,6 +193,23 @@ def _tool_definitions() -> list[ToolDefinition]:
                 },
             },
         ),
+        ToolDefinition(
+            name="get_cache_status",
+            group="snapshot",
+            status="mvp",
+            description="Inspect whether one saved Personal output is fresh, stale, invalid, or missing.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["domain", "tenant_id", "user_id", "record_id"],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "record_id": {"type": "string"},
+                },
+            },
+        ),
     ]
 
 
@@ -232,6 +249,8 @@ class StrataWikiServer:
             return self._query_personal_knowledge(args)
         if name == "get_snapshot_status":
             return self._get_snapshot_status(args)
+        if name == "get_cache_status":
+            return self._get_cache_status(args)
         raise KeyError(f"Unknown tool: {name}")
 
     def call_tool_with_envelope(self, name: str, arguments: dict[str, object] | None = None) -> dict[str, object]:
@@ -489,12 +508,157 @@ class StrataWikiServer:
         status = self.bootstrap.snapshot_repository.get_snapshot_status(domain=domain, layer=layer)
         if status is None:
             raise KeyError(f"No published snapshot status exists for domain {domain!r}.")
+        if layer is None:
+            layers = self._snapshot_layers(status)
+            if not layers:
+                raise KeyError(f"No published snapshot status exists for domain {domain!r}.")
+            fact_status = layers.get("fact")
+            interpretation_status = layers.get("interpretation")
+            return {
+                "status": "ok",
+                **(
+                    {"fact_snapshot": fact_status["fact_snapshot_id"]}
+                    if fact_status is not None
+                    else {}
+                ),
+                **(
+                    {"interpretation_snapshot": interpretation_status["interpretation_snapshot_id"]}
+                    if interpretation_status is not None
+                    and "interpretation_snapshot_id" in interpretation_status
+                    else {}
+                ),
+                "layers": layers,
+            }
         return {
             "status": "ok",
             "fact_snapshot": status["fact_snapshot_id"],
             **({"interpretation_snapshot": status["interpretation_snapshot_id"]} if "interpretation_snapshot_id" in status else {}),
             **({"published_at": status["published_at"]} if "published_at" in status else {}),
         }
+
+    def _get_cache_status(self, arguments: dict[str, object]) -> dict[str, object]:
+        domain = self._required_string(arguments, "domain")
+        tenant_id = self._required_string(arguments, "tenant_id")
+        user_id = self._required_string(arguments, "user_id")
+        record_id = self._required_string(arguments, "record_id")
+        scope_ref = {"scope": "user", "tenant_id": tenant_id, "user_id": user_id}
+        snapshot_status = self.bootstrap.snapshot_repository.get_snapshot_status(
+            domain=domain,
+            layer=None,
+        )
+        if snapshot_status is None:
+            raise KeyError(f"No published snapshot status exists for domain {domain!r}.")
+
+        current_snapshots = self._current_cache_snapshots(
+            domain=domain,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            snapshot_status=snapshot_status,
+        )
+        records = self.bootstrap.personal_repository.get_by_ids([record_id], scope_ref)
+        if not records:
+            return {
+                "status": "ok",
+                "record_id": record_id,
+                "cache_state": "missing",
+                "reason": "record_not_found",
+                "current_snapshots": current_snapshots,
+            }
+
+        record = records[0]
+        record_snapshot_ref = dict(record.get("snapshot_ref") or {})
+        record_snapshots = {
+            "fact_snapshot": record_snapshot_ref.get("fact_snapshot_id"),
+            **(
+                {"interpretation_snapshot": record_snapshot_ref.get("interpretation_snapshot_id")}
+                if record_snapshot_ref.get("interpretation_snapshot_id")
+                else {}
+            ),
+            **(
+                {"profile_version": record_snapshot_ref.get("profile_version") or record.get("profile_version")}
+                if (record_snapshot_ref.get("profile_version") or record.get("profile_version"))
+                else {}
+            ),
+        }
+
+        cache_state = "fresh"
+        reason = "match"
+        if (
+            current_snapshots.get("profile_version")
+            and record_snapshots.get("profile_version") != current_snapshots.get("profile_version")
+        ):
+            cache_state = "invalid"
+            reason = "profile_version_changed"
+        elif (
+            current_snapshots.get("interpretation_snapshot")
+            and record_snapshots.get("interpretation_snapshot") != current_snapshots.get("interpretation_snapshot")
+        ):
+            cache_state = "stale"
+            reason = "interpretation_snapshot_changed"
+        elif (
+            current_snapshots.get("fact_snapshot")
+            and record_snapshots.get("fact_snapshot") != current_snapshots.get("fact_snapshot")
+        ):
+            cache_state = "stale"
+            reason = "fact_snapshot_changed"
+
+        return {
+            "status": "ok",
+            "record_id": record_id,
+            "cache_state": cache_state,
+            "reason": reason,
+            "current_snapshots": current_snapshots,
+            "record_snapshots": record_snapshots,
+        }
+
+    def _snapshot_layers(self, snapshot_status: dict[str, object]) -> dict[str, dict[str, object]]:
+        raw_layers = snapshot_status.get("layers")
+        if isinstance(raw_layers, dict):
+            return {
+                str(name): dict(status)
+                for name, status in raw_layers.items()
+                if isinstance(status, dict)
+            }
+        layer = snapshot_status.get("layer")
+        if isinstance(layer, str):
+            return {layer: dict(snapshot_status)}
+        return {}
+
+    def _current_cache_snapshots(
+        self,
+        *,
+        domain: str,
+        tenant_id: str,
+        user_id: str,
+        snapshot_status: dict[str, object],
+    ) -> dict[str, object]:
+        layers = self._snapshot_layers(snapshot_status)
+        fact_status = layers.get("fact")
+        interpretation_status = layers.get("interpretation")
+        current_snapshots: dict[str, object] = {
+            **(
+                {"fact_snapshot": fact_status["fact_snapshot_id"]}
+                if fact_status is not None
+                else {}
+            ),
+            **(
+                {"interpretation_snapshot": interpretation_status["interpretation_snapshot_id"]}
+                if interpretation_status is not None
+                and "interpretation_snapshot_id" in interpretation_status
+                else {}
+            ),
+        }
+        try:
+            profile_context = self.bootstrap.profile_context_repository.get_profile_context(
+                domain,
+                tenant_id,
+                user_id,
+            )
+        except KeyError:
+            profile_context = None
+        if profile_context is not None and profile_context.get("profile_version"):
+            current_snapshots["profile_version"] = profile_context["profile_version"]
+        return current_snapshots
 
     def _required_string(
         self,

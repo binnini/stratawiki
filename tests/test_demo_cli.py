@@ -5,6 +5,8 @@ from io import StringIO
 from pathlib import Path
 
 from wiki_mcp.cli import run_cli
+
+
 def test_demo_cli_lists_tools_without_postgres(tmp_path: Path) -> None:
     stdout = StringIO()
     stderr = StringIO()
@@ -34,6 +36,7 @@ def test_demo_cli_lists_tools_without_postgres(tmp_path: Path) -> None:
         "upsert_profile_context",
         "query_personal_knowledge",
         "get_snapshot_status",
+        "get_cache_status",
     ]
     tool_by_name = {tool["name"]: tool for tool in payload}
     assert tool_by_name["ingest_fact_batch"]["contract_status"] == "legacy_transition"
