@@ -56,6 +56,12 @@ After `#43`, the REST state is:
 - profile sync now exists through `PUT /api/v1/profile-contexts/{tenant_id}/{user_id}`
 - Personal query now exists through `POST /api/v1/personal-queries`
 
+After `#44`, the REST state is:
+
+- interpretation build now exists through `POST /api/v1/interpretation-builds`
+- background build polling now exists through `GET /api/v1/jobs/{job_id}`
+- snapshot, cache, and explanation reads now have dedicated HTTP endpoints
+
 Jobs-Wiki should still treat the wrapper path as the safest default until interpretation build and deployment migration work also land, but the write path and Personal path can now be tested over HTTP.
 
 ## Future Target Path
@@ -136,9 +142,10 @@ Recommended condition before removing the wrapper path:
 
 ### Interpretation Build Sequence
 
-1. submit one interpretation build request
+1. `POST /api/v1/interpretation-builds`
 2. use inline mode for simpler early tests
-3. use background mode only when the worker path and job polling are live
+3. use background mode when the worker path is live
+4. poll `GET /api/v1/jobs/{job_id}` for background execution progress
 
 ## Do Not Change Yet
 
@@ -159,4 +166,4 @@ Jobs-Wiki should not do these things yet:
 - prefer the new HTTP proposal endpoints over the generic `/api/v1/tool-calls` bridge for write traffic
 - use the new HTTP profile and Personal endpoints rather than the generic `/api/v1/tool-calls` bridge for these flows
 - keep profile sync before Personal query
-- do not make background interpretation builds the default until job polling is wired
+- use the dedicated HTTP interpretation and status endpoints rather than the generic `/api/v1/tool-calls` bridge for these flows

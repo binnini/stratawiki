@@ -25,6 +25,7 @@ The intended first external consumers are service-to-service clients such as Job
 - a first service-to-service bearer-token gate for the HTTP runtime through `STRATAWIKI_HTTP_AUTH_TOKEN`
 - resource-specific DomainProposalBatch validate and ingest endpoints
 - resource-specific profile sync and Personal query endpoints
+- resource-specific interpretation build and operator status endpoints
 
 ### Recommended but Not Yet Fixed
 
@@ -175,6 +176,11 @@ The first HTTP baseline intentionally exposes generic runtime endpoints before t
 | `/api/v1/domain-proposals/ingest` | `POST` | `ingest_domain_proposal_batch` | ingest one validated `DomainProposalBatch` | implemented |
 | `/api/v1/profile-contexts/{tenant_id}/{user_id}` | `PUT` | `upsert_profile_context` | upsert one profile context | implemented |
 | `/api/v1/personal-queries` | `POST` | `query_personal_knowledge` | run one Personal query | implemented |
+| `/api/v1/interpretation-builds` | `POST` | `build_interpretation_snapshot` | request one interpretation build | implemented |
+| `/api/v1/jobs/{job_id}` | `GET` | `get_job_status` | inspect one background job | implemented |
+| `/api/v1/snapshot-status` | `GET` | `get_snapshot_status` | inspect current snapshot state | implemented |
+| `/api/v1/cache-status/{record_id}` | `GET` | `get_cache_status` | inspect one saved Personal output status | implemented |
+| `/api/v1/explanations/{layer}/{record_id}` | `GET` | `explain_result` | inspect result explainability | implemented |
 
 ## Planned Resource-Specific Endpoint Set
 
@@ -182,11 +188,7 @@ These endpoints remain the target migration surface for external clients such as
 
 | Endpoint | Method | Source Tool | Purpose | Status |
 | --- | --- | --- | --- | --- |
-| `/api/v1/interpretation-builds` | `POST` | `build_interpretation_snapshot` | request one interpretation build | planned |
-| `/api/v1/jobs/{job_id}` | `GET` | `get_job_status` | inspect one background job | planned |
-| `/api/v1/snapshot-status` | `GET` | `get_snapshot_status` | inspect current snapshot state | planned |
-| `/api/v1/cache-status/{record_id}` | `GET` | `get_cache_status` | inspect one saved Personal output status | planned |
-| `/api/v1/explanations/{layer}/{record_id}` | `GET` | `explain_result` | inspect result explainability | planned follow-up |
+| deployment and migration documentation for the completed HTTP surface | n/a | n/a | final external migration baseline | planned in `#45` |
 
 ## Proposed Request Shapes
 
@@ -325,6 +327,8 @@ Recommended background response shape:
   }
 }
 ```
+
+This `202 Accepted` behavior is now implemented for `POST /api/v1/interpretation-builds` when the payload uses `execution_mode: "background"`.
 
 ## Idempotency Policy
 

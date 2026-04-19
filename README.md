@@ -301,6 +301,11 @@ Implemented baseline endpoints:
 - `POST /api/v1/domain-proposals/ingest`
 - `PUT /api/v1/profile-contexts/{tenant_id}/{user_id}`
 - `POST /api/v1/personal-queries`
+- `POST /api/v1/interpretation-builds`
+- `GET /api/v1/jobs/{job_id}`
+- `GET /api/v1/snapshot-status`
+- `GET /api/v1/cache-status/{record_id}`
+- `GET /api/v1/explanations/{layer}/{record_id}`
 
 Request example:
 
@@ -358,6 +363,25 @@ curl -s \
   -H 'Authorization: Bearer replace-me' \
   -d '{"domain":"recruiting","tenant_id":"tenant-1","user_id":"user-1","question":"What backend roles should I target next?","profile_version":"profile:v1","model_profile":"balanced_default","save":false}' \
   http://127.0.0.1:8080/api/v1/personal-queries
+```
+
+Background interpretation build example:
+
+```bash
+curl -s \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer replace-me' \
+  -d '{"domain":"recruiting","partition":{"family":"market_trends","segment":"backend-japan-midlevel"},"fact_ids":["fact:job:1"],"fact_snapshot":"fact_snap:seed","model_profile":"balanced_default","publish":true,"execution_mode":"background"}' \
+  http://127.0.0.1:8080/api/v1/interpretation-builds
+```
+
+When the request is queued for worker execution, the HTTP runtime returns `202 Accepted` and a `job_id`.
+External clients can then poll:
+
+```bash
+curl -s \
+  -H 'Authorization: Bearer replace-me' \
+  http://127.0.0.1:8080/api/v1/jobs/job-123
 ```
 
 Supported runtime methods today:

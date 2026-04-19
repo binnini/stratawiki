@@ -75,6 +75,18 @@ class FakeHttpServer:
                 },
             ),
             ToolDefinition(
+                name="build_interpretation_snapshot",
+                group="interpretation",
+                status="mvp",
+                description="Build one interpretation snapshot.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "partition", "fact_ids"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
                 name="get_snapshot_status",
                 group="snapshot",
                 status="mvp",
@@ -83,6 +95,42 @@ class FakeHttpServer:
                 input_schema={
                     "type": "object",
                     "required": ["domain"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="get_cache_status",
+                group="snapshot",
+                status="mvp",
+                description="Return cache status for one personal record.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "tenant_id", "user_id", "record_id"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="get_job_status",
+                group="operator",
+                status="mvp",
+                description="Return status for one queued background job.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["job_id"],
+                    "properties": {"job_id": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="explain_result",
+                group="operator",
+                status="mvp",
+                description="Explain one interpretation or personal result.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "result_id"],
                     "properties": {"domain": {"type": "string"}},
                 },
             ),
@@ -179,11 +227,105 @@ class FakeHttpServer:
                     "profile_version": profile_version,
                 },
             }
+        if name == "build_interpretation_snapshot":
+            execution_mode = payload.get("execution_mode") or "inline"
+            if execution_mode == "background":
+                return {
+                    "status": "queued",
+                    "execution_mode": "background",
+                    "job_id": "job-123",
+                    "event_id": "job-123",
+                    "event_type": "interpretation_snapshot_build_requested",
+                }
+            return {
+                "status": "ok",
+                "interpretation_snapshot": "interp_snap:seed",
+                "records_created": 1,
+                "records_updated": 0,
+                "records_superseded": 0,
+            }
         if name == "get_snapshot_status":
             domain = payload.get("domain")
             if not isinstance(domain, str) or not domain.strip():
                 raise ValueError("domain is required")
-            return {"status": "ok", "domain": domain}
+            if isinstance(payload.get("partition"), dict):
+                return {
+                    "status": "ok",
+                    "fact_snapshot": "fact_snap:seed",
+                    "interpretation_snapshot": "interp_snap:seed",
+                    "published_at": "2026-04-19T08:00:00Z",
+                }
+            return {
+                "status": "ok",
+                "fact_snapshot": "fact_snap:seed",
+                "interpretation_snapshot": "interp_snap:seed",
+                "layers": {
+                    "fact": {
+                        "layer": "fact",
+                        "current_snapshot_id": "fact_snap:seed",
+                        "fact_snapshot_id": "fact_snap:seed",
+                    },
+                    "interpretation": {
+                        "layer": "interpretation",
+                        "current_snapshot_id": "interp_snap:seed",
+                        "fact_snapshot_id": "fact_snap:seed",
+                        "interpretation_snapshot_id": "interp_snap:seed",
+                    },
+                },
+            }
+        if name == "get_cache_status":
+            return {
+                "status": "ok",
+                "record_id": payload.get("record_id"),
+                "cache_state": "fresh",
+                "change_reason": "current_result",
+            }
+        if name == "get_job_status":
+            job_id = payload.get("job_id")
+            if not isinstance(job_id, str) or not job_id.strip():
+                raise ValueError("job_id is required")
+            if job_id != "job-123":
+                raise KeyError(f"Unknown job: {job_id}")
+            return {
+                "status": "ok",
+                "job": {
+                    "job_id": "job-123",
+                    "state": "pending",
+                    "kind": "interpretation_build",
+                    "event_type": "interpretation_snapshot_build_requested",
+                    "aggregate_layer": "interpretation",
+                    "aggregate_id": "recruiting:market_trend:backend-japan-midlevel",
+                    "attempt_count": 0,
+                    "available_at": "2026-04-19T08:00:00Z",
+                    "claimed_at": None,
+                    "processed_at": None,
+                    "last_error": None,
+                    "payload": {
+                        "partition": {"family": "market_trend", "segment": "backend-japan-midlevel"},
+                    },
+                },
+            }
+        if name == "explain_result":
+            layer = payload.get("layer")
+            if layer == "personal":
+                return {
+                    "status": "ok",
+                    "layer": "personal",
+                    "explanation": {
+                        "cache_state": "fresh",
+                        "change_reason": "current_result",
+                        "anchors": ["interp:published:1", "fact:job:1"],
+                    },
+                }
+            return {
+                "status": "ok",
+                "layer": "interpretation",
+                "explanation": {
+                    "change_reason": "current_result",
+                    "review_state": "published",
+                    "anchors": ["fact:job:1"],
+                },
+            }
         if name == "explode":
             raise RuntimeError("boom")
         raise KeyError(f"Unknown tool: {name}")
@@ -263,7 +405,9 @@ def test_http_runtime_executes_tool_call_and_propagates_request_id() -> None:
     assert response.status_code == 200
     assert response.payload["ok"] is True
     assert response.payload["request_id"] == "req-123"
-    assert response.payload["result"] == {"status": "ok", "domain": "recruiting"}
+    assert response.payload["result"]["status"] == "ok"
+    assert response.payload["result"]["fact_snapshot"] == "fact_snap:seed"
+    assert response.payload["result"]["interpretation_snapshot"] == "interp_snap:seed"
     assert response.headers["X-Request-Id"] == "req-123"
     assert fake_server.calls == [("get_snapshot_status", {"domain": "recruiting"})]
 
@@ -412,6 +556,71 @@ def test_http_runtime_personal_query_maps_missing_profile_and_profile_mismatch()
     assert mismatched_profile.status_code == 422
     assert mismatched_profile.payload["ok"] is False
     assert mismatched_profile.payload["error"]["code"] == "validation_error"
+
+
+def test_http_runtime_exposes_interpretation_build_and_operator_status_endpoints() -> None:
+    fake_server = FakeHttpServer()
+
+    queued_build = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/interpretation-builds",
+        headers={"X-Request-Id": "req-build"},
+        body=(
+            b'{"domain":"recruiting","partition":{"family":"market_trends","segment":"backend-japan-midlevel"},'
+            b'"fact_ids":["fact:job:1"],"fact_snapshot":"fact_snap:seed","model_profile":"balanced_default",'
+            b'"publish":true,"execution_mode":"background"}'
+        ),
+    )
+    job_status = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/jobs/job-123",
+        headers={},
+        body=b"",
+    )
+    snapshot_status = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/snapshot-status?domain=recruiting",
+        headers={},
+        body=b"",
+    )
+    cache_status = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/cache-status/personal%3A1?domain=recruiting&tenant_id=tenant-1&user_id=user-1",
+        headers={},
+        body=b"",
+    )
+    explanation = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/explanations/personal/personal%3A1?domain=recruiting&tenant_id=tenant-1&user_id=user-1",
+        headers={},
+        body=b"",
+    )
+
+    assert queued_build.status_code == 202
+    assert queued_build.payload["ok"] is True
+    assert queued_build.payload["request_id"] == "req-build"
+    assert queued_build.payload["result"]["job_id"] == "job-123"
+
+    assert job_status.status_code == 200
+    assert job_status.payload["result"]["job"]["kind"] == "interpretation_build"
+    assert job_status.payload["result"]["job"]["state"] == "pending"
+
+    assert snapshot_status.status_code == 200
+    assert snapshot_status.payload["result"]["fact_snapshot"] == "fact_snap:seed"
+    assert snapshot_status.payload["result"]["layers"]["interpretation"]["interpretation_snapshot_id"] == "interp_snap:seed"
+
+    assert cache_status.status_code == 200
+    assert cache_status.payload["result"]["cache_state"] == "fresh"
+    assert cache_status.payload["result"]["record_id"] == "personal:1"
+
+    assert explanation.status_code == 200
+    assert explanation.payload["result"]["layer"] == "personal"
+    assert explanation.payload["result"]["explanation"]["change_reason"] == "current_result"
 
 
 def test_http_runtime_requires_bearer_token_when_configured() -> None:

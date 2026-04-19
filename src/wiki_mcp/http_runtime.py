@@ -173,6 +173,110 @@ def dispatch_http_request(
             tool_name="query_personal_knowledge",
         )
 
+    if normalized_path == "/api/v1/interpretation-builds":
+        if normalized_method != "POST":
+            return _method_not_allowed(request_id, allowed="POST")
+        try:
+            payload = _parse_json_object(body)
+            response = _call_tool(
+                server,
+                request_id=request_id,
+                tool_name="build_interpretation_snapshot",
+                arguments=payload,
+            )
+            result = response.payload.get("result")
+            if isinstance(result, dict) and result.get("status") == "queued":
+                return HttpRuntimeResponse(
+                    status_code=int(HTTPStatus.ACCEPTED),
+                    payload=response.payload,
+                    headers=response.headers,
+                )
+            return response
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
+    if normalized_path.startswith("/api/v1/jobs/"):
+        if normalized_method != "GET":
+            return _method_not_allowed(request_id, allowed="GET")
+        try:
+            job_id = _single_path_part(normalized_path.removeprefix("/api/v1/jobs/"), label="job path")
+            return _call_tool(
+                server,
+                request_id=request_id,
+                tool_name="get_job_status",
+                arguments={"job_id": job_id},
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
+    if normalized_path == "/api/v1/snapshot-status":
+        if normalized_method != "GET":
+            return _method_not_allowed(request_id, allowed="GET")
+        try:
+            domain = _required_query_value(query, "domain")
+            arguments: dict[str, object] = {"domain": domain}
+            family = _single_query_value(query, "family")
+            segment = _single_query_value(query, "segment")
+            if family is not None or segment is not None:
+                if family is None or segment is None:
+                    raise ValueError("snapshot-status partition queries require both 'family' and 'segment'.")
+                arguments["partition"] = {"family": family, "segment": segment}
+            return _call_tool(
+                server,
+                request_id=request_id,
+                tool_name="get_snapshot_status",
+                arguments=arguments,
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
+    if normalized_path.startswith("/api/v1/cache-status/"):
+        if normalized_method != "GET":
+            return _method_not_allowed(request_id, allowed="GET")
+        try:
+            record_id = _single_path_part(normalized_path.removeprefix("/api/v1/cache-status/"), label="cache-status path")
+            return _call_tool(
+                server,
+                request_id=request_id,
+                tool_name="get_cache_status",
+                arguments={
+                    "domain": _required_query_value(query, "domain"),
+                    "tenant_id": _required_query_value(query, "tenant_id"),
+                    "user_id": _required_query_value(query, "user_id"),
+                    "record_id": record_id,
+                },
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
+    if normalized_path.startswith("/api/v1/explanations/"):
+        if normalized_method != "GET":
+            return _method_not_allowed(request_id, allowed="GET")
+        try:
+            layer, record_id = _split_two_path_parts(
+                normalized_path.removeprefix("/api/v1/explanations/"),
+                label="explanations path",
+            )
+            arguments: dict[str, object] = {
+                "domain": _required_query_value(query, "domain"),
+                "layer": layer,
+                "result_id": record_id,
+            }
+            tenant_id = _single_query_value(query, "tenant_id")
+            user_id = _single_query_value(query, "user_id")
+            if tenant_id is not None:
+                arguments["tenant_id"] = tenant_id
+            if user_id is not None:
+                arguments["user_id"] = user_id
+            return _call_tool(
+                server,
+                request_id=request_id,
+                tool_name="explain_result",
+                arguments=arguments,
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
     if normalized_path == "/api/v1/tool-calls":
         if normalized_method != "POST":
             return _method_not_allowed(request_id, allowed="POST")
@@ -411,11 +515,25 @@ def _query_bool(query: Mapping[str, list[str]], key: str, *, default: bool) -> b
     raise ValueError(f"Query parameter {key!r} must be a boolean string.")
 
 
+def _required_query_value(query: Mapping[str, list[str]], key: str) -> str:
+    value = _single_query_value(query, key)
+    if value is None:
+        raise ValueError(f"Query parameter {key!r} is required.")
+    return value
+
+
 def _split_two_path_parts(raw: str, *, label: str) -> tuple[str, str]:
     parts = [unquote(part).strip() for part in raw.split("/") if part.strip()]
     if len(parts) != 2:
         raise ValueError(f"{label} must include exactly two non-empty path parts.")
     return parts[0], parts[1]
+
+
+def _single_path_part(raw: str, *, label: str) -> str:
+    parts = [unquote(part).strip() for part in raw.split("/") if part.strip()]
+    if len(parts) != 1:
+        raise ValueError(f"{label} must include exactly one non-empty path part.")
+    return parts[0]
 
 
 def _coerce_path_field(payload: dict[str, object], field: str, value: str) -> None:
