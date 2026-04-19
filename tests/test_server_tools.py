@@ -551,6 +551,13 @@ def test_server_lists_mvp_tools(tmp_path: Path) -> None:
         "query_personal_knowledge",
         "get_snapshot_status",
     ]
+    tool_by_name = {tool.name: tool for tool in tools}
+    assert tool_by_name["ingest_fact_batch"].contract_status == "legacy_transition"
+    assert tool_by_name["ingest_fact_batch"].recommended_for_external_clients is False
+    assert tool_by_name["validate_domain_proposal_batch"].contract_status == "preferred_external_write"
+    assert tool_by_name["validate_domain_proposal_batch"].recommended_for_external_clients is True
+    assert tool_by_name["ingest_domain_proposal_batch"].contract_status == "preferred_external_write"
+    assert tool_by_name["ingest_domain_proposal_batch"].recommended_for_external_clients is True
 
 
 def test_server_fact_and_personal_tools_work_on_happy_path(tmp_path: Path) -> None:

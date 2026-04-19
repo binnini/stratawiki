@@ -16,8 +16,14 @@ def _tool_definitions() -> list[ToolDefinition]:
             name="ingest_fact_batch",
             group="fact",
             status="mvp",
-            description="Ingest normalized source records into the Fact layer.",
+            description=(
+                "Legacy transition path for normalized source records. "
+                "External integration clients should prefer DomainProposalBatch "
+                "via validate_domain_proposal_batch and ingest_domain_proposal_batch."
+            ),
             entrypoint="server.call_tool",
+            contract_status="legacy_transition",
+            recommended_for_external_clients=False,
             input_schema={
                 "type": "object",
                 "required": ["domain", "source_records"],
@@ -31,8 +37,13 @@ def _tool_definitions() -> list[ToolDefinition]:
             name="validate_domain_proposal_batch",
             group="fact",
             status="mvp",
-            description="Validate one DomainProposalBatch against the active Domain Pack.",
+            description=(
+                "Preferred external dry-run write contract. "
+                "Validate one DomainProposalBatch against the active Domain Pack."
+            ),
             entrypoint="server.call_tool",
+            contract_status="preferred_external_write",
+            recommended_for_external_clients=True,
             input_schema={
                 "type": "object",
                 "required": ["batch"],
@@ -45,8 +56,13 @@ def _tool_definitions() -> list[ToolDefinition]:
             name="ingest_domain_proposal_batch",
             group="fact",
             status="mvp",
-            description="Ingest one DomainProposalBatch through the canonical proposal gateway.",
+            description=(
+                "Preferred external write contract. "
+                "Ingest one DomainProposalBatch through the canonical proposal gateway."
+            ),
             entrypoint="server.call_tool",
+            contract_status="preferred_external_write",
+            recommended_for_external_clients=True,
             input_schema={
                 "type": "object",
                 "required": ["batch"],
@@ -218,6 +234,11 @@ class StrataWikiServer:
             aggregate["facts_created"] += result["facts_created"]
             aggregate["facts_updated"] += result["facts_updated"]
             aggregate["affected_fact_ids"].extend(result["affected_fact_ids"])
+        aggregate["warnings"] = [
+            "ingest_fact_batch remains available for transition and internal source-driven flows. "
+            "External integration clients should prefer validate_domain_proposal_batch and "
+            "ingest_domain_proposal_batch."
+        ]
         return aggregate
 
     def _get_fact_record(self, arguments: dict[str, object]) -> dict[str, object]:

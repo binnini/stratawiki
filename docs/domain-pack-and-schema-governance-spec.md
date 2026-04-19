@@ -35,10 +35,9 @@ The repository now includes:
 
 The repository does not yet include:
 
-- a bootstrapped proposal-ingestion path as the default runtime write surface
+- removal of the legacy source-driven recruiting ingestion path from the runtime
 - richer pack lifecycle metadata beyond the active-version pointer plus review audit
 - an operator-facing workflow beyond direct runtime APIs and JSONL audit records
-- removal of the legacy source-driven recruiting ingestion path
 
 ## Architectural Position
 
@@ -48,11 +47,12 @@ as core-code assumptions.
 The current runtime split is:
 
 - source adapters still normalize raw inputs into `SourceRecord`
-- the existing recruiting ingestion plugin still decomposes normalized source into Facts
+- external integration clients should prefer `DomainProposalBatch` validation and ingestion
+- the existing recruiting ingestion plugin still decomposes normalized source into Facts for transition and internal source-driven use
 - Domain Pack artifacts can be loaded and activated during bootstrap
 - the Domain Pack registry, approval services, and proposal-ingestion service provide the runtime seam for pack-governed ingestion
 
-This means the current source-driven ingestion path remains valid while schema governance is being introduced incrementally.
+This means the current source-driven ingestion path remains available while schema governance is being introduced incrementally, but it is no longer the preferred external write contract.
 
 ## Domain Pack Contract
 
@@ -213,16 +213,15 @@ The intended migration path is:
 1. keep `SourceRecord` ingestion working
 2. define and register a recruiting `DomainPack`
 3. add validator and compatibility checks
-4. introduce proposal ingestion against registered packs
+4. introduce proposal ingestion against registered packs as the preferred external write path
 5. reduce hardcoded recruiting semantics in the ingestion plugin
 
 ## Remaining Gaps
 
 The following still remain open:
 
-- proposal ingestion against registered packs as the default runtime write path
 - a fully pack-driven replacement for the recruiting plugin decomposition path
 - stronger pack lifecycle metadata for active, deprecated, and superseded versions
 - richer operator-facing review tooling than the current persisted audit log
 
-Those are the next schema-governance steps after the currently implemented approval, loading, and proposal-ingestion runtime.
+Those are the next schema-governance steps after the currently implemented approval, loading, and proposal-ingestion runtime plus the preferred external `DomainProposalBatch` contract.

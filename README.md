@@ -134,6 +134,48 @@ If your existing venv was created before the Postgres runtime dependency was add
 /Users/yebin/venv/bin/python -m pip install -e .
 ```
 
+## External Write Contract
+
+For external integration clients, the preferred write contract is now `DomainProposalBatch`.
+
+Use:
+
+- `validate_domain_proposal_batch`
+- `ingest_domain_proposal_batch`
+
+Treat `ingest_fact_batch` as a legacy transition path for internal or source-driven flows.
+It remains available, but it is not the recommended external integration contract.
+
+The repository includes a sample recruiting Domain Pack artifact and a matching proposal batch:
+
+- `examples/domain-packs/recruiting.v2026-04-18.json`
+- `examples/integration/recruiting-domain-proposal-batch.json`
+
+Example validation call:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --demo \
+  --domain-pack-path examples/domain-packs/recruiting.v2026-04-18.json \
+  call validate_domain_proposal_batch \
+  --args-file examples/integration/recruiting-domain-proposal-batch.json
+```
+
+Example ingest call:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --demo \
+  --domain-pack-path examples/domain-packs/recruiting.v2026-04-18.json \
+  call ingest_domain_proposal_batch \
+  --args-file examples/integration/recruiting-domain-proposal-batch.json
+```
+
+Ownership split:
+
+- external producers own source collection, normalization, and proposal batch construction
+- StrataWiki owns canonical validation, canonical key resolution, Fact writes, snapshots, and downstream publication
+
 ## Key Documents
 
 - `docs/mcp-architecture.md`

@@ -54,9 +54,23 @@ The repository currently exposes these runtime tools:
 
 Current MVP caveats:
 
+- external integration clients should prefer `validate_domain_proposal_batch` and `ingest_domain_proposal_batch`
+- `ingest_fact_batch` remains available as a legacy transition path for source-driven or internal flows
 - `ingest_fact_batch` currently accepts inline `source_records` rather than source ids fetched from external connectors
 - `build_interpretation_snapshot` still requires explicit `fact_ids` on the happy path
 - the Domain Proposal tools are implemented even though they were not part of the original narrow Week 1 MVP tool list
+
+### Current External Write Guidance
+
+The current preferred external write contract is `DomainProposalBatch`.
+
+Recommended sequence:
+
+1. load or configure the active Domain Pack for the target domain
+2. call `validate_domain_proposal_batch`
+3. call `ingest_domain_proposal_batch`
+
+The repository keeps `ingest_fact_batch` for transition and internal source-driven paths, but external producers should not treat it as the default write surface.
 
 ## Planned Tool Surface
 
@@ -206,6 +220,12 @@ Output:
 
 Ingest one or more normalized sources into the Fact layer.
 
+Current contract note:
+
+- implemented
+- not the preferred external write path for integration clients
+- retained for transition and internal source-driven use
+
 Input:
 
 ```json
@@ -232,6 +252,111 @@ Output:
   "affected_fact_ids": [
     "job_posting_123",
     "company_42"
+  ]
+}
+```
+
+### `validate_domain_proposal_batch`
+
+Validate one `DomainProposalBatch` against the active Domain Pack without committing writes.
+
+Input:
+
+```json
+{
+  "batch": {
+    "domain": "recruiting",
+    "pack_version": "2026-04-18",
+    "producer": "jobs-wiki",
+    "facts": [
+      {
+        "proposal_id": "fact:posting:EMP-1",
+        "domain": "recruiting",
+        "entity_type": "job_posting",
+        "attributes": {
+          "title": "Backend Engineer"
+        },
+        "identity_hints": {
+          "source_id": "EMP-1"
+        },
+        "evidence": [
+          {
+            "connector": "worknet",
+            "source_id": "EMP-1"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Output:
+
+```json
+{
+  "ok": true,
+  "committed": false,
+  "dry_run": true,
+  "audit": {
+    "evaluated_pack_version": "2026-04-18"
+  },
+  "write_plan": {
+    "facts_to_create": 1,
+    "facts_to_update": 0,
+    "facts_to_noop": 0,
+    "relations_to_create": 0
+  }
+}
+```
+
+### `ingest_domain_proposal_batch`
+
+Commit one validated `DomainProposalBatch` through the canonical proposal gateway.
+
+Input:
+
+```json
+{
+  "batch": {
+    "domain": "recruiting",
+    "pack_version": "2026-04-18",
+    "producer": "jobs-wiki",
+    "facts": [
+      {
+        "proposal_id": "fact:posting:EMP-1",
+        "domain": "recruiting",
+        "entity_type": "job_posting",
+        "attributes": {
+          "title": "Backend Engineer"
+        },
+        "identity_hints": {
+          "source_id": "EMP-1"
+        },
+        "evidence": [
+          {
+            "connector": "worknet",
+            "source_id": "EMP-1"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Output:
+
+```json
+{
+  "ok": true,
+  "committed": true,
+  "fact_snapshot_id": "fact_snap_2026_04_15_1200",
+  "facts_created": 1,
+  "facts_updated": 0,
+  "relations_created": 0,
+  "affected_fact_ids": [
+    "fact:job_posting:EMP-1"
   ]
 }
 ```

@@ -224,6 +224,12 @@ def _list_tools(server: StrataWikiServer, *, group: str | None, full_schemas: bo
             "status": tool.status,
             "description": tool.description,
             "entrypoint": tool.entrypoint,
+            **({"contract_status": tool.contract_status} if tool.contract_status is not None else {}),
+            **(
+                {"recommended_for_external_clients": tool.recommended_for_external_clients}
+                if tool.recommended_for_external_clients is not None
+                else {}
+            ),
         }
         for tool in server.list_tools()
     ]

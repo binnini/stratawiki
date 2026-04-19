@@ -205,7 +205,8 @@ Current status:
 - a Domain Pack contract, registry, validator, compatibility checker, approval service, proposal-ingestion gateway, and artifact-loading path exist in the codebase
 - the current MVP Fact ingest path still uses `SourceRecord` plus a thin domain ingestion plugin
 - pack-governed proposal ingestion now exists alongside the source-driven path
-- the remaining gap is making pack-governed ingestion the default write surface rather than an additional runtime path
+- external integration clients should treat the proposal-ingestion path as the preferred write contract
+- the remaining gap is reducing the legacy source-driven path from the external contract surface down to transition or internal use only
 
 ### 4. LLM Router Layer
 

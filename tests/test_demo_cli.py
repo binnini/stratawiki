@@ -36,6 +36,13 @@ def test_demo_cli_lists_tools_without_postgres(tmp_path: Path) -> None:
         "query_personal_knowledge",
         "get_snapshot_status",
     ]
+    tool_by_name = {tool["name"]: tool for tool in payload}
+    assert tool_by_name["ingest_fact_batch"]["contract_status"] == "legacy_transition"
+    assert tool_by_name["ingest_fact_batch"]["recommended_for_external_clients"] is False
+    assert tool_by_name["validate_domain_proposal_batch"]["contract_status"] == "preferred_external_write"
+    assert tool_by_name["validate_domain_proposal_batch"]["recommended_for_external_clients"] is True
+    assert tool_by_name["ingest_domain_proposal_batch"]["contract_status"] == "preferred_external_write"
+    assert tool_by_name["ingest_domain_proposal_batch"]["recommended_for_external_clients"] is True
     assert stderr.getvalue() == ""
 
 
@@ -74,3 +81,56 @@ def test_demo_mvp_runs_end_to_end_and_writes_personal_output(tmp_path: Path) -> 
     persisted_body = persisted_files[0].read_text(encoding="utf-8")
     assert "stratawiki:personal_query_answer" in persisted_body
     assert stderr.getvalue() == ""
+
+
+def test_demo_cli_validates_and_ingests_external_domain_proposal_example(tmp_path: Path) -> None:
+    validation_stdout = StringIO()
+    validation_stderr = StringIO()
+
+    validation_exit_code = run_cli(
+        [
+            "--demo",
+            "--render-root",
+            str(tmp_path),
+            "--domain-pack-path",
+            "examples/domain-packs/recruiting.v2026-04-18.json",
+            "call",
+            "validate_domain_proposal_batch",
+            "--args-file",
+            "examples/integration/recruiting-domain-proposal-batch.json",
+        ],
+        stdout=validation_stdout,
+        stderr=validation_stderr,
+    )
+
+    assert validation_exit_code == 0
+    validation_payload = json.loads(validation_stdout.getvalue())
+    assert validation_payload["ok"] is True
+    assert validation_payload["committed"] is False
+    assert validation_payload["audit"]["evaluated_pack_version"] == "2026-04-18"
+    assert validation_stderr.getvalue() == ""
+
+    ingest_stdout = StringIO()
+    ingest_stderr = StringIO()
+    ingest_exit_code = run_cli(
+        [
+            "--demo",
+            "--render-root",
+            str(tmp_path),
+            "--domain-pack-path",
+            "examples/domain-packs/recruiting.v2026-04-18.json",
+            "call",
+            "ingest_domain_proposal_batch",
+            "--args-file",
+            "examples/integration/recruiting-domain-proposal-batch.json",
+        ],
+        stdout=ingest_stdout,
+        stderr=ingest_stderr,
+    )
+
+    assert ingest_exit_code == 0
+    ingest_payload = json.loads(ingest_stdout.getvalue())
+    assert ingest_payload["ok"] is True
+    assert ingest_payload["committed"] is True
+    assert "fact:job_posting:EMP-1" in ingest_payload["affected_fact_ids"]
+    assert ingest_stderr.getvalue() == ""
