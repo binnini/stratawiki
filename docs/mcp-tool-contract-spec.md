@@ -72,6 +72,85 @@ Recommended sequence:
 
 The repository keeps `ingest_fact_batch` for transition and internal source-driven paths, but external producers should not treat it as the default write surface.
 
+### Current Long-Lived Runtime Boundary
+
+The current intended long-lived runtime contract is a StrataWiki-managed stdio process.
+
+Start it with:
+
+```bash
+stratawiki serve
+```
+
+or equivalently:
+
+```bash
+python -m wiki_mcp.cli serve
+```
+
+This is not full JSON-RPC.
+It is a repository-owned newline-delimited JSON contract that lets external clients keep one StrataWiki runtime process open instead of shelling out for each tool call.
+
+Request envelope:
+
+```json
+{
+  "id": "req-1",
+  "method": "call_tool",
+  "params": {
+    "name": "get_snapshot_status",
+    "arguments": {
+      "domain": "recruiting"
+    }
+  }
+}
+```
+
+Response envelope:
+
+```json
+{
+  "id": "req-1",
+  "ok": true,
+  "protocol_version": "2026-04-19",
+  "result": {
+    "status": "ok"
+  }
+}
+```
+
+Error envelope:
+
+```json
+{
+  "id": "req-1",
+  "ok": false,
+  "protocol_version": "2026-04-19",
+  "error": {
+    "code": "tool_error",
+    "message": "Unknown tool: ...",
+    "details": {
+      "type": "KeyError"
+    }
+  }
+}
+```
+
+Supported runtime methods today:
+
+- `health`
+- `list_tools`
+- `show_tool`
+- `call_tool`
+- `shutdown`
+
+Ownership rules for this boundary:
+
+- external clients talk to the runtime process, not to Postgres directly
+- StrataWiki owns canonical DB access, rendering side effects, snapshot state, and model-provider credentials
+- external clients own request sequencing and payload construction
+- `call_tool` should be used with the same input shapes documented for the current implemented tool surface
+
 ## Planned Tool Surface
 
 The remaining sections describe the broader target protocol shape.

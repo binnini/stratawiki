@@ -59,6 +59,7 @@ Implemented today:
 
 - the Week 1 MVP thin slice across `Fact -> Interpretation -> Personal`
 - a local demo runtime and CLI that exercise the happy path end-to-end
+- a long-lived stdio runtime entrypoint for external clients that should not depend on one-shot subprocess execution
 - the MVP MCP tools for fact ingest, interpretation build and read, personal query, and snapshot status
 - Domain Pack governance services for validation, compatibility review, approval gating, artifact loading, and proposal ingestion
 
@@ -130,6 +131,12 @@ Responsibilities:
 - dispatch to services
 - return structured outputs
 - avoid embedding provider-specific behavior in tool definitions
+
+Current transport note:
+
+- the first stable long-lived external boundary is a StrataWiki-managed stdio runtime started through `stratawiki serve`
+- external clients should treat that runtime as the owner of DB access, render side effects, and model-provider credentials
+- direct database access is outside the intended external contract
 
 Examples:
 

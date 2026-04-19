@@ -113,6 +113,12 @@ Goal:
 
 - maximize iteration speed while preserving core architectural boundaries
 
+Current local baseline:
+
+- the repository now supports a long-lived stdio runtime entrypoint through `stratawiki serve`
+- this gives external clients a stable process boundary without giving them direct database access
+- it is acceptable as the first long-lived runtime contract before a later networked deployment surface is chosen
+
 ### Single-Node Shared Environment
 
 Recommended shape:
@@ -125,6 +131,9 @@ Recommended shape:
 Goal:
 
 - validate async flows, snapshot publishing, and operator workflows before more distributed deployment
+
+The single-node shared environment may still use the stdio runtime boundary when one upstream producer launches and owns the StrataWiki process.
+Later networked or queue-backed deployment surfaces can be added without changing ownership of canonical state.
 
 ### Multi-Process Production-Like Environment
 
@@ -242,6 +251,9 @@ Appropriate tasks:
 - prompt assembly
 - LLM generation for user-facing answers
 - lightweight persistence
+
+The current long-lived stdio runtime belongs to the request path.
+It is a transport boundary for tool requests, not a substitute for worker or scheduler roles.
 
 Inappropriate tasks:
 

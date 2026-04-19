@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import TextIO
 
 from wiki_mcp.demo import DEFAULT_DEMO_SEED_PATH
+from wiki_mcp.runtime_protocol import (
+    list_tools_payload,
+    run_stdio_runtime,
+    show_tool_payload,
+)
 from wiki_mcp.runtime_setup import (
     DEFAULT_POSTGRES_BOOTSTRAP_PATH,
     apply_postgres_bootstrap,
@@ -96,6 +101,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Load the sample MVP seed into the current runtime using the real storage path.",
     )
     subparsers.add_parser("demo-mvp", help="Run the Week 1 MVP flow locally with the demo seed in one process.")
+    subparsers.add_parser(
+        "serve",
+        help="Start the long-lived stdio runtime for external clients.",
+    )
     return parser
 
 
@@ -105,11 +114,13 @@ def run_cli(
     server_factory: ServerFactory = build_server,
     database_bootstrapper: DatabaseBootstrapper = apply_postgres_bootstrap,
     mvp_seed_runner: MvpSeedRunner = run_mvp_seed_flow,
+    stdin: TextIO | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
 ) -> int:
     parser = build_argument_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
+    resolved_stdin = stdin or sys.stdin
     resolved_stdout = stdout or sys.stdout
     resolved_stderr = stderr or sys.stderr
 
@@ -152,15 +163,17 @@ def run_cli(
     try:
         result: object
         if args.command == "list-tools":
-            result = _list_tools(server, group=args.group, full_schemas=args.schemas)
+            result = list_tools_payload(server, group=args.group, full_schemas=args.schemas)
         elif args.command == "show-tool":
-            result = _show_tool(server, args.name)
+            result = show_tool_payload(server, args.name)
         elif args.command == "call":
             result = server.call_tool_with_envelope(args.name, tool_arguments) if args.envelope else server.call_tool(args.name, tool_arguments)
         elif args.command == "seed-mvp":
             result = mvp_seed_runner(server, seed_path=args.seed_path)
         elif args.command == "demo-mvp":
             result = mvp_seed_runner(server, seed_path=args.seed_path)
+        elif args.command == "serve":
+            return run_stdio_runtime(server, stdin=resolved_stdin, stdout=resolved_stdout)
         else:
             raise ValueError(f"Unsupported command: {args.command}")
     except KeyError as exc:
@@ -208,41 +221,6 @@ def _parse_json_object(raw_text: str, *, source: str) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError(f"JSON arguments from {source} must decode to an object.")
     return payload
-
-
-def _list_tools(server: StrataWikiServer, *, group: str | None, full_schemas: bool) -> object:
-    if full_schemas:
-        schemas = server.export_tool_schemas()
-        if group is None:
-            return schemas
-        return [schema for schema in schemas if schema["group"] == group]
-
-    tools = [
-        {
-            "name": tool.name,
-            "group": tool.group,
-            "status": tool.status,
-            "description": tool.description,
-            "entrypoint": tool.entrypoint,
-            **({"contract_status": tool.contract_status} if tool.contract_status is not None else {}),
-            **(
-                {"recommended_for_external_clients": tool.recommended_for_external_clients}
-                if tool.recommended_for_external_clients is not None
-                else {}
-            ),
-        }
-        for tool in server.list_tools()
-    ]
-    if group is None:
-        return tools
-    return [tool for tool in tools if tool["group"] == group]
-
-
-def _show_tool(server: StrataWikiServer, name: str) -> dict[str, object]:
-    for schema in server.export_tool_schemas():
-        if schema["name"] == name:
-            return schema
-    raise KeyError(f"Unknown tool: {name}")
 def _write_json(stream: TextIO, payload: object) -> None:
     json.dump(payload, stream, indent=2, sort_keys=True)
     stream.write("\n")

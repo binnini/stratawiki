@@ -176,6 +176,46 @@ Ownership split:
 - external producers own source collection, normalization, and proposal batch construction
 - StrataWiki owns canonical validation, canonical key resolution, Fact writes, snapshots, and downstream publication
 
+## Long-Lived Runtime Contract
+
+For external clients that should not depend on one-shot subprocess calls, the repository now exposes a long-lived stdio runtime entrypoint:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --database-url postgresql://stratawiki:stratawiki@localhost:5432/stratawiki_dev \
+  --render-root data-dev \
+  serve
+```
+
+That process keeps the StrataWiki runtime open and accepts one JSON request per line on stdin.
+Responses are emitted as one JSON object per line on stdout.
+
+Supported runtime methods today:
+
+- `health`
+- `list_tools`
+- `show_tool`
+- `call_tool`
+- `shutdown`
+
+Example:
+
+```bash
+printf '%s\n%s\n' \
+  '{"id":"req-1","method":"health"}' \
+  '{"id":"req-2","method":"list_tools"}' \
+  | /Users/yebin/venv/bin/python -m wiki_mcp.cli \
+      --database-url postgresql://stratawiki:stratawiki@localhost:5432/stratawiki_dev \
+      --render-root data-dev \
+      serve
+```
+
+Ownership remains on the StrataWiki side:
+
+- StrataWiki owns `DATABASE_URL`, canonical DB access, render output, snapshot pointers, and LLM credentials
+- external clients own request construction and tool invocation sequencing
+- external clients should not directly access StrataWiki tables or filesystem render artifacts as part of the runtime contract
+
 ## Key Documents
 
 - `docs/mcp-architecture.md`
