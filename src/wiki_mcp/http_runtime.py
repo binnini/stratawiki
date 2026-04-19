@@ -145,6 +145,34 @@ def dispatch_http_request(
             tool_name="ingest_domain_proposal_batch",
         )
 
+    if normalized_path.startswith("/api/v1/profile-contexts/"):
+        if normalized_method != "PUT":
+            return _method_not_allowed(request_id, allowed="PUT")
+        suffix = normalized_path.removeprefix("/api/v1/profile-contexts/")
+        tenant_id, user_id = _split_two_path_parts(suffix, label="profile context path")
+        try:
+            payload = _parse_json_object(body)
+            _coerce_path_field(payload, "tenant_id", tenant_id)
+            _coerce_path_field(payload, "user_id", user_id)
+            return _call_tool(
+                server,
+                request_id=request_id,
+                tool_name="upsert_profile_context",
+                arguments=payload,
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
+    if normalized_path == "/api/v1/personal-queries":
+        if normalized_method != "POST":
+            return _method_not_allowed(request_id, allowed="POST")
+        return _dispatch_tool_post(
+            server,
+            request_id=request_id,
+            body=body,
+            tool_name="query_personal_knowledge",
+        )
+
     if normalized_path == "/api/v1/tool-calls":
         if normalized_method != "POST":
             return _method_not_allowed(request_id, allowed="POST")
@@ -381,3 +409,19 @@ def _query_bool(query: Mapping[str, list[str]], key: str, *, default: bool) -> b
     if normalized in {"0", "false", "no"}:
         return False
     raise ValueError(f"Query parameter {key!r} must be a boolean string.")
+
+
+def _split_two_path_parts(raw: str, *, label: str) -> tuple[str, str]:
+    parts = [unquote(part).strip() for part in raw.split("/") if part.strip()]
+    if len(parts) != 2:
+        raise ValueError(f"{label} must include exactly two non-empty path parts.")
+    return parts[0], parts[1]
+
+
+def _coerce_path_field(payload: dict[str, object], field: str, value: str) -> None:
+    existing = payload.get(field)
+    if existing is None:
+        payload[field] = value
+        return
+    if not isinstance(existing, str) or existing.strip() != value:
+        raise ValueError(f"Field '{field}' must match the path value.")

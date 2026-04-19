@@ -51,7 +51,12 @@ The current REST state after `#41`, `#42`, and `#46` is:
 - proposal validation and ingest endpoints now exist
 - bearer token auth baseline now exists
 
-Jobs-Wiki should still treat the wrapper path as the safest default until the Personal and interpretation endpoints also land, but the proposal write path can now be tested over HTTP.
+After `#43`, the REST state is:
+
+- profile sync now exists through `PUT /api/v1/profile-contexts/{tenant_id}/{user_id}`
+- Personal query now exists through `POST /api/v1/personal-queries`
+
+Jobs-Wiki should still treat the wrapper path as the safest default until interpretation build and deployment migration work also land, but the write path and Personal path can now be tested over HTTP.
 
 ## Future Target Path
 
@@ -125,8 +130,8 @@ Recommended condition before removing the wrapper path:
 
 ### Personal Query Sequence
 
-1. upsert the current profile context
-2. call Personal query with the same `profile_version`
+1. `PUT /api/v1/profile-contexts/{tenant_id}/{user_id}`
+2. `POST /api/v1/personal-queries` with the same `profile_version`
 3. prefer `save=false` in the first migration stage unless persistence is explicitly required
 
 ### Interpretation Build Sequence
@@ -152,5 +157,6 @@ Jobs-Wiki should not do these things yet:
 - prepare dual-mode config keys for wrapper and HTTP
 - treat `DomainProposalBatch` as the only default external write contract
 - prefer the new HTTP proposal endpoints over the generic `/api/v1/tool-calls` bridge for write traffic
+- use the new HTTP profile and Personal endpoints rather than the generic `/api/v1/tool-calls` bridge for these flows
 - keep profile sync before Personal query
 - do not make background interpretation builds the default until job polling is wired

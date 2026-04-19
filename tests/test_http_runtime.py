@@ -9,6 +9,7 @@ from wiki_mcp.tools import ToolDefinition
 class FakeHttpServer:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
+        self.profile_contexts: dict[tuple[str, str, str], dict[str, object]] = {}
         self._tools = [
             ToolDefinition(
                 name="validate_domain_proposal_batch",
@@ -32,6 +33,45 @@ class FakeHttpServer:
                     "type": "object",
                     "required": ["batch"],
                     "properties": {"batch": {"type": "object"}},
+                },
+            ),
+            ToolDefinition(
+                name="upsert_profile_context",
+                group="personal",
+                status="mvp",
+                description="Upsert one profile context.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": [
+                        "domain",
+                        "tenant_id",
+                        "user_id",
+                        "profile_version",
+                        "goals",
+                        "preferences",
+                        "attributes",
+                    ],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="query_personal_knowledge",
+                group="personal",
+                status="mvp",
+                description="Run a Personal query.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": [
+                        "domain",
+                        "tenant_id",
+                        "user_id",
+                        "question",
+                        "profile_version",
+                        "model_profile",
+                    ],
+                    "properties": {"domain": {"type": "string"}},
                 },
             ),
             ToolDefinition(
@@ -86,6 +126,57 @@ class FakeHttpServer:
                 "affected_fact_ids": ["fact:job_posting:EMP-1"],
                 "audit": {
                     "evaluated_pack_version": batch.get("pack_version") or "2026-04-18",
+                },
+            }
+        if name == "upsert_profile_context":
+            domain = payload.get("domain")
+            tenant_id = payload.get("tenant_id")
+            user_id = payload.get("user_id")
+            profile_version = payload.get("profile_version")
+            if not isinstance(domain, str) or not domain.strip():
+                raise ValueError("domain is required")
+            if not isinstance(tenant_id, str) or not tenant_id.strip():
+                raise ValueError("tenant_id is required")
+            if not isinstance(user_id, str) or not user_id.strip():
+                raise ValueError("user_id is required")
+            if not isinstance(profile_version, str) or not profile_version.strip():
+                raise ValueError("profile_version is required")
+            record = dict(payload)
+            self.profile_contexts[(domain, tenant_id, user_id)] = record
+            return {"status": "ok", "profile_context": record}
+        if name == "query_personal_knowledge":
+            domain = payload.get("domain")
+            tenant_id = payload.get("tenant_id")
+            user_id = payload.get("user_id")
+            profile_version = payload.get("profile_version")
+            question = payload.get("question")
+            model_profile = payload.get("model_profile")
+            if not isinstance(domain, str) or not domain.strip():
+                raise ValueError("domain is required")
+            if not isinstance(tenant_id, str) or not tenant_id.strip():
+                raise ValueError("tenant_id is required")
+            if not isinstance(user_id, str) or not user_id.strip():
+                raise ValueError("user_id is required")
+            if not isinstance(profile_version, str) or not profile_version.strip():
+                raise ValueError("profile_version is required")
+            if not isinstance(question, str) or not question.strip():
+                raise ValueError("question is required")
+            if not isinstance(model_profile, str) or not model_profile.strip():
+                raise ValueError("model_profile is required")
+            profile = self.profile_contexts.get((domain, tenant_id, user_id))
+            if profile is None:
+                raise KeyError("No profile context found.")
+            if profile.get("profile_version") != profile_version:
+                raise ValueError("Requested profile_version does not match the current stored profile context.")
+            return {
+                "status": "ok",
+                "answer_markdown": f"## Strategy\n\nAnswer for: {question}",
+                "personal_records_used": [],
+                "interpretation_records_used": [],
+                "fact_records_used": [],
+                "provenance": {
+                    "model_profile": model_profile,
+                    "profile_version": profile_version,
                 },
             }
         if name == "get_snapshot_status":
@@ -236,6 +327,91 @@ def test_http_runtime_exposes_domain_proposal_validate_and_ingest_endpoints() ->
             },
         ),
     ]
+
+
+def test_http_runtime_exposes_profile_upsert_and_personal_query_endpoints() -> None:
+    fake_server = FakeHttpServer()
+
+    upsert_response = dispatch_http_request(
+        fake_server,
+        method="PUT",
+        path="/api/v1/profile-contexts/tenant-1/user-1",
+        headers={"X-Request-Id": "req-profile"},
+        body=(
+            b'{"domain":"recruiting","profile_version":"profile:v1","goals":["find backend roles"],'
+            b'"preferences":{"location":"jp"},"attributes":{"level":"mid"}}'
+        ),
+    )
+    query_response = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/personal-queries",
+        headers={"X-Request-Id": "req-query"},
+        body=(
+            b'{"domain":"recruiting","tenant_id":"tenant-1","user_id":"user-1",'
+            b'"question":"What should I do next?","profile_version":"profile:v1",'
+            b'"model_profile":"balanced_default","save":false}'
+        ),
+    )
+
+    assert upsert_response.status_code == 200
+    assert upsert_response.payload["ok"] is True
+    assert upsert_response.payload["request_id"] == "req-profile"
+    profile = upsert_response.payload["result"]["profile_context"]
+    assert profile["tenant_id"] == "tenant-1"
+    assert profile["user_id"] == "user-1"
+
+    assert query_response.status_code == 200
+    assert query_response.payload["ok"] is True
+    assert query_response.payload["request_id"] == "req-query"
+    assert "## Strategy" in query_response.payload["result"]["answer_markdown"]
+    assert query_response.payload["result"]["provenance"]["profile_version"] == "profile:v1"
+
+
+def test_http_runtime_personal_query_maps_missing_profile_and_profile_mismatch() -> None:
+    fake_server = FakeHttpServer()
+
+    missing_profile = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/personal-queries",
+        headers={},
+        body=(
+            b'{"domain":"recruiting","tenant_id":"tenant-1","user_id":"user-1",'
+            b'"question":"What should I do next?","profile_version":"profile:v1",'
+            b'"model_profile":"balanced_default"}'
+        ),
+    )
+
+    fake_server.profile_contexts[("recruiting", "tenant-1", "user-1")] = {
+        "domain": "recruiting",
+        "tenant_id": "tenant-1",
+        "user_id": "user-1",
+        "profile_version": "profile:v2",
+        "goals": [],
+        "preferences": {},
+        "attributes": {},
+    }
+
+    mismatched_profile = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/personal-queries",
+        headers={},
+        body=(
+            b'{"domain":"recruiting","tenant_id":"tenant-1","user_id":"user-1",'
+            b'"question":"What should I do next?","profile_version":"profile:v1",'
+            b'"model_profile":"balanced_default"}'
+        ),
+    )
+
+    assert missing_profile.status_code == 404
+    assert missing_profile.payload["ok"] is False
+    assert missing_profile.payload["error"]["code"] == "not_found"
+
+    assert mismatched_profile.status_code == 422
+    assert mismatched_profile.payload["ok"] is False
+    assert mismatched_profile.payload["error"]["code"] == "validation_error"
 
 
 def test_http_runtime_requires_bearer_token_when_configured() -> None:

@@ -299,6 +299,8 @@ Implemented baseline endpoints:
 - `POST /api/v1/tool-calls`
 - `POST /api/v1/domain-proposals/validate`
 - `POST /api/v1/domain-proposals/ingest`
+- `PUT /api/v1/profile-contexts/{tenant_id}/{user_id}`
+- `POST /api/v1/personal-queries`
 
 Request example:
 
@@ -335,6 +337,27 @@ curl -s \
   -H 'Authorization: Bearer replace-me' \
   --data @examples/integration/recruiting-domain-proposal-batch.json \
   http://127.0.0.1:8080/api/v1/domain-proposals/ingest
+```
+
+Profile sync example:
+
+```bash
+curl -s \
+  -X PUT \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer replace-me' \
+  -d '{"domain":"recruiting","profile_version":"profile:v1","goals":["find backend roles"],"preferences":{"location":"jp"},"attributes":{"level":"mid"}}' \
+  http://127.0.0.1:8080/api/v1/profile-contexts/tenant-1/user-1
+```
+
+Personal query example:
+
+```bash
+curl -s \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer replace-me' \
+  -d '{"domain":"recruiting","tenant_id":"tenant-1","user_id":"user-1","question":"What backend roles should I target next?","profile_version":"profile:v1","model_profile":"balanced_default","save":false}' \
+  http://127.0.0.1:8080/api/v1/personal-queries
 ```
 
 Supported runtime methods today:

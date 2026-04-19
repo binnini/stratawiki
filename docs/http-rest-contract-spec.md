@@ -24,6 +24,7 @@ The intended first external consumers are service-to-service clients such as Job
 - baseline HTTP probes and generic tool bridge endpoints
 - a first service-to-service bearer-token gate for the HTTP runtime through `STRATAWIKI_HTTP_AUTH_TOKEN`
 - resource-specific DomainProposalBatch validate and ingest endpoints
+- resource-specific profile sync and Personal query endpoints
 
 ### Recommended but Not Yet Fixed
 
@@ -172,6 +173,8 @@ The first HTTP baseline intentionally exposes generic runtime endpoints before t
 | `/api/v1/tool-calls` | `POST` | any current tool | execute one tool with its existing argument shape | implemented |
 | `/api/v1/domain-proposals/validate` | `POST` | `validate_domain_proposal_batch` | validate one `DomainProposalBatch` | implemented |
 | `/api/v1/domain-proposals/ingest` | `POST` | `ingest_domain_proposal_batch` | ingest one validated `DomainProposalBatch` | implemented |
+| `/api/v1/profile-contexts/{tenant_id}/{user_id}` | `PUT` | `upsert_profile_context` | upsert one profile context | implemented |
+| `/api/v1/personal-queries` | `POST` | `query_personal_knowledge` | run one Personal query | implemented |
 
 ## Planned Resource-Specific Endpoint Set
 
@@ -179,8 +182,6 @@ These endpoints remain the target migration surface for external clients such as
 
 | Endpoint | Method | Source Tool | Purpose | Status |
 | --- | --- | --- | --- | --- |
-| `/api/v1/profile-contexts/{tenant_id}/{user_id}` | `PUT` | `upsert_profile_context` | upsert one profile context | planned |
-| `/api/v1/personal-queries` | `POST` | `query_personal_knowledge` | run one Personal query | planned |
 | `/api/v1/interpretation-builds` | `POST` | `build_interpretation_snapshot` | request one interpretation build | planned |
 | `/api/v1/jobs/{job_id}` | `GET` | `get_job_status` | inspect one background job | planned |
 | `/api/v1/snapshot-status` | `GET` | `get_snapshot_status` | inspect current snapshot state | planned |
@@ -253,6 +254,12 @@ The generic `/api/v1/tool-calls` bridge should no longer be treated as the defau
 }
 ```
 
+Path rules:
+
+- `tenant_id` and `user_id` come from the URL path
+- the body may omit those two fields
+- if the body includes either field, it must match the path value exactly
+
 ### Run Personal Query
 
 `POST /api/v1/personal-queries`
@@ -268,6 +275,11 @@ The generic `/api/v1/tool-calls` bridge should no longer be treated as the defau
   "save": false
 }
 ```
+
+Error expectations currently implemented:
+
+- missing stored profile context returns `404 not_found`
+- mismatched `profile_version` returns `422 validation_error`
 
 ### Request Interpretation Build
 
