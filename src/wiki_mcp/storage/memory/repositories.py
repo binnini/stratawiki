@@ -263,6 +263,10 @@ class InMemoryProfileContextRepository:
             )
         return dict(self.profiles[key])
 
+    def save_profile_context(self, profile: dict[str, Any]) -> None:
+        key = (profile["domain"], profile["tenant_id"], profile["user_id"])
+        self.profiles[key] = dict(profile)
+
 
 @dataclass
 class InMemorySnapshotRepository:

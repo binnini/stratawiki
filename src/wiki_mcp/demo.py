@@ -39,6 +39,33 @@ from wiki_mcp.storage.memory import (
 
 
 DEFAULT_DEMO_SEED_PATH = Path("examples/demo/mvp-seed.json")
+DEFAULT_DEMO_TEXT_RESPONSE = (
+    "## Strategy\n\n"
+    "Focus on backend roles that explicitly mention platform, API, and production AI delivery work.\n\n"
+    "## Next Steps\n\n"
+    "- Prioritize postings that mention applied LLM or AI systems.\n"
+    "- Emphasize backend execution, APIs, and shipping experience.\n"
+    "- Build application materials around production-facing impact.\n"
+)
+DEFAULT_DEMO_STRUCTURED_OUTPUT = {
+    "kind": "market_trend",
+    "title": "Production AI delivery demand is rising",
+    "claim": "Backend roles increasingly prefer candidates who can ship production AI systems.",
+    "summary": "Hiring signals are tilting toward backend candidates with practical AI delivery experience.",
+    "body": {
+        "headline": "Production AI experience is showing up more often",
+        "thesis": "Employers want backend engineers who can translate AI capability into production systems.",
+        "signals": [
+            "Job summaries mention production AI, API delivery, and platform integration."
+        ],
+        "observations": [
+            "Demand is clustering around backend and platform responsibilities."
+        ],
+        "counterpoints": [
+            "Core backend fundamentals remain the baseline requirement."
+        ]
+    },
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +97,15 @@ def load_demo_seed(seed_path: str | Path | None = None) -> DemoSeed:
     return DemoSeed(raw=raw)
 
 
+def build_demo_llm_gateway() -> DeterministicLLMGateway:
+    return DeterministicLLMGateway(
+        provider="mock",
+        model="deterministic-demo-v1",
+        default_text=DEFAULT_DEMO_TEXT_RESPONSE,
+        default_structured_output=DEFAULT_DEMO_STRUCTURED_OUTPUT,
+    )
+
+
 def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None = None) -> dict[str, Any]:
     seed = load_demo_seed(seed_path)
     fact_repository = InMemoryFactRepository()
@@ -84,37 +120,7 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
     snapshot_repository = InMemorySnapshotRepository()
     outbox_repository = InMemoryOutboxRepository()
     rendering_repository = FileSystemRenderingRepository(render_root)
-    llm_gateway = DeterministicLLMGateway(
-        provider="mock",
-        model="deterministic-demo-v1",
-        default_text=(
-            "## Strategy\n\n"
-            "Focus on backend roles that explicitly mention platform, API, and production AI delivery work.\n\n"
-            "## Next Steps\n\n"
-            "- Prioritize postings that mention applied LLM or AI systems.\n"
-            "- Emphasize backend execution, APIs, and shipping experience.\n"
-            "- Build application materials around production-facing impact.\n"
-        ),
-        default_structured_output={
-            "kind": "market_trend",
-            "title": "Production AI delivery demand is rising",
-            "claim": "Backend roles increasingly prefer candidates who can ship production AI systems.",
-            "summary": "Hiring signals are tilting toward backend candidates with practical AI delivery experience.",
-            "body": {
-                "headline": "Production AI experience is showing up more often",
-                "thesis": "Employers want backend engineers who can translate AI capability into production systems.",
-                "signals": [
-                    "Job summaries mention production AI, API delivery, and platform integration."
-                ],
-                "observations": [
-                    "Demand is clustering around backend and platform responsibilities."
-                ],
-                "counterpoints": [
-                    "Core backend fundamentals remain the baseline requirement."
-                ]
-            }
-        },
-    )
+    llm_gateway = build_demo_llm_gateway()
     core_ingestion_service = DefaultCoreIngestionService(
         fact_repository=fact_repository,
         snapshot_repository=snapshot_repository,

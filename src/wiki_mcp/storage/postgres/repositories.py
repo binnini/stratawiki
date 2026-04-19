@@ -39,7 +39,11 @@ def _normalized_text_sql(*parts: str) -> str:
 def _fts_query_sql(
     *,
     query_text: str,
+    query_tokens: list[str] | None = None,
 ) -> tuple[str, list[Any]]:
+    normalized_tokens = [token for token in (query_tokens or []) if token]
+    if normalized_tokens:
+        return "to_tsquery('simple', %s)", [" | ".join(normalized_tokens)]
     return "websearch_to_tsquery('simple', %s)", [query_text]
 
 
@@ -150,7 +154,10 @@ class PostgresFactRepository(PostgresRepositoryBase):
             "attributes_json->>'headline'",
         )
         vector_sql = _fts_vector_sql(search_expr=search_expr)
-        query_sql, query_params = _fts_query_sql(query_text=query_text)
+        query_sql, query_params = _fts_query_sql(
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -224,7 +231,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         attributes_json,
                         provenance_json
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         layer = EXCLUDED.layer,
@@ -678,7 +685,10 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             "body_json->>'headline'",
         )
         vector_sql = _fts_vector_sql(search_expr=search_expr)
-        query_sql, query_params = _fts_query_sql(query_text=query_text)
+        query_sql, query_params = _fts_query_sql(
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -844,8 +854,8 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                 if data.get("interpretation_snapshot_id")
                 else {}
             ),
-            "computed_at": data["computed_at"],
-            "expires_at": data["expires_at"],
+            "computed_at": str(data["computed_at"]),
+            "expires_at": str(data["expires_at"]) if data.get("expires_at") else None,
             **({"title": data["title"]} if data.get("title") else {}),
             **({"claim": data["claim"]} if data.get("claim") else {}),
             **({"summary": data["summary"]} if data.get("summary") else {}),
@@ -1004,7 +1014,10 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             "body_path",
         )
         vector_sql = _fts_vector_sql(search_expr=search_expr)
-        query_sql, query_params = _fts_query_sql(query_text=query_text)
+        query_sql, query_params = _fts_query_sql(
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -1290,6 +1303,38 @@ class PostgresProfileContextRepository(PostgresRepositoryBase):
                 "attributes": self._load_dict(data["attributes_json"]),
             }
 
+    def save_profile_context(self, profile: ProfileContext) -> None:
+        self._validate_profile_context(profile)
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO personal.profile_context (
+                    domain,
+                    tenant_id,
+                    user_id,
+                    profile_version,
+                    goals_json,
+                    preferences_json,
+                    attributes_json
+                ) VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
+                ON CONFLICT (domain, tenant_id, user_id) DO UPDATE SET
+                    profile_version = EXCLUDED.profile_version,
+                    goals_json = EXCLUDED.goals_json,
+                    preferences_json = EXCLUDED.preferences_json,
+                    attributes_json = EXCLUDED.attributes_json,
+                    updated_at = NOW()
+                """,
+                (
+                    profile["domain"],
+                    profile["tenant_id"],
+                    profile["user_id"],
+                    profile["profile_version"],
+                    self._json(profile.get("goals", [])),
+                    self._json(profile.get("preferences", {})),
+                    self._json(profile.get("attributes", {})),
+                ),
+            )
+
     def _load_list(self, value: Any) -> list[str]:
         if isinstance(value, list):
             return value
@@ -1303,6 +1348,30 @@ class PostgresProfileContextRepository(PostgresRepositoryBase):
         if value is None:
             return {}
         return json.loads(value)
+
+    def _validate_profile_context(self, profile: ProfileContext) -> None:
+        ensure_non_empty_string(
+            profile.get("domain"),
+            label="ProfileContext.domain",
+        )
+        ensure_non_empty_string(
+            profile.get("tenant_id"),
+            label="ProfileContext.tenant_id",
+        )
+        ensure_non_empty_string(
+            profile.get("user_id"),
+            label="ProfileContext.user_id",
+        )
+        ensure_non_empty_string(
+            profile.get("profile_version"),
+            label="ProfileContext.profile_version",
+        )
+        if not isinstance(profile.get("goals"), list):
+            raise ValueError("ProfileContext.goals must be a list.")
+        if not isinstance(profile.get("preferences"), dict):
+            raise ValueError("ProfileContext.preferences must be a mapping.")
+        if not isinstance(profile.get("attributes"), dict):
+            raise ValueError("ProfileContext.attributes must be a mapping.")
 
 
 class PostgresSnapshotRepository(PostgresRepositoryBase):
@@ -1380,10 +1449,10 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
         layer: str | None = None,
         domain: str,
     ) -> dict[str, object] | None:
-        where_clause = "domain = %s"
+        where_clause = "p.domain = %s"
         params: list[Any] = [domain]
         if layer is not None:
-            where_clause += " AND layer = %s"
+            where_clause += " AND p.layer = %s"
             params.append(layer)
 
         with managed_cursor(self.connection) as cursor:
@@ -1423,7 +1492,7 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
                     else {}
                 ),
                 **({"profile_version": data["profile_version"]} if data.get("profile_version") else {}),
-                **({"published_at": data["published_at"]} if data.get("published_at") else {}),
+                **({"published_at": str(data["published_at"])} if data.get("published_at") else {}),
             }
 
 

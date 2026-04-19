@@ -7,11 +7,18 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TextIO
 
-from wiki_mcp.demo import DEFAULT_DEMO_SEED_PATH, load_demo_seed
+from wiki_mcp.demo import DEFAULT_DEMO_SEED_PATH
+from wiki_mcp.runtime_setup import (
+    DEFAULT_POSTGRES_BOOTSTRAP_PATH,
+    apply_postgres_bootstrap,
+    run_mvp_seed_flow,
+)
 from wiki_mcp.server import StrataWikiServer, build_server
 
 
 ServerFactory = Callable[..., StrataWikiServer]
+DatabaseBootstrapper = Callable[..., dict[str, object]]
+MvpSeedRunner = Callable[..., dict[str, object]]
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -36,7 +43,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--seed-path",
         default=str(DEFAULT_DEMO_SEED_PATH),
-        help="Seed path used by demo mode and the demo-mvp command.",
+        help="Seed path used by demo mode, demo-mvp, and seed-mvp.",
     )
     parser.add_argument(
         "--domain-pack-path",
@@ -74,6 +81,20 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Wrap the response in the registry ok/error envelope.",
     )
 
+    init_db = subparsers.add_parser(
+        "init-db",
+        help="Apply the checked-in Postgres bootstrap SQL to the configured database.",
+    )
+    init_db.add_argument(
+        "--bootstrap-sql",
+        default=str(DEFAULT_POSTGRES_BOOTSTRAP_PATH),
+        help="Path to the SQL file used to initialize the local Postgres schema.",
+    )
+
+    subparsers.add_parser(
+        "seed-mvp",
+        help="Load the sample MVP seed into the current runtime using the real storage path.",
+    )
     subparsers.add_parser("demo-mvp", help="Run the Week 1 MVP flow locally with the demo seed in one process.")
     return parser
 
@@ -82,6 +103,8 @@ def run_cli(
     argv: Sequence[str] | None = None,
     *,
     server_factory: ServerFactory = build_server,
+    database_bootstrapper: DatabaseBootstrapper = apply_postgres_bootstrap,
+    mvp_seed_runner: MvpSeedRunner = run_mvp_seed_flow,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
 ) -> int:
@@ -99,6 +122,25 @@ def run_cli(
         parser.exit(2, f"{parser.prog}: error: {exc}\n")
         return 2
 
+    if args.command == "seed-mvp" and args.demo:
+        parser.exit(2, f"{parser.prog}: error: seed-mvp cannot be combined with --demo; use demo-mvp instead.\n")
+        return 2
+    if args.command == "init-db" and args.demo:
+        parser.exit(2, f"{parser.prog}: error: init-db targets the Postgres runtime and cannot be combined with --demo.\n")
+        return 2
+
+    if args.command == "init-db":
+        try:
+            result = database_bootstrapper(
+                database_url=args.database_url,
+                bootstrap_sql_path=args.bootstrap_sql,
+            )
+        except Exception as exc:
+            resolved_stderr.write(json.dumps({"ok": False, "error": exc.__class__.__name__, "message": str(exc)}) + "\n")
+            return 1
+        _write_json(resolved_stdout, result)
+        return 0
+
     server = server_factory(
         database_url=args.database_url,
         render_root=Path(args.render_root),
@@ -115,8 +157,10 @@ def run_cli(
             result = _show_tool(server, args.name)
         elif args.command == "call":
             result = server.call_tool_with_envelope(args.name, tool_arguments) if args.envelope else server.call_tool(args.name, tool_arguments)
+        elif args.command == "seed-mvp":
+            result = mvp_seed_runner(server, seed_path=args.seed_path)
         elif args.command == "demo-mvp":
-            result = _run_demo_mvp(server, seed_path=args.seed_path)
+            result = mvp_seed_runner(server, seed_path=args.seed_path)
         else:
             raise ValueError(f"Unsupported command: {args.command}")
     except KeyError as exc:
@@ -193,44 +237,6 @@ def _show_tool(server: StrataWikiServer, name: str) -> dict[str, object]:
         if schema["name"] == name:
             return schema
     raise KeyError(f"Unknown tool: {name}")
-
-
-def _run_demo_mvp(server: StrataWikiServer, *, seed_path: str) -> dict[str, object]:
-    seed = load_demo_seed(seed_path)
-    query = seed.demo_query
-    partition = seed.demo_partition
-    ingest = server.call_tool(
-        "ingest_fact_batch",
-        {"domain": query["domain"], "source_records": seed.source_records},
-    )
-    build = server.call_tool(
-        "build_interpretation_snapshot",
-        {
-            "domain": query["domain"],
-            "partition": partition,
-            "fact_ids": ingest["affected_fact_ids"],
-            "fact_snapshot": ingest["fact_snapshot"],
-            "model_profile": query["model_profile"],
-            "publish": True,
-        },
-    )
-    personal_query = server.call_tool("query_personal_knowledge", query)
-    snapshot = server.call_tool(
-        "get_snapshot_status",
-        {"domain": query["domain"], "partition": {"family": partition["family"]}},
-    )
-    return {
-        "status": "ok",
-        "seed_path": seed_path,
-        "steps": {
-            "ingest_fact_batch": ingest,
-            "build_interpretation_snapshot": build,
-            "query_personal_knowledge": personal_query,
-            "get_snapshot_status": snapshot,
-        },
-    }
-
-
 def _write_json(stream: TextIO, payload: object) -> None:
     json.dump(payload, stream, indent=2, sort_keys=True)
     stream.write("\n")

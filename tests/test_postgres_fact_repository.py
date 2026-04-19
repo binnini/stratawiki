@@ -99,6 +99,45 @@ def test_get_by_canonical_keys_queries_fact_store_and_maps_metadata() -> None:
     assert params == [["job_posting:EMP-1"], "shared"]
 
 
+def test_get_by_ids_decodes_text_rows_returned_as_bytes() -> None:
+    cursor = FakeCursor(
+        [
+            {
+                "fetchall": [
+                    {
+                        "id": b"fact:job_posting:emp-1",
+                        "layer": b"fact",
+                        "domain": b"recruiting",
+                        "entity_type": b"job_posting",
+                        "canonical_key": b"job_posting:EMP-1",
+                        "scope": b"shared",
+                        "fact_snapshot_id": b"fact_snap:recruiting:EMP-1:1",
+                        "tenant_id": None,
+                        "user_id": None,
+                        "status": b"active",
+                        "version": 2,
+                        "created_at": "2026-04-18T00:00:00Z",
+                        "updated_at": "2026-04-18T01:00:00Z",
+                        "schema_version": b"fact.v1",
+                        "attributes_json": {"title": "Backend Engineer"},
+                        "provenance_json": {"source_id": "EMP-1"},
+                    }
+                ]
+            }
+        ]
+    )
+    repository = PostgresFactRepository(FakeConnection(cursor))
+
+    records = repository.get_by_ids(
+        ["fact:job_posting:emp-1"],
+        {"scope": "shared"},
+    )
+
+    assert records[0]["id"] == "fact:job_posting:emp-1"
+    assert records[0]["layer"] == "fact"
+    assert records[0]["canonical_key"] == "job_posting:EMP-1"
+
+
 def test_write_facts_defaults_fact_metadata_on_insert() -> None:
     cursor = FakeCursor(
         [
@@ -130,6 +169,7 @@ def test_write_facts_defaults_fact_metadata_on_insert() -> None:
     assert result["facts_updated"] == 0
     insert_query, insert_params = cursor.executed[2]
     assert "INSERT INTO fact.record_envelopes" in insert_query
+    assert insert_query.count("%s") == len(insert_params)
     assert insert_params[1] == "fact"
     assert insert_params[9] == "active"
     assert insert_params[10] == 1
@@ -257,3 +297,20 @@ def test_write_facts_rejects_canonical_identity_conflict_at_storage_boundary() -
         )
 
     assert connection.rollbacks == 1
+
+
+def test_search_for_retrieval_uses_token_or_query_for_postgres_fts() -> None:
+    cursor = FakeCursor([{"fetchall": []}])
+    repository = PostgresFactRepository(FakeConnection(cursor))
+
+    repository.search_for_retrieval(
+        domain="recruiting",
+        scope_ref={"scope": "shared"},
+        query_text="backend roles in tokyo startups",
+        query_tokens=["backend", "tokyo", "startups"],
+        limit=5,
+    )
+
+    query, params = cursor.executed[0]
+    assert "to_tsquery('simple', %s)" in query
+    assert "backend | tokyo | startups" in params

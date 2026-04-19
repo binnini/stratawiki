@@ -244,7 +244,7 @@ class CuratedRetrievalService:
                     domain=domain,
                     question=question,
                     query_tokens=query_tokens,
-                    scope_ref=scope_ref,
+                    scope_ref=self._shared_scope_ref(),
                 )
             ]
         fact_ids = [
@@ -253,7 +253,7 @@ class CuratedRetrievalService:
                 domain=domain,
                 question=question,
                 query_tokens=query_tokens,
-                scope_ref=scope_ref,
+                scope_ref=self._shared_scope_ref(),
             )
         ]
         if not interpretation_ids and not fact_ids:
@@ -294,7 +294,7 @@ class CuratedRetrievalService:
         if personal_anchor_interpretation_ids:
             records = self._load_interpretations_by_ids(
                 ids=personal_anchor_interpretation_ids[: self.layer_result_limit],
-                scope_ref=scope_ref,
+                scope_ref=self._shared_scope_ref(),
             )
             if records:
                 for record in records:
@@ -309,7 +309,7 @@ class CuratedRetrievalService:
             domain=domain,
             question=question,
             query_tokens=query_tokens,
-            scope_ref=scope_ref,
+            scope_ref=self._shared_scope_ref(),
         )
         for record in records:
             source_by_id[record["id"]] = {
@@ -380,7 +380,10 @@ class CuratedRetrievalService:
         selected_fact_ids = (
             evidence_fact_ids[: self.evidence_fact_limit] + anchored_fact_ids
         )[: self.layer_result_limit]
-        fact_records = self._load_facts_by_ids(ids=selected_fact_ids, scope_ref=scope_ref)
+        fact_records = self._load_facts_by_ids(
+            ids=selected_fact_ids,
+            scope_ref=self._shared_scope_ref(),
+        )
 
         loaded_fact_ids = {record["id"] for record in fact_records}
         fact_source: Literal["interpretation_evidence", "personal_anchors", "search_fallback", "mixed", "none"] = "none"
@@ -411,7 +414,7 @@ class CuratedRetrievalService:
                 domain=domain,
                 question=question,
                 query_tokens=query_tokens,
-                scope_ref=scope_ref,
+                scope_ref=self._shared_scope_ref(),
                 exclude_ids=[record["id"] for record in fact_records],
             )
             if fallback_records:
@@ -661,6 +664,9 @@ class CuratedRetrievalService:
             fact_ids.extend(self._extract_anchor_ids(body.get("anchors"), expected_layer="fact"))
             fact_ids.extend(self._extract_string_list(body.get("fact_ids")))
         return self._dedupe(interpretation_ids), self._dedupe(fact_ids)
+
+    def _shared_scope_ref(self) -> ScopeRef:
+        return {"scope": "shared"}
 
     def _collect_evidence_fact_ids(
         self,

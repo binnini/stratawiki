@@ -16,12 +16,14 @@ class StubFactRepository:
         self.by_id = by_id or {}
         self.search_results = search_results or []
         self.search_calls: list[dict[str, Any]] = []
+        self.get_by_id_calls: list[dict[str, Any]] = []
 
     def get_by_ids(
         self,
         ids: list[str],
         scope_ref: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        self.get_by_id_calls.append({"ids": list(ids), "scope_ref": dict(scope_ref)})
         return [self.by_id[record_id] for record_id in ids if record_id in self.by_id]
 
     def search_for_retrieval(self, **kwargs: Any) -> list[dict[str, Any]]:
@@ -39,12 +41,14 @@ class StubInterpretationRepository:
         self.by_id = by_id or {}
         self.search_results = search_results or []
         self.search_calls: list[dict[str, Any]] = []
+        self.get_by_id_calls: list[dict[str, Any]] = []
 
     def get_by_ids(
         self,
         ids: list[str],
         scope_ref: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        self.get_by_id_calls.append({"ids": list(ids), "scope_ref": dict(scope_ref)})
         return [self.by_id[record_id] for record_id in ids if record_id in self.by_id]
 
     def search_for_retrieval(self, **kwargs: Any) -> list[dict[str, Any]]:
@@ -501,3 +505,37 @@ def test_personal_query_bundle_carries_retrieval_metadata() -> None:
     )
 
     assert bundle["retrieval_metadata"] == retrieval["retrieval_metadata"]
+
+
+def test_curated_retrieval_uses_shared_scope_for_lower_layers_from_user_query() -> None:
+    interpretation_repository = StubInterpretationRepository(
+        search_results=[
+            _interpretation(
+                "interp:shared",
+                evidence=[{"fact_id": "fact:shared", "weight": 0.8}],
+            )
+        ]
+    )
+    fact_repository = StubFactRepository(
+        by_id={"fact:shared": _fact("fact:shared", "Shared fact")}
+    )
+    service = CuratedRetrievalService(
+        fact_repository=fact_repository,
+        interpretation_repository=interpretation_repository,
+        personal_repository=StubPersonalRepository(search_results=[]),
+    )
+
+    result = service.retrieve_for_query(
+        domain="recruiting",
+        question="backend startup trends",
+        scope_ref=_scope_ref(),
+    )
+
+    assert result["interpretation_ids"] == ["interp:shared"]
+    assert result["fact_ids"] == ["fact:shared"]
+    assert result["snapshot_ref"] == {
+        "fact_snapshot_id": "fact_snap:1",
+        "interpretation_snapshot_id": "interp_snap:1",
+    }
+    assert interpretation_repository.search_calls[0]["scope_ref"] == {"scope": "shared"}
+    assert fact_repository.get_by_id_calls[0]["scope_ref"] == {"scope": "shared"}

@@ -146,6 +146,9 @@ class ProfileContextRepository(Protocol):
     ) -> ProfileContext:
         """Return the current persisted profile context."""
 
+    def save_profile_context(self, profile: ProfileContext) -> None:
+        """Persist or update one profile context."""
+
 
 class RenderingRepository(Protocol):
     """Persistence boundary for readable rendered artifacts."""

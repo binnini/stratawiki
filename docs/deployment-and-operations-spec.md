@@ -107,6 +107,7 @@ Recommended shape:
 - one MCP server process
 - worker and scheduler may run inline or as simple local processes
 - local durable storage is acceptable
+- repository-provided database bootstrap artifacts should be enough to initialize the local canonical store
 
 Goal:
 

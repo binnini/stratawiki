@@ -85,11 +85,54 @@ You can also override the seed and render paths:
 
 ## Postgres Runtime
 
-The non-demo runtime still expects a PostgreSQL database reachable through `DATABASE_URL` or the default local URL in `src/wiki_mcp/bootstrap.py`.
+The non-demo runtime expects a PostgreSQL database reachable through `DATABASE_URL` or the default local URL in `src/wiki_mcp/bootstrap.py`.
 
 The runtime can also load Domain Pack artifacts from configured file paths during bootstrap.
 
-Use demo mode for the Week 1 MVP walkthrough unless you have already provisioned the database schema locally.
+The repository now includes a checked-in bootstrap SQL artifact at `config/postgres/bootstrap.sql`.
+
+Create a local database first, then initialize the schema from the repository:
+
+```bash
+createdb stratawiki_dev
+
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --database-url postgresql://stratawiki:stratawiki@localhost:5432/stratawiki_dev \
+  init-db
+```
+
+Load the sample MVP seed into the real storage path:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --database-url postgresql://stratawiki:stratawiki@localhost:5432/stratawiki_dev \
+  --render-root data-dev \
+  seed-mvp
+```
+
+That non-demo seed flow uses the same sample seed file as the demo walkthrough, but persists through the Postgres-backed repositories and filesystem render root instead of the in-memory runtime.
+
+Verify the runtime can start against the initialized database:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --database-url postgresql://stratawiki:stratawiki@localhost:5432/stratawiki_dev \
+  --render-root data-dev \
+  list-tools
+```
+
+To reset the local database, recreate the database and rerun `init-db`:
+
+```bash
+dropdb stratawiki_dev
+createdb stratawiki_dev
+```
+
+If your existing venv was created before the Postgres runtime dependency was added, rerun:
+
+```bash
+/Users/yebin/venv/bin/python -m pip install -e .
+```
 
 ## Key Documents
 

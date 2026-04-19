@@ -83,8 +83,25 @@ class PostgresRepositoryBase:
 
     def _row_to_dict(self, row: Mapping[str, Any] | Any) -> dict[str, Any]:
         if isinstance(row, Mapping):
-            return dict(row)
+            return {
+                str(key): self._normalize_db_value(value)
+                for key, value in dict(row).items()
+            }
         raise TypeError(
             "Repository rows must be mapping-like. Configure the Postgres driver "
             "with a dict or row-factory compatible cursor."
         )
+
+    def _normalize_db_value(self, value: Any) -> Any:
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        if isinstance(value, list):
+            return [self._normalize_db_value(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(self._normalize_db_value(item) for item in value)
+        if isinstance(value, dict):
+            return {
+                str(key): self._normalize_db_value(item)
+                for key, item in value.items()
+            }
+        return value

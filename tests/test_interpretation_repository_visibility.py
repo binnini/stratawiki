@@ -47,7 +47,7 @@ def test_search_for_retrieval_only_queries_published_and_stale_records() -> None
 
     query, params = cursor.executed[0]
     assert "status IN ('published', 'stale')" in query
-    assert params == ["recruiting", "shared", "llm experience", "llm experience", 5]
+    assert params == ["recruiting", "shared", "llm | experience", "llm | experience", 5]
 
 
 def test_get_by_ids_maps_interpretation_snapshot_metadata() -> None:

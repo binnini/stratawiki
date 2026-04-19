@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     import psycopg
 
 from wiki_mcp.adapters.llm import build_llm_gateway_router_from_env
-from wiki_mcp.demo import build_demo_runtime
+from wiki_mcp.demo import build_demo_llm_gateway, build_demo_runtime
 from wiki_mcp.services import (
     DefaultDomainPackApprovalService,
     DefaultDomainPackCompatibilityChecker,
@@ -157,7 +157,9 @@ def bootstrap_application(
     snapshot_repository = PostgresSnapshotRepository(resolved_connection)
     outbox_repository = PostgresOutboxRepository(resolved_connection)
     rendering_repository = FileSystemRenderingRepository(render_root)
-    llm_gateway = build_llm_gateway_router_from_env()
+    llm_gateway = build_llm_gateway_router_from_env(
+        default_gateway=build_demo_llm_gateway(),
+    )
     core_ingestion_service = DefaultCoreIngestionService(
         fact_repository=fact_repository,
         snapshot_repository=snapshot_repository,
