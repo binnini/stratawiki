@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from uuid import uuid4
 from pathlib import Path
 
 from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
@@ -23,6 +24,57 @@ class FileSystemRenderingRepository:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(artifact["body_markdown"], encoding="utf-8")
         return artifact["path"]
+
+    def replace_artifact_atomically(self, artifact: RenderedArtifact) -> dict[str, object]:
+        destination = self.render_root / artifact["path"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+
+        replacement_id = uuid4().hex
+        stage_path = self.render_root / ".staging" / f"{replacement_id}.md"
+        stage_path.parent.mkdir(parents=True, exist_ok=True)
+        stage_path.write_text(artifact["body_markdown"], encoding="utf-8")
+
+        backup_path: Path | None = None
+        try:
+            if destination.exists():
+                backup_path = self.render_root / ".replacements" / f"{replacement_id}.bak"
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                destination.replace(backup_path)
+            stage_path.replace(destination)
+        except Exception:
+            if stage_path.exists():
+                stage_path.unlink()
+            if backup_path is not None and backup_path.exists() and not destination.exists():
+                backup_path.replace(destination)
+            raise
+
+        return {
+            "path": artifact["path"],
+            "destination_path": str(destination),
+            **({"backup_path": str(backup_path)} if backup_path is not None else {}),
+        }
+
+    def commit_artifact_replacement(self, receipt: dict[str, object]) -> None:
+        backup_path_text = receipt.get("backup_path")
+        if isinstance(backup_path_text, str):
+            backup_path = Path(backup_path_text)
+            if backup_path.exists():
+                backup_path.unlink()
+
+    def rollback_artifact_replacement(self, receipt: dict[str, object]) -> None:
+        destination_path = Path(str(receipt["destination_path"]))
+        backup_path_text = receipt.get("backup_path")
+        backup_path = Path(backup_path_text) if isinstance(backup_path_text, str) else None
+
+        if backup_path is not None and backup_path.exists():
+            if destination_path.exists():
+                destination_path.unlink()
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+            backup_path.replace(destination_path)
+            return
+
+        if destination_path.exists():
+            destination_path.unlink()
 
     def read_body(
         self,

@@ -45,6 +45,47 @@ class InterpretationRenderingService:
             return None
 
         record = records[0]
+        page = self._build_shared_page(record, scope_ref)
+        if page is None:
+            return None
+        artifact = self._build_artifact(page)
+        self.rendering_repository.write_artifact(artifact)
+        return page
+
+    def replace_shared_page_atomically(
+        self,
+        *,
+        record: InterpretationRecord,
+        scope_ref: ScopeRef,
+    ) -> dict[str, object] | None:
+        page = self._build_shared_page(record, scope_ref)
+        if page is None:
+            return None
+        artifact = self._build_artifact(page)
+        receipt = self.rendering_repository.replace_artifact_atomically(artifact)
+        return {"page": page, "receipt": receipt}
+
+    def commit_shared_page_replacement(self, replacement: dict[str, object] | None) -> None:
+        if replacement is None:
+            return None
+        receipt = replacement.get("receipt")
+        if isinstance(receipt, dict):
+            self.rendering_repository.commit_artifact_replacement(receipt)
+        return None
+
+    def rollback_shared_page_replacement(self, replacement: dict[str, object] | None) -> None:
+        if replacement is None:
+            return None
+        receipt = replacement.get("receipt")
+        if isinstance(receipt, dict):
+            self.rendering_repository.rollback_artifact_replacement(receipt)
+        return None
+
+    def _build_shared_page(
+        self,
+        record: InterpretationRecord,
+        scope_ref: ScopeRef,
+    ) -> RenderedPage | None:
         if record["status"] != INTERPRETATION_STATUS_PUBLISHED:
             return None
 
@@ -81,7 +122,10 @@ class InterpretationRenderingService:
             "metadata": metadata,
             "body_markdown": body_markdown,
         }
-        artifact: RenderedArtifact = {
+        return page
+
+    def _build_artifact(self, page: RenderedPage) -> RenderedArtifact:
+        return {
             "domain": page["domain"],
             "layer": page["layer"],
             "record_id": page["record_id"],
@@ -91,8 +135,6 @@ class InterpretationRenderingService:
             "scope_ref": page["scope_ref"],
             "snapshot_ref": page["snapshot_ref"],
         }
-        self.rendering_repository.write_artifact(artifact)
-        return page
 
     def _artifact_markdown(self, page: RenderedPage) -> str:
         metadata = {

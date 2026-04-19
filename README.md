@@ -246,6 +246,16 @@ Current baseline:
 - `stratawiki worker` currently claims and processes queued interpretation build requests
 - scheduler orchestration and broader job families remain follow-up work
 
+## Interpretation Publish Boundary
+
+The interpretation publish path now treats canonical publish as one coordinated boundary instead of independent best-effort steps.
+
+Current baseline:
+
+- shared page replacement is prepared through a rollback-capable filesystem swap
+- interpretation record updates, snapshot pointer movement, and outbox append are committed as one DB publish bundle
+- if publish raises before the bundle completes, the prior rendered shared page is restored and the default canonical read target does not advance
+
 ## Key Documents
 
 - `docs/mcp-architecture.md`

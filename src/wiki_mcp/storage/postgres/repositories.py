@@ -956,6 +956,268 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         return loaded if isinstance(loaded, list) else []
 
 
+class PostgresInterpretationPublicationRepository(PostgresInterpretationRepository):
+    def publish_bundle(
+        self,
+        *,
+        records: list[InterpretationRecord],
+        domain: str,
+        snapshot_ref: SnapshotRef,
+        outbox_events: list[OutboxEvent],
+    ) -> dict[str, Any]:
+        validated_snapshot_ref = ensure_snapshot_ref(
+            snapshot_ref,
+            label="InterpretationPublicationRepository.snapshot_ref",
+        )
+        cursor = self.connection.cursor()
+        try:
+            record_ids = self._save_records_with_cursor(
+                cursor=cursor,
+                records=records,
+                snapshot_ref=validated_snapshot_ref,
+            )
+            snapshot_id = self._publish_snapshot_with_cursor(
+                cursor=cursor,
+                layer="interpretation",
+                domain=domain,
+                snapshot_ref=validated_snapshot_ref,
+            )
+            outbox_event_ids = self._append_events_with_cursor(
+                cursor=cursor,
+                events=outbox_events,
+            )
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return {
+            "record_ids": record_ids,
+            "snapshot_id": snapshot_id,
+            "outbox_event_ids": outbox_event_ids,
+        }
+
+    def _save_records_with_cursor(
+        self,
+        *,
+        cursor: Any,
+        records: list[InterpretationRecord],
+        snapshot_ref: SnapshotRef,
+    ) -> list[str]:
+        stored_ids: list[str] = []
+        for record in records:
+            self._validate_interpretation_record(record, snapshot_ref=snapshot_ref)
+            scope_ref = record["scope_ref"]
+            cursor.execute(
+                """
+                INSERT INTO interp.record (
+                    id,
+                    domain,
+                    family,
+                    kind,
+                    subject_type,
+                    subject_id,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    schema_version,
+                    status,
+                    confidence,
+                    computed_at,
+                    expires_at,
+                    title,
+                    claim,
+                    summary,
+                    body_json,
+                    evidence_json,
+                    relations_json,
+                    provenance_json,
+                    render_hints_json,
+                    fact_snapshot_id,
+                    interpretation_snapshot_id
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
+                    %s::jsonb, %s, %s
+                )
+                ON CONFLICT (id) DO UPDATE SET
+                    family = EXCLUDED.family,
+                    kind = EXCLUDED.kind,
+                    subject_type = EXCLUDED.subject_type,
+                    subject_id = EXCLUDED.subject_id,
+                    scope = EXCLUDED.scope,
+                    tenant_id = EXCLUDED.tenant_id,
+                    user_id = EXCLUDED.user_id,
+                    schema_version = EXCLUDED.schema_version,
+                    status = EXCLUDED.status,
+                    confidence = EXCLUDED.confidence,
+                    computed_at = EXCLUDED.computed_at,
+                    expires_at = EXCLUDED.expires_at,
+                    title = EXCLUDED.title,
+                    claim = EXCLUDED.claim,
+                    summary = EXCLUDED.summary,
+                    body_json = EXCLUDED.body_json,
+                    evidence_json = EXCLUDED.evidence_json,
+                    relations_json = EXCLUDED.relations_json,
+                    provenance_json = EXCLUDED.provenance_json,
+                    render_hints_json = EXCLUDED.render_hints_json,
+                    fact_snapshot_id = EXCLUDED.fact_snapshot_id,
+                    interpretation_snapshot_id = EXCLUDED.interpretation_snapshot_id,
+                    updated_at = NOW()
+                """,
+                (
+                    record["id"],
+                    record["domain"],
+                    record["family"],
+                    record["kind"],
+                    record["subject_type"],
+                    record["subject_id"],
+                    scope_ref["scope"],
+                    scope_ref.get("tenant_id"),
+                    scope_ref.get("user_id"),
+                    record["schema_version"],
+                    record["status"],
+                    record["confidence"],
+                    record["computed_at"],
+                    record["expires_at"],
+                    record.get("title"),
+                    record.get("claim"),
+                    record.get("summary"),
+                    self._json(record["body"]),
+                    self._json(record.get("evidence", [])),
+                    self._json(record.get("relations", [])),
+                    self._json(record["provenance"]),
+                    self._json(record["render_hints"]),
+                    snapshot_ref["fact_snapshot_id"],
+                    record.get("interpretation_snapshot_id"),
+                ),
+            )
+            stored_ids.append(record["id"])
+        return stored_ids
+
+    def _publish_snapshot_with_cursor(
+        self,
+        *,
+        cursor: Any,
+        layer: str,
+        domain: str,
+        snapshot_ref: SnapshotRef,
+    ) -> str:
+        snapshot_id = snapshot_ref.get("interpretation_snapshot_id") or snapshot_ref["fact_snapshot_id"]
+        cursor.execute(
+            """
+            INSERT INTO ops.snapshot_pointer (
+                layer,
+                domain,
+                current_snapshot_id,
+                fact_snapshot_id,
+                interpretation_snapshot_id,
+                profile_version
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (layer, domain) DO UPDATE SET
+                current_snapshot_id = EXCLUDED.current_snapshot_id,
+                fact_snapshot_id = EXCLUDED.fact_snapshot_id,
+                interpretation_snapshot_id = EXCLUDED.interpretation_snapshot_id,
+                profile_version = EXCLUDED.profile_version,
+                updated_at = NOW()
+            """,
+            (
+                layer,
+                domain,
+                snapshot_id,
+                snapshot_ref["fact_snapshot_id"],
+                snapshot_ref.get("interpretation_snapshot_id"),
+                snapshot_ref.get("profile_version"),
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO ops.snapshot_publication (
+                snapshot_id,
+                layer,
+                domain,
+                fact_snapshot_id,
+                interpretation_snapshot_id,
+                profile_version,
+                metadata_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (snapshot_id, layer, domain) DO NOTHING
+            """,
+            (
+                snapshot_id,
+                layer,
+                domain,
+                snapshot_ref["fact_snapshot_id"],
+                snapshot_ref.get("interpretation_snapshot_id"),
+                snapshot_ref.get("profile_version"),
+                self._json({}),
+            ),
+        )
+        return str(snapshot_id)
+
+    def _append_events_with_cursor(
+        self,
+        *,
+        cursor: Any,
+        events: list[OutboxEvent],
+    ) -> list[str]:
+        stored_ids: list[str] = []
+        for event in events:
+            idempotency_key = event.get("idempotency_key")
+            if idempotency_key:
+                cursor.execute(
+                    """
+                    INSERT INTO ops.outbox_event (
+                        idempotency_key,
+                        event_type,
+                        aggregate_layer,
+                        aggregate_id,
+                        payload_json,
+                        status,
+                        attempt_count,
+                        available_at
+                    ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, NOW())
+                    ON CONFLICT (idempotency_key) DO UPDATE SET
+                        idempotency_key = EXCLUDED.idempotency_key
+                    RETURNING id
+                    """,
+                    (
+                        idempotency_key,
+                        event["event_type"],
+                        event["aggregate_layer"],
+                        event["aggregate_id"],
+                        self._json(event["payload"]),
+                        "pending",
+                        0,
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO ops.outbox_event (
+                        event_type,
+                        aggregate_layer,
+                        aggregate_id,
+                        payload_json,
+                        status,
+                        attempt_count,
+                        available_at
+                    ) VALUES (%s, %s, %s, %s::jsonb, %s, %s, NOW())
+                    RETURNING id
+                    """,
+                    (
+                        event["event_type"],
+                        event["aggregate_layer"],
+                        event["aggregate_id"],
+                        self._json(event["payload"]),
+                        "pending",
+                        0,
+                    ),
+                )
+            row = cursor.fetchone()
+            stored_ids.append(str(self._row_to_dict(row)["id"]))
+        return stored_ids
+
+
 class PostgresPersonalRepository(PostgresRepositoryBase):
     def get_by_ids(
         self,

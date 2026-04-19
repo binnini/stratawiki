@@ -36,6 +36,7 @@ from wiki_mcp.storage.filesystem import (
 )
 from wiki_mcp.storage.postgres.repositories import (
     PostgresFactRepository,
+    PostgresInterpretationPublicationRepository,
     PostgresInterpretationRepository,
     PostgresOutboxRepository,
     PostgresPersonalRepository,
@@ -55,6 +56,7 @@ class BootstrapContext:
     render_root: Path | None = None
     fact_repository: Any | None = None
     interpretation_repository: Any | None = None
+    interpretation_publication_repository: Any | None = None
     personal_repository: Any | None = None
     profile_context_repository: Any | None = None
     snapshot_repository: Any | None = None
@@ -125,6 +127,7 @@ def bootstrap_application(
             render_root=Path(render_root),
             fact_repository=runtime["fact_repository"],
             interpretation_repository=runtime["interpretation_repository"],
+            interpretation_publication_repository=runtime["interpretation_publication_repository"],
             personal_repository=runtime["personal_repository"],
             profile_context_repository=runtime["profile_context_repository"],
             snapshot_repository=runtime["snapshot_repository"],
@@ -152,6 +155,7 @@ def bootstrap_application(
     resolved_connection = connection or connect_postgres(database_url)
     fact_repository = PostgresFactRepository(resolved_connection)
     interpretation_repository = PostgresInterpretationRepository(resolved_connection)
+    interpretation_publication_repository = PostgresInterpretationPublicationRepository(resolved_connection)
     personal_repository = PostgresPersonalRepository(resolved_connection)
     profile_context_repository = PostgresProfileContextRepository(resolved_connection)
     snapshot_repository = PostgresSnapshotRepository(resolved_connection)
@@ -215,6 +219,7 @@ def bootstrap_application(
     interpretation_publication_service = InterpretationPublicationService(
         proposal_service=interpretation_proposal_service,
         interpretation_repository=interpretation_repository,
+        publication_repository=interpretation_publication_repository,
         snapshot_repository=snapshot_repository,
         outbox_repository=outbox_repository,
         interpretation_rendering_service=interpretation_rendering_service,
@@ -228,6 +233,7 @@ def bootstrap_application(
         render_root=Path(render_root),
         fact_repository=fact_repository,
         interpretation_repository=interpretation_repository,
+        interpretation_publication_repository=interpretation_publication_repository,
         personal_repository=personal_repository,
         profile_context_repository=profile_context_repository,
         snapshot_repository=snapshot_repository,

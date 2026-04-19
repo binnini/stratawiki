@@ -63,6 +63,7 @@ Implemented today:
 - the MVP MCP tools for fact ingest, interpretation build and read, personal query, and snapshot status
 - Domain Pack governance services for validation, compatibility review, approval gating, artifact loading, and proposal ingestion
 - a first worker entrypoint that can execute queued interpretation build requests outside the request path
+- a hardened interpretation publish path that commits record state, snapshot movement, and outbox append as one bundle while restoring prior shared pages on handled publish failure
 
 Still open:
 

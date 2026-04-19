@@ -156,6 +156,15 @@ class RenderingRepository(Protocol):
     def write_artifact(self, artifact: RenderedArtifact) -> str:
         """Persist one rendered artifact and return its path."""
 
+    def replace_artifact_atomically(self, artifact: RenderedArtifact) -> dict[str, object]:
+        """Swap one rendered artifact into place with rollback metadata."""
+
+    def commit_artifact_replacement(self, receipt: dict[str, object]) -> None:
+        """Finalize a previously swapped rendered artifact replacement."""
+
+    def rollback_artifact_replacement(self, receipt: dict[str, object]) -> None:
+        """Restore the prior rendered artifact after a failed publish attempt."""
+
     def read_body(
         self,
         *,
@@ -230,6 +239,20 @@ class OutboxRepository(Protocol):
         retryable: bool = True,
     ) -> None:
         """Requeue or terminally fail a claimed outbox event."""
+
+
+class InterpretationPublicationRepository(Protocol):
+    """Atomic publication boundary for interpretation state and side effects."""
+
+    def publish_bundle(
+        self,
+        *,
+        records: list[InterpretationRecord],
+        domain: str,
+        snapshot_ref: SnapshotRef,
+        outbox_events: list[OutboxEvent],
+    ) -> dict[str, object]:
+        """Persist one publish bundle atomically and return stored ids."""
 
 
 class DependencyRepository(Protocol):

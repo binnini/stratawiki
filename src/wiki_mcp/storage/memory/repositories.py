@@ -182,6 +182,58 @@ class InMemoryInterpretationRepository:
 
 
 @dataclass
+class InMemoryInterpretationPublicationRepository:
+    interpretation_repository: InMemoryInterpretationRepository
+    snapshot_repository: InMemorySnapshotRepository
+    outbox_repository: "InMemoryOutboxRepository"
+
+    def publish_bundle(
+        self,
+        *,
+        records: list[dict[str, Any]],
+        domain: str,
+        snapshot_ref: dict[str, Any],
+        outbox_events: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        records_backup = {
+            record["id"]: dict(self.interpretation_repository.records[record["id"]])
+            for record in records
+            if record["id"] in self.interpretation_repository.records
+        }
+        missing_ids = [
+            record["id"]
+            for record in records
+            if record["id"] not in self.interpretation_repository.records
+        ]
+        snapshot_backup = {
+            layer: dict(status)
+            for layer, status in self.snapshot_repository.status_by_layer.items()
+        }
+        outbox_backup = [dict(event) for event in self.outbox_repository.events]
+        try:
+            record_ids = self.interpretation_repository.save_records(records, snapshot_ref)
+            snapshot_id = self.snapshot_repository.publish_snapshot(
+                "interpretation",
+                domain,
+                snapshot_ref,
+            )
+            outbox_event_ids = self.outbox_repository.append_events(outbox_events)
+        except Exception:
+            self.snapshot_repository.status_by_layer = snapshot_backup
+            self.outbox_repository.events = outbox_backup
+            for record_id, prior in records_backup.items():
+                self.interpretation_repository.records[record_id] = prior
+            for record_id in missing_ids:
+                self.interpretation_repository.records.pop(record_id, None)
+            raise
+        return {
+            "record_ids": record_ids,
+            "snapshot_id": snapshot_id,
+            "outbox_event_ids": outbox_event_ids,
+        }
+
+
+@dataclass
 class InMemoryPersonalRepository:
     records: dict[str, dict[str, Any]] = field(default_factory=dict)
 

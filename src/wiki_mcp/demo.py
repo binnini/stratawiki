@@ -31,6 +31,7 @@ from wiki_mcp.storage.filesystem import (
 from wiki_mcp.storage.memory import (
     InMemoryFactRepository,
     InMemoryInterpretationRepository,
+    InMemoryInterpretationPublicationRepository,
     InMemoryOutboxRepository,
     InMemoryPersonalRepository,
     InMemoryProfileContextRepository,
@@ -119,6 +120,11 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
     )
     snapshot_repository = InMemorySnapshotRepository()
     outbox_repository = InMemoryOutboxRepository()
+    interpretation_publication_repository = InMemoryInterpretationPublicationRepository(
+        interpretation_repository=interpretation_repository,
+        snapshot_repository=snapshot_repository,
+        outbox_repository=outbox_repository,
+    )
     rendering_repository = FileSystemRenderingRepository(render_root)
     llm_gateway = build_demo_llm_gateway()
     core_ingestion_service = DefaultCoreIngestionService(
@@ -154,6 +160,7 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
     interpretation_publication_service = InterpretationPublicationService(
         proposal_service=interpretation_proposal_service,
         interpretation_repository=interpretation_repository,
+        publication_repository=interpretation_publication_repository,
         snapshot_repository=snapshot_repository,
         outbox_repository=outbox_repository,
         interpretation_rendering_service=interpretation_rendering_service,
@@ -177,6 +184,7 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
         "seed": seed,
         "fact_repository": fact_repository,
         "interpretation_repository": interpretation_repository,
+        "interpretation_publication_repository": interpretation_publication_repository,
         "personal_repository": personal_repository,
         "profile_context_repository": profile_context_repository,
         "snapshot_repository": snapshot_repository,

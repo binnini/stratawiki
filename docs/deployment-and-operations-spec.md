@@ -316,6 +316,12 @@ Important examples:
 
 Partially published state should not become the default read target.
 
+Current interpretation baseline:
+
+- interpretation record updates, snapshot pointer movement, and outbox append are now committed as one publish bundle
+- shared page replacement is handled through a rollback-capable filesystem swap
+- if the publish bundle raises before completion, the prior rendered page is restored and the canonical default read target does not advance
+
 ## LLM Runtime Considerations
 
 The implementation should support LLM integration from early phases.

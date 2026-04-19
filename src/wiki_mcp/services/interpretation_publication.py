@@ -15,6 +15,7 @@ from wiki_mcp.schemas import (
     ScopeRef,
 )
 from wiki_mcp.services.interfaces.repositories import (
+    InterpretationPublicationRepository,
     InterpretationRepository,
     OutboxRepository,
     SnapshotRepository,
@@ -31,12 +32,14 @@ class InterpretationPublicationService:
         *,
         proposal_service: InterpretationProposalService,
         interpretation_repository: InterpretationRepository,
+        publication_repository: InterpretationPublicationRepository | None = None,
         snapshot_repository: SnapshotRepository,
         outbox_repository: OutboxRepository,
         interpretation_rendering_service: InterpretationRenderingService | None = None,
     ) -> None:
         self.proposal_service = proposal_service
         self.interpretation_repository = interpretation_repository
+        self.publication_repository = publication_repository
         self.snapshot_repository = snapshot_repository
         self.outbox_repository = outbox_repository
         self.interpretation_rendering_service = interpretation_rendering_service
@@ -127,25 +130,47 @@ class InterpretationPublicationService:
             "fact_snapshot_id": record["fact_snapshot_id"],
             "interpretation_snapshot_id": interpretation_snapshot_id,
         }
-        self.interpretation_repository.save_records(records_to_save, snapshot_ref)
-        self.snapshot_repository.publish_snapshot(
-            "interpretation",
-            record["domain"],
-            snapshot_ref,
-        )
-        if self.interpretation_rendering_service is not None:
-            self.interpretation_rendering_service.render_shared_page(
-                record_id=record["id"],
+        outbox_events = [
+            self._build_interpretation_snapshot_published_event(
+                record=record,  # type: ignore[arg-type]
                 scope_ref=scope_ref,
             )
-        outbox_event_ids = self.outbox_repository.append_events(
-            [
-                self._build_interpretation_snapshot_published_event(
-                    record=record,  # type: ignore[arg-type]
-                    scope_ref=scope_ref,
-                )
-            ]
+        ]
+        render_replacement = (
+            self.interpretation_rendering_service.replace_shared_page_atomically(
+                record=record,  # type: ignore[arg-type]
+                scope_ref=scope_ref,
+            )
+            if self.interpretation_rendering_service is not None
+            else None
         )
+        try:
+            if self.publication_repository is not None:
+                publish_result = self.publication_repository.publish_bundle(
+                    records=records_to_save,
+                    domain=record["domain"],
+                    snapshot_ref=snapshot_ref,
+                    outbox_events=outbox_events,
+                )
+                outbox_event_ids = list(publish_result["outbox_event_ids"])
+            else:
+                self.interpretation_repository.save_records(records_to_save, snapshot_ref)
+                self.snapshot_repository.publish_snapshot(
+                    "interpretation",
+                    record["domain"],
+                    snapshot_ref,
+                )
+                outbox_event_ids = self.outbox_repository.append_events(outbox_events)
+        except Exception:
+            if self.interpretation_rendering_service is not None:
+                self.interpretation_rendering_service.rollback_shared_page_replacement(
+                    render_replacement
+                )
+            raise
+        if self.interpretation_rendering_service is not None:
+            self.interpretation_rendering_service.commit_shared_page_replacement(
+                render_replacement
+            )
 
         return {
             "ok": True,

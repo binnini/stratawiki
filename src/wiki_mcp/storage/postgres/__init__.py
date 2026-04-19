@@ -3,6 +3,7 @@
 from wiki_mcp.storage.postgres.repositories import (
     PostgresDependencyRepository,
     PostgresFactRepository,
+    PostgresInterpretationPublicationRepository,
     PostgresInterpretationRepository,
     PostgresOutboxRepository,
     PostgresPersonalRepository,
@@ -13,6 +14,7 @@ from wiki_mcp.storage.postgres.repositories import (
 __all__ = [
     "PostgresDependencyRepository",
     "PostgresFactRepository",
+    "PostgresInterpretationPublicationRepository",
     "PostgresInterpretationRepository",
     "PostgresOutboxRepository",
     "PostgresPersonalRepository",
