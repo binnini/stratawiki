@@ -115,6 +115,49 @@ services:
     volumes:
       - stratawiki-render:/var/lib/stratawiki/render
 
+  server-http:
+    build: .
+    command: ["stratawiki", "serve-http"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://stratawiki:stratawiki@postgres:5432/stratawiki_dev}
+      STRATAWIKI_POSTGRES_BOOTSTRAP_SQL: ${STRATAWIKI_POSTGRES_BOOTSTRAP_SQL:-/app/config/postgres/bootstrap.sql}
+      STRATAWIKI_RENDER_ROOT: ${STRATAWIKI_RENDER_ROOT:-/var/lib/stratawiki/render}
+      STRATAWIKI_DOMAIN_PACK_PATHS: ${STRATAWIKI_DOMAIN_PACK_PATHS:-/app/examples/domain-packs/recruiting.v2026-04-18.json}
+      STRATAWIKI_ACTIVE_DOMAIN_PACKS: ${STRATAWIKI_ACTIVE_DOMAIN_PACKS:-recruiting=2026-04-18}
+      STRATAWIKI_HTTP_HOST: ${STRATAWIKI_HTTP_HOST:-0.0.0.0}
+      STRATAWIKI_HTTP_PORT: ${STRATAWIKI_HTTP_PORT:-8080}
+      STRATAWIKI_HTTP_AUTH_TOKEN: ${STRATAWIKI_HTTP_AUTH_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      WIKI_MCP_DEFAULT_PROVIDER: ${WIKI_MCP_DEFAULT_PROVIDER:-}
+      WIKI_MCP_ENABLE_OLLAMA: ${WIKI_MCP_ENABLE_OLLAMA:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
+      WIKI_MCP_OPENAI_MODEL_BALANCED_DEFAULT: ${WIKI_MCP_OPENAI_MODEL_BALANCED_DEFAULT:-}
+      WIKI_MCP_OPENAI_MODEL_DEEP_SYNTHESIS: ${WIKI_MCP_OPENAI_MODEL_DEEP_SYNTHESIS:-}
+      WIKI_MCP_OLLAMA_MODEL_BALANCED_DEFAULT: ${WIKI_MCP_OLLAMA_MODEL_BALANCED_DEFAULT:-}
+      WIKI_MCP_OLLAMA_MODEL_DEEP_SYNTHESIS: ${WIKI_MCP_OLLAMA_MODEL_DEEP_SYNTHESIS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+    ports:
+      - "${STRATAWIKI_HTTP_PORT:-8080}:${STRATAWIKI_HTTP_PORT:-8080}"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${STRATAWIKI_HTTP_PORT:-8080}/healthz', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - stratawiki-render:/var/lib/stratawiki/render
+
   worker:
     build: .
     command:
@@ -146,6 +189,24 @@ services:
         condition: service_completed_successfully
     volumes:
       - stratawiki-render:/var/lib/stratawiki/render
+
+  http-smoke:
+    build: .
+    command: ["python", "/app/scripts/http_smoke_check.py"]
+    environment:
+      STRATAWIKI_BASE_URL: http://server-http:${STRATAWIKI_HTTP_PORT:-8080}
+      STRATAWIKI_HTTP_AUTH_TOKEN: ${STRATAWIKI_HTTP_AUTH_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      init-db:
+        condition: service_completed_successfully
+      seed-mvp:
+        condition: service_completed_successfully
+      server-http:
+        condition: service_healthy
+      worker:
+        condition: service_started
 
 volumes:
   stratawiki-postgres:

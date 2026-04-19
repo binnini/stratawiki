@@ -10,6 +10,7 @@ COPY src /app/src
 COPY config /app/config
 COPY docs /app/docs
 COPY examples /app/examples
+COPY scripts /app/scripts
 
 RUN pip install --no-cache-dir .
 

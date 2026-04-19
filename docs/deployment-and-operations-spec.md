@@ -149,8 +149,17 @@ Current first deployment target:
 - `docker-compose.yml`
 - one Postgres container
 - one interactive stdio server container
+- one networked HTTP server container
 - one looping worker container
+- one repository-provided HTTP smoke container
 - shared render volume for filesystem artifacts
+
+Current HTTP deployment baseline:
+
+- `server-http` runs `stratawiki serve-http`
+- `worker` shares the same Postgres-backed canonical store and render volume
+- `http-smoke` performs a small end-to-end HTTP validation against the same durable store
+- `STRATAWIKI_HTTP_AUTH_TOKEN` is the first service-to-service auth control for shared environments
 
 ### Multi-Process Production-Like Environment
 

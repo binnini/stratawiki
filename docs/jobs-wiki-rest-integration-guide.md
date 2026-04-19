@@ -15,12 +15,12 @@ It is intentionally written from the external integration point of view.
 - the preferred external write path is `validate_domain_proposal_batch` followed by `ingest_domain_proposal_batch`
 - profile provisioning and Personal query already exist through `upsert_profile_context` and `query_personal_knowledge`
 - interpretation builds can already run inline or through the worker-backed background path
+- a checked-in HTTP deployment baseline now exists through `docker compose` with `server-http`, `worker`, and `http-smoke`
 
 ### Recommended but Not Yet Fixed
 
-- the remaining resource-specific HTTP/REST boundary that replaces the wrapper for networked integration
 - a machine-readable REST contract
-- an HTTP deployment baseline that Jobs-Wiki can target directly
+- the final decision to remove or keep the wrapper as a long-term rollback path
 
 ### Currently Unknown and Must Be Decided
 
@@ -30,7 +30,7 @@ It is intentionally written from the external integration point of view.
 
 ## Current Stable Path
 
-Right now the stable path remains:
+Right now the lowest-risk compatibility path remains:
 
 ```text
 Jobs-Wiki WAS
@@ -39,30 +39,16 @@ Jobs-Wiki WAS
       -> StrataWiki runtime
 ```
 
-That path is still the right choice until the HTTP milestone reaches at least:
-
-- `#43` profile sync and Personal query over HTTP
-- `#46` service-to-service auth baseline
-- `#47` versioned HTTP contract and idempotency policy
-
-The current REST state after `#41`, `#42`, and `#46` is:
+The current REST state after `#41` through `#47` is:
 
 - generic HTTP bridge exists
-- proposal validation and ingest endpoints now exist
-- bearer token auth baseline now exists
+- proposal validation and ingest endpoints exist
+- profile sync and Personal query endpoints exist
+- interpretation build and operator-status endpoints exist
+- bearer token auth baseline exists
+- a checked-in Docker Compose deployment path exists for `server-http` plus `worker`
 
-After `#43`, the REST state is:
-
-- profile sync now exists through `PUT /api/v1/profile-contexts/{tenant_id}/{user_id}`
-- Personal query now exists through `POST /api/v1/personal-queries`
-
-After `#44`, the REST state is:
-
-- interpretation build now exists through `POST /api/v1/interpretation-builds`
-- background build polling now exists through `GET /api/v1/jobs/{job_id}`
-- snapshot, cache, and explanation reads now have dedicated HTTP endpoints
-
-Jobs-Wiki should still treat the wrapper path as the safest default until interpretation build and deployment migration work also land, but the write path and Personal path can now be tested over HTTP.
+Jobs-Wiki can now target HTTP directly for shared-environment testing, while still keeping the wrapper path as a rollback option during the migration.
 
 ## Future Target Path
 
@@ -83,6 +69,19 @@ Jobs-Wiki should still treat StrataWiki as the owner of:
 - Domain Pack validation
 - snapshot and publication behavior
 - worker coordination
+
+The first checked-in networked deployment path is:
+
+```text
+docker compose up -d postgres
+docker compose run --rm init-db
+docker compose run --rm doctor
+docker compose run --rm seed-mvp
+docker compose up -d worker server-http
+docker compose run --rm http-smoke
+```
+
+That baseline keeps Postgres, worker, and HTTP server on one machine while removing the need for Jobs-Wiki to own a stdio subprocess.
 
 ## Migration Phases
 
@@ -115,6 +114,11 @@ StrataWiki runtime side:
 | --- | --- | --- | --- |
 | `STRATAWIKI_HTTP_AUTH_TOKEN` | StrataWiki | recommended | HTTP auth gate |
 
+Recommended first dual-mode target:
+
+- point `STRATAWIKI_BASE_URL` at the checked-in Compose HTTP baseline
+- keep wrapper calls available for rollback while HTTP requests are being exercised in staging or local shared environments
+
 ### Phase 2: HTTP-Primary Integration
 
 Move primary calls to HTTP and keep the wrapper only as a temporary rollback path if needed.
@@ -123,6 +127,7 @@ Recommended condition before removing the wrapper path:
 
 - all required HTTP endpoints are in place
 - auth is in place
+- the checked-in HTTP deployment baseline has passed `http-smoke`
 - idempotency and retry behavior are documented
 - Jobs-Wiki smoke tests pass against the networked runtime
 

@@ -165,6 +165,11 @@ Current baseline:
 
 The first repository-provided deployment target is `Dockerfile + docker-compose.yml`.
 
+The checked-in Compose baseline now supports both:
+
+- a producer-owned stdio container through `server`
+- a networked HTTP container through `server-http`
+
 Bring up Postgres first:
 
 ```bash
@@ -187,10 +192,29 @@ docker compose run --rm seed-mvp
 Start the worker loop in one terminal:
 
 ```bash
-docker compose up worker
+docker compose up -d worker
 ```
 
-Start the stdio server in another terminal:
+Start the networked HTTP server:
+
+```bash
+docker compose up -d server-http
+```
+
+Run the repository-provided HTTP smoke path:
+
+```bash
+docker compose run --rm http-smoke
+```
+
+Check the unauthenticated probes:
+
+```bash
+curl -s http://127.0.0.1:8080/healthz
+curl -s http://127.0.0.1:8080/readyz
+```
+
+If you still need the older stdio runtime in the same Compose baseline, keep using:
 
 ```bash
 docker compose run --rm server
@@ -198,8 +222,9 @@ docker compose run --rm server
 
 Important notes:
 
-- the server container stays interactive because the current long-lived runtime contract is stdio, not HTTP
-- the Compose baseline is meant to validate server and worker separation on one machine before later networked deployment choices are made
+- `server-http` is the first repository-provided networked runtime baseline for external WAS clients
+- `http-smoke` proves that the HTTP server can answer requests against the same Postgres-backed store used by the worker
+- the stdio `server` container remains available as a compatibility and rollback path during the migration
 - rendered pages are written to the shared `stratawiki-render` volume
 
 ## External Write Contract
@@ -258,7 +283,8 @@ For external clients that should not depend on one-shot subprocess calls, the re
 That process keeps the StrataWiki runtime open and accepts one JSON request per line on stdin.
 Responses are emitted as one JSON object per line on stdout.
 
-The next planned networked boundary is documented in `docs/http-rest-contract-spec.md`, but the current stable external contract remains the stdio runtime until that work lands.
+The repository now also includes a networked HTTP baseline documented in `docs/http-rest-contract-spec.md` and `docs/jobs-wiki-rest-integration-guide.md`.
+The stdio runtime remains supported for compatibility, rollback, and producer-owned local integrations.
 
 ## HTTP Runtime Baseline
 
@@ -319,12 +345,12 @@ curl -s \
 
 Current status notes:
 
-- this is a migration baseline, not yet the full resource-specific REST surface
-- stdio remains the current stable external contract while the HTTP migration is still in progress
-- service-to-service auth is now available through `STRATAWIKI_HTTP_AUTH_TOKEN`
+- the HTTP runtime now includes first-pass resource-specific endpoints for write, Personal, interpretation, and operator flows
+- `server-http` plus `worker` is the checked-in shared-environment baseline for external WAS integration
+- service-to-service auth is available through `STRATAWIKI_HTTP_AUTH_TOKEN`
 - when that token is configured, `/api/v1/*` endpoints require `Authorization: Bearer <token>`
 - `GET /healthz` and `GET /readyz` remain unauthenticated baseline probes
-- versioned HTTP policy remains tracked separately
+- the versioned human-readable contract now lives in `docs/http-rest-contract-spec.md`; a machine-readable contract remains follow-up work
 
 Preferred external write example:
 
