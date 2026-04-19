@@ -29,6 +29,7 @@ This repository currently contains:
 - an implemented Week 1 MVP runtime under `src/`
 - a working local `Fact -> Interpretation -> Personal` demo path
 - canonical Fact ingestion, interpretation proposal and publish flow, and personal query orchestration
+- a profile context write path for external Personal query clients
 - a schema-governance layer with Domain Pack registry, validator, compatibility checks, approval gating, proposal ingestion, artifact loading, and review-audit persistence
 - empty data directories under `data/`
 
@@ -245,6 +246,27 @@ Current baseline:
 - `execution_mode: "background"` queues one outbox-backed job
 - `stratawiki worker` currently claims and processes queued interpretation build requests
 - scheduler orchestration and broader job families remain follow-up work
+
+## Personal Query Provisioning
+
+External clients should provision profile context through the StrataWiki runtime before calling `query_personal_knowledge`.
+
+Write one profile context:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --database-url postgresql://stratawiki:stratawiki@localhost:5432/stratawiki_dev \
+  call upsert_profile_context \
+  --args '{"domain":"recruiting","tenant_id":"tenant-1","user_id":"user-1","profile_version":"profile:v1","goals":["find backend roles"],"preferences":{"location":"jp"},"attributes":{"level":"mid"}}'
+```
+
+Then call `query_personal_knowledge` with the same `profile_version`.
+
+Current baseline:
+
+- `upsert_profile_context` is the runtime-owned write path for Personal query prerequisites
+- `query_personal_knowledge` still requires an exact `profile_version` match
+- external clients should not insert profile context out of band
 
 ## Interpretation Publish Boundary
 

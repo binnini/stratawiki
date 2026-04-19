@@ -49,6 +49,7 @@ The repository currently exposes these runtime tools:
 - `get_fact_record`
 - `build_interpretation_snapshot`
 - `get_interpretation_record`
+- `upsert_profile_context`
 - `query_personal_knowledge`
 - `get_snapshot_status`
 
@@ -59,6 +60,7 @@ Current MVP caveats:
 - `ingest_fact_batch` currently accepts inline `source_records` rather than source ids fetched from external connectors
 - `build_interpretation_snapshot` still requires explicit `fact_ids` on the happy path
 - `build_interpretation_snapshot` now accepts `execution_mode: "background"` to queue worker execution, but broader async job families remain follow-up work
+- `query_personal_knowledge` now has a runtime-owned profile provisioning path through `upsert_profile_context`
 - the Domain Proposal tools are implemented even though they were not part of the original narrow Week 1 MVP tool list
 
 ### Current External Write Guidance
@@ -749,6 +751,53 @@ Output:
 
 ## Personal Tools
 
+### `upsert_profile_context`
+
+Create or update the stored profile context required for later Personal query calls.
+
+Input:
+
+```json
+{
+  "domain": "recruiting",
+  "tenant_id": "tenant_a",
+  "user_id": "user_42",
+  "profile_version": "profile_v7",
+  "goals": [
+    "move into backend roles in Tokyo startups"
+  ],
+  "preferences": {
+    "location": "tokyo"
+  },
+  "attributes": {
+    "level": "mid"
+  }
+}
+```
+
+Output:
+
+```json
+{
+  "status": "ok",
+  "profile_context": {
+    "domain": "recruiting",
+    "tenant_id": "tenant_a",
+    "user_id": "user_42",
+    "profile_version": "profile_v7",
+    "goals": [
+      "move into backend roles in Tokyo startups"
+    ],
+    "preferences": {
+      "location": "tokyo"
+    },
+    "attributes": {
+      "level": "mid"
+    }
+  }
+}
+```
+
 ### `query_personal_knowledge`
 
 Run a user-scoped query using the default retrieval flow:
@@ -756,6 +805,11 @@ Run a user-scoped query using the default retrieval flow:
 - Personal
 - Interpretation
 - Fact
+
+Current contract note:
+
+- clients should provision the matching stored profile first through `upsert_profile_context`
+- the requested `profile_version` must still match the current stored profile context exactly
 
 Input:
 

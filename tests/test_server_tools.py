@@ -195,16 +195,23 @@ class FakePersonalRepository:
 
 
 class FakeProfileContextRepository:
-    def get_profile_context(self, domain: str, tenant_id: str, user_id: str) -> dict[str, Any]:
-        return {
-            "user_id": user_id,
-            "tenant_id": tenant_id,
-            "domain": domain,
-            "profile_version": "profile:v1",
-            "goals": ["find backend roles"],
-            "preferences": {"location": "jp"},
-            "attributes": {"level": "mid"},
+    def __init__(self, profiles: list[dict[str, Any]] | None = None) -> None:
+        self.profiles = {
+            (profile["domain"], profile["tenant_id"], profile["user_id"]): dict(profile)
+            for profile in (profiles or [])
         }
+
+    def get_profile_context(self, domain: str, tenant_id: str, user_id: str) -> dict[str, Any]:
+        key = (domain, tenant_id, user_id)
+        if key not in self.profiles:
+            raise KeyError(
+                f"No profile context found for domain={domain!r}, tenant_id={tenant_id!r}, user_id={user_id!r}"
+            )
+        return dict(self.profiles[key])
+
+    def save_profile_context(self, profile: dict[str, Any]) -> None:
+        key = (profile["domain"], profile["tenant_id"], profile["user_id"])
+        self.profiles[key] = dict(profile)
 
 
 class FakeSnapshotRepository:
@@ -473,7 +480,7 @@ def _external_batch() -> dict[str, Any]:
     }
 
 
-def build_fake_server(tmp_path: Path) -> StrataWikiServer:
+def build_fake_server(tmp_path: Path, *, profile_seeded: bool = True) -> StrataWikiServer:
     fact_repository = FakeFactRepository()
     interpretation_repository = FakeInterpretationRepository()
     interpretation_repository.records["interp:published:1"] = {
@@ -501,7 +508,21 @@ def build_fake_server(tmp_path: Path) -> StrataWikiServer:
         "render_hints": {"page_family": "market_trend"},
     }
     personal_repository = FakePersonalRepository()
-    profile_context_repository = FakeProfileContextRepository()
+    profile_context_repository = FakeProfileContextRepository(
+        [
+            {
+                "user_id": "user-1",
+                "tenant_id": "tenant-1",
+                "domain": "recruiting",
+                "profile_version": "profile:v1",
+                "goals": ["find backend roles"],
+                "preferences": {"location": "jp"},
+                "attributes": {"level": "mid"},
+            }
+        ]
+        if profile_seeded
+        else []
+    )
     snapshot_repository = FakeSnapshotRepository()
     outbox_repository = FakeOutboxRepository()
     rendering_repository = FileSystemRenderingRepository(tmp_path)
@@ -616,6 +637,7 @@ def test_server_lists_mvp_tools(tmp_path: Path) -> None:
         "get_fact_record",
         "build_interpretation_snapshot",
         "get_interpretation_record",
+        "upsert_profile_context",
         "query_personal_knowledge",
         "get_snapshot_status",
     ]
@@ -660,6 +682,114 @@ def test_server_fact_and_personal_tools_work_on_happy_path(tmp_path: Path) -> No
     assert answer["interpretation_records_used"] == ["interp:published:1"]
     assert answer["fact_records_used"] == ["fact:job:1"]
     assert answer["provenance"]["profile_version"] == "profile:v1"
+
+
+def test_server_profile_context_write_unblocks_personal_query(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path, profile_seeded=False)
+
+    try:
+        server.call_tool(
+            "query_personal_knowledge",
+            {
+                "domain": "recruiting",
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+                "question": "What should I focus on next?",
+                "profile_version": "profile:v1",
+                "model_profile": "balanced_default",
+                "save": False,
+            },
+        )
+    except KeyError as exc:
+        assert "No profile context found" in str(exc)
+    else:
+        raise AssertionError("Expected query_personal_knowledge to fail before profile provisioning.")
+
+    upsert = server.call_tool(
+        "upsert_profile_context",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "profile_version": "profile:v1",
+            "goals": ["find backend roles"],
+            "preferences": {"location": "jp"},
+            "attributes": {"level": "mid"},
+        },
+    )
+    answer = server.call_tool(
+        "query_personal_knowledge",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "question": "What should I focus on next?",
+            "profile_version": "profile:v1",
+            "model_profile": "balanced_default",
+            "save": False,
+        },
+    )
+
+    assert upsert["status"] == "ok"
+    assert upsert["profile_context"]["profile_version"] == "profile:v1"
+    assert answer["status"] == "ok"
+    assert answer["provenance"]["profile_version"] == "profile:v1"
+
+
+def test_server_personal_query_rejects_profile_version_mismatch_after_write(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path, profile_seeded=False)
+    server.call_tool(
+        "upsert_profile_context",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "profile_version": "profile:v2",
+            "goals": ["find backend roles"],
+            "preferences": {"location": "jp"},
+            "attributes": {"level": "mid"},
+        },
+    )
+
+    try:
+        server.call_tool(
+            "query_personal_knowledge",
+            {
+                "domain": "recruiting",
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+                "question": "What should I focus on next?",
+                "profile_version": "profile:v1",
+                "model_profile": "balanced_default",
+                "save": False,
+            },
+        )
+    except ValueError as exc:
+        assert str(exc) == "Requested profile_version does not match the current stored profile context."
+    else:
+        raise AssertionError("Expected query_personal_knowledge to reject a mismatched profile_version.")
+
+
+def test_server_profile_context_write_rejects_invalid_shapes(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path, profile_seeded=False)
+
+    try:
+        server.call_tool(
+            "upsert_profile_context",
+            {
+                "domain": "recruiting",
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+                "profile_version": "profile:v1",
+                "goals": "find backend roles",
+                "preferences": {"location": "jp"},
+                "attributes": {"level": "mid"},
+            },
+        )
+    except ValueError as exc:
+        assert str(exc) == "Profile context goals must be a list of strings."
+    else:
+        raise AssertionError("Expected upsert_profile_context to reject invalid goal shapes.")
 
 
 def test_server_builds_interpretation_and_reads_snapshot_status(tmp_path: Path) -> None:

@@ -61,6 +61,7 @@ Implemented today:
 - a local demo runtime and CLI that exercise the happy path end-to-end
 - a long-lived stdio runtime entrypoint for external clients that should not depend on one-shot subprocess execution
 - the MVP MCP tools for fact ingest, interpretation build and read, personal query, and snapshot status
+- a profile context write path so external clients can provision Personal query prerequisites through the runtime
 - Domain Pack governance services for validation, compatibility review, approval gating, artifact loading, and proposal ingestion
 - a first worker entrypoint that can execute queued interpretation build requests outside the request path
 - a hardened interpretation publish path that commits record state, snapshot movement, and outbox append as one bundle while restoring prior shared pages on handled publish failure

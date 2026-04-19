@@ -33,6 +33,7 @@ def test_demo_cli_lists_tools_without_postgres(tmp_path: Path) -> None:
         "get_fact_record",
         "build_interpretation_snapshot",
         "get_interpretation_record",
+        "upsert_profile_context",
         "query_personal_knowledge",
         "get_snapshot_status",
     ]

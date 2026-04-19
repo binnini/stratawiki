@@ -124,6 +124,34 @@ def _tool_definitions() -> list[ToolDefinition]:
             },
         ),
         ToolDefinition(
+            name="upsert_profile_context",
+            group="personal",
+            status="mvp",
+            description="Create or update one profile context required for Personal queries.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": [
+                    "domain",
+                    "tenant_id",
+                    "user_id",
+                    "profile_version",
+                    "goals",
+                    "preferences",
+                    "attributes",
+                ],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "profile_version": {"type": "string"},
+                    "goals": {"type": "array"},
+                    "preferences": {"type": "object"},
+                    "attributes": {"type": "object"},
+                },
+            },
+        ),
+        ToolDefinition(
             name="query_personal_knowledge",
             group="personal",
             status="mvp",
@@ -198,6 +226,8 @@ class StrataWikiServer:
             return self._build_interpretation_snapshot(args)
         if name == "get_interpretation_record":
             return self._get_interpretation_record(args)
+        if name == "upsert_profile_context":
+            return self._upsert_profile_context(args)
         if name == "query_personal_knowledge":
             return self._query_personal_knowledge(args)
         if name == "get_snapshot_status":
@@ -414,6 +444,17 @@ class StrataWikiServer:
             raise KeyError(f"Unknown interpretation record: {interpretation_id}")
         return {"status": "ok", "record": record}
 
+    def _upsert_profile_context(self, arguments: dict[str, object]) -> dict[str, object]:
+        repository = self.bootstrap.profile_context_repository
+        if repository is None:
+            raise ValueError("Profile context repository is not configured.")
+        profile_context = self._parse_profile_context(arguments)
+        repository.save_profile_context(profile_context)
+        return {
+            "status": "ok",
+            "profile_context": profile_context,
+        }
+
     def _query_personal_knowledge(self, arguments: dict[str, object]) -> dict[str, object]:
         domain = self._required_string(arguments, "domain")
         tenant_id = self._required_string(arguments, "tenant_id")
@@ -488,6 +529,26 @@ class StrataWikiServer:
         if normalized == "market_trends":
             return "market_trend"
         return normalized
+
+    def _parse_profile_context(self, arguments: dict[str, object]) -> dict[str, Any]:
+        goals = arguments.get("goals")
+        preferences = arguments.get("preferences")
+        attributes = arguments.get("attributes")
+        if not isinstance(goals, list) or not all(isinstance(goal, str) for goal in goals):
+            raise ValueError("Profile context goals must be a list of strings.")
+        if not isinstance(preferences, dict):
+            raise ValueError("Profile context preferences must be an object.")
+        if not isinstance(attributes, dict):
+            raise ValueError("Profile context attributes must be an object.")
+        return {
+            "domain": self._required_string(arguments, "domain"),
+            "tenant_id": self._required_string(arguments, "tenant_id"),
+            "user_id": self._required_string(arguments, "user_id"),
+            "profile_version": self._required_string(arguments, "profile_version"),
+            "goals": [goal.strip() for goal in goals],
+            "preferences": dict(preferences),
+            "attributes": dict(attributes),
+        }
 
 
 def build_server(
