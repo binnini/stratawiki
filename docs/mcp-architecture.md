@@ -62,6 +62,7 @@ Implemented today:
 - a long-lived stdio runtime entrypoint for external clients that should not depend on one-shot subprocess execution
 - the MVP MCP tools for fact ingest, interpretation build and read, personal query, and snapshot status
 - Domain Pack governance services for validation, compatibility review, approval gating, artifact loading, and proposal ingestion
+- a first worker entrypoint that can execute queued interpretation build requests outside the request path
 
 Still open:
 
@@ -137,6 +138,7 @@ Current transport note:
 - the first stable long-lived external boundary is a StrataWiki-managed stdio runtime started through `stratawiki serve`
 - external clients should treat that runtime as the owner of DB access, render side effects, and model-provider credentials
 - direct database access is outside the intended external contract
+- the first background execution boundary is a StrataWiki-managed worker started through `stratawiki worker`
 
 Examples:
 

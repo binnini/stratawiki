@@ -76,6 +76,7 @@ from wiki_mcp.schemas.interpretation_validation_result import (
 )
 from wiki_mcp.schemas.outbox_event import (
     FactIngestedPayload,
+    InterpretationSnapshotBuildRequestedPayload,
     InterpretationSnapshotPublishedPayload,
     OutboxEvent,
     OutboxEventRecord,
@@ -160,6 +161,7 @@ __all__ = [
     "InterpretationValidationError",
     "InterpretationValidationResult",
     "InterpretationLifecycleStatus",
+    "InterpretationSnapshotBuildRequestedPayload",
     "InterpretationSnapshotPublishedPayload",
     "OutboxEvent",
     "OutboxEventRecord",

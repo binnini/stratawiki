@@ -19,11 +19,13 @@ from wiki_mcp.runtime_setup import (
     run_mvp_seed_flow,
 )
 from wiki_mcp.server import StrataWikiServer, build_server
+from wiki_mcp.worker import run_worker_once
 
 
 ServerFactory = Callable[..., StrataWikiServer]
 DatabaseBootstrapper = Callable[..., dict[str, object]]
 MvpSeedRunner = Callable[..., dict[str, object]]
+WorkerRunner = Callable[..., dict[str, object]]
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -105,6 +107,16 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "serve",
         help="Start the long-lived stdio runtime for external clients.",
     )
+    worker = subparsers.add_parser(
+        "worker",
+        help="Claim and process queued background jobs once.",
+    )
+    worker.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum queued jobs to claim in one run.",
+    )
     return parser
 
 
@@ -114,6 +126,7 @@ def run_cli(
     server_factory: ServerFactory = build_server,
     database_bootstrapper: DatabaseBootstrapper = apply_postgres_bootstrap,
     mvp_seed_runner: MvpSeedRunner = run_mvp_seed_flow,
+    worker_runner: WorkerRunner = run_worker_once,
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
@@ -174,6 +187,8 @@ def run_cli(
             result = mvp_seed_runner(server, seed_path=args.seed_path)
         elif args.command == "serve":
             return run_stdio_runtime(server, stdin=resolved_stdin, stdout=resolved_stdout)
+        elif args.command == "worker":
+            result = worker_runner(server, limit=args.limit)
         else:
             raise ValueError(f"Unsupported command: {args.command}")
     except KeyError as exc:

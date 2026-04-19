@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
 from wiki_mcp.adapters.llm import DeterministicLLMGateway
+from wiki_mcp.cli import run_cli
 from wiki_mcp.server import StrataWikiServer
 from wiki_mcp.services import (
     DefaultDomainPackApprovalService,
@@ -250,8 +253,73 @@ class FakeSnapshotRepository:
 
 
 class FakeOutboxRepository:
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
     def append_events(self, events: list[dict[str, Any]]) -> list[str]:
-        return [f"evt-{index}" for index, _ in enumerate(events, start=1)]
+        stored_ids: list[str] = []
+        for event in events:
+            event_id = f"evt-{len(self.events) + 1}"
+            stored = {
+                "id": event_id,
+                "event_type": event["event_type"],
+                "aggregate_layer": event["aggregate_layer"],
+                "aggregate_id": event["aggregate_id"],
+                "payload": dict(event["payload"]),
+                "status": "pending",
+                "attempt_count": 0,
+                "available_at": "2026-04-18T00:00:00Z",
+                "claimed_at": None,
+                "processed_at": None,
+                "last_error": None,
+                "idempotency_key": event.get("idempotency_key"),
+            }
+            self.events.append(stored)
+            stored_ids.append(event_id)
+        return stored_ids
+
+    def claim_pending(
+        self,
+        *,
+        limit: int,
+        event_types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        claimed: list[dict[str, Any]] = []
+        for stored in self.events:
+            if len(claimed) >= limit:
+                break
+            if stored["status"] != "pending":
+                continue
+            if event_types and stored["event_type"] not in event_types:
+                continue
+            stored["status"] = "claimed"
+            stored["claimed_at"] = "2026-04-18T00:05:00Z"
+            stored["attempt_count"] += 1
+            claimed.append(dict(stored))
+        return claimed
+
+    def mark_processed(self, event_id: str) -> None:
+        for stored in self.events:
+            if stored["id"] == event_id:
+                stored["status"] = "processed"
+                stored["processed_at"] = "2026-04-18T00:10:00Z"
+                stored["last_error"] = None
+                return
+        raise KeyError(event_id)
+
+    def mark_failed(
+        self,
+        event_id: str,
+        error_message: str,
+        *,
+        retryable: bool = True,
+    ) -> None:
+        for stored in self.events:
+            if stored["id"] == event_id:
+                stored["status"] = "pending" if retryable else "failed"
+                stored["last_error"] = error_message
+                return
+        raise KeyError(event_id)
 
 
 @dataclass(slots=True)
@@ -645,3 +713,94 @@ def test_server_validates_and_ingests_external_domain_proposals(tmp_path: Path) 
     assert commit["ok"] is True
     assert commit["committed"] is True
     assert "fact:job_posting:EMP-2" in commit["affected_fact_ids"]
+
+
+def test_server_can_queue_interpretation_build_for_worker_execution(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    result = server.call_tool(
+        "build_interpretation_snapshot",
+        {
+            "domain": "recruiting",
+            "partition": {"family": "market_trends", "segment": "backend-japan-midlevel"},
+            "fact_ids": ["fact:job:1"],
+            "fact_snapshot": "fact_snap:seed",
+            "model_profile": "balanced_default",
+            "publish": True,
+            "execution_mode": "background",
+        },
+    )
+
+    assert result == {
+        "status": "queued",
+        "execution_mode": "background",
+        "job_id": "evt-1",
+        "event_id": "evt-1",
+        "event_type": "interpretation_snapshot_build_requested",
+    }
+    queued_event = server.bootstrap.outbox_repository.events[0]
+    assert queued_event["event_type"] == "interpretation_snapshot_build_requested"
+    assert queued_event["payload"]["partition"]["family"] == "market_trend"
+    rendered_page = (
+        tmp_path / "wiki" / "shared" / "interpretations" / "market_trend" / "backend-japan-midlevel.md"
+    )
+    assert rendered_page.exists() is False
+
+
+def test_worker_cli_processes_queued_interpretation_build_jobs(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+    queue_stdout = StringIO()
+    queue_stderr = StringIO()
+
+    queue_exit_code = run_cli(
+        [
+            "call",
+            "build_interpretation_snapshot",
+            "--args",
+            json.dumps(
+                {
+                    "domain": "recruiting",
+                    "partition": {
+                        "family": "market_trends",
+                        "segment": "backend-japan-midlevel",
+                    },
+                    "fact_ids": ["fact:job:1"],
+                    "fact_snapshot": "fact_snap:seed",
+                    "model_profile": "balanced_default",
+                    "publish": True,
+                    "execution_mode": "background",
+                }
+            ),
+        ],
+        server_factory=lambda **kwargs: server,
+        stdout=queue_stdout,
+        stderr=queue_stderr,
+    )
+
+    worker_stdout = StringIO()
+    worker_stderr = StringIO()
+    worker_exit_code = run_cli(
+        ["worker", "--limit", "5"],
+        server_factory=lambda **kwargs: server,
+        stdout=worker_stdout,
+        stderr=worker_stderr,
+    )
+
+    queue_payload = json.loads(queue_stdout.getvalue())
+    worker_payload = json.loads(worker_stdout.getvalue())
+
+    assert queue_exit_code == 0
+    assert queue_payload["status"] == "queued"
+    assert worker_exit_code == 0
+    assert worker_payload["status"] == "ok"
+    assert worker_payload["claimed"] == 1
+    assert worker_payload["processed"] == 1
+    assert worker_payload["failed"] == 0
+    assert worker_payload["jobs"][0]["job_id"] == queue_payload["job_id"]
+    assert worker_payload["jobs"][0]["result"]["status"] == "ok"
+    rendered_page = (
+        tmp_path / "wiki" / "shared" / "interpretations" / "market_trend" / "backend-japan-midlevel.md"
+    )
+    assert rendered_page.exists()
+    assert queue_stderr.getvalue() == ""
+    assert worker_stderr.getvalue() == ""

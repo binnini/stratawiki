@@ -301,9 +301,90 @@ class InMemoryOutboxRepository:
     events: list[dict[str, Any]] = field(default_factory=list)
 
     def append_events(self, events: list[dict[str, Any]]) -> list[str]:
-        start = len(self.events) + 1
-        self.events.extend(dict(event) for event in events)
-        return [f"evt-{index}" for index in range(start, start + len(events))]
+        stored_ids: list[str] = []
+        for event in events:
+            idempotency_key = event.get("idempotency_key")
+            if idempotency_key is not None:
+                existing = next(
+                    (
+                        stored
+                        for stored in self.events
+                        if stored.get("idempotency_key") == idempotency_key
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    stored_ids.append(str(existing["id"]))
+                    continue
+
+            event_id = f"evt-{len(self.events) + 1}"
+            now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            stored = {
+                "id": event_id,
+                "event_type": event["event_type"],
+                "aggregate_layer": event["aggregate_layer"],
+                "aggregate_id": event["aggregate_id"],
+                "payload": dict(event["payload"]),
+                "status": "pending",
+                "attempt_count": 0,
+                "available_at": now,
+                "claimed_at": None,
+                "processed_at": None,
+                "last_error": None,
+                "idempotency_key": idempotency_key,
+            }
+            self.events.append(stored)
+            stored_ids.append(event_id)
+        return stored_ids
+
+    def claim_pending(
+        self,
+        *,
+        limit: int,
+        event_types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        claimed: list[dict[str, Any]] = []
+        for stored in self.events:
+            if len(claimed) >= limit:
+                break
+            if stored["status"] != "pending":
+                continue
+            if event_types and stored["event_type"] not in event_types:
+                continue
+            if str(stored["available_at"]) > now:
+                continue
+            stored["status"] = "claimed"
+            stored["claimed_at"] = now
+            stored["attempt_count"] = int(stored["attempt_count"]) + 1
+            claimed.append(dict(stored))
+        return claimed
+
+    def mark_processed(self, event_id: str) -> None:
+        stored = self._get_event(event_id)
+        stored["status"] = "processed"
+        stored["processed_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        stored["last_error"] = None
+
+    def mark_failed(
+        self,
+        event_id: str,
+        error_message: str,
+        *,
+        retryable: bool = True,
+    ) -> None:
+        stored = self._get_event(event_id)
+        should_retry = retryable and int(stored["attempt_count"]) < 3
+        stored["status"] = "pending" if should_retry else "failed"
+        stored["claimed_at"] = None if should_retry else stored.get("claimed_at")
+        stored["last_error"] = error_message
+        stored["available_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+    def _get_event(self, event_id: str) -> dict[str, Any]:
+        for stored in self.events:
+            if stored["id"] == event_id:
+                return stored
+        raise KeyError(f"Unknown outbox event: {event_id}")
 
 
 @dataclass

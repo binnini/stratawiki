@@ -87,6 +87,12 @@ Responsibilities:
 
 The scheduler may be a dedicated process or a thin wrapper over a simpler job system in early stages.
 
+Current early baseline:
+
+- interpretation build requests can already be queued from the request path
+- the worker can claim and execute those queued requests
+- broader scheduler coordination remains follow-up work
+
 ### Optional Markdown Indexer
 
 Responsibilities:
@@ -118,6 +124,7 @@ Current local baseline:
 - the repository now supports a long-lived stdio runtime entrypoint through `stratawiki serve`
 - this gives external clients a stable process boundary without giving them direct database access
 - it is acceptable as the first long-lived runtime contract before a later networked deployment surface is chosen
+- the repository now also supports a minimal worker entrypoint through `stratawiki worker --limit N`
 
 ### Single-Node Shared Environment
 
@@ -288,6 +295,11 @@ Recommended early options:
 - outbox table plus worker
 - simple job queue
 - scheduled jobs plus durable job metadata
+
+Current implementation baseline:
+
+- queued interpretation build requests use the outbox repository as the first job carrier
+- `stratawiki worker` claims queued interpretation build requests and executes them out of band
 
 Heavyweight event infrastructure is not required on day one.
 

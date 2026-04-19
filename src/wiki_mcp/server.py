@@ -90,7 +90,10 @@ def _tool_definitions() -> list[ToolDefinition]:
             name="build_interpretation_snapshot",
             group="interpretation",
             status="mvp",
-            description="Build and publish one interpretation snapshot on the happy path.",
+            description=(
+                "Build and publish one interpretation snapshot on the happy path, "
+                "or queue the build for worker execution."
+            ),
             entrypoint="server.call_tool",
             input_schema={
                 "type": "object",
@@ -101,6 +104,7 @@ def _tool_definitions() -> list[ToolDefinition]:
                     "fact_ids": {"type": "array"},
                     "model_profile": {"type": "string"},
                     "publish": {"type": "boolean"},
+                    "execution_mode": {"type": "string"},
                 },
             },
         ),
@@ -268,6 +272,29 @@ class StrataWikiServer:
         return service.ingest_batch(batch)
 
     def _build_interpretation_snapshot(self, arguments: dict[str, object]) -> dict[str, object]:
+        execution_mode = str(arguments.get("execution_mode") or "inline").strip().lower()
+        if execution_mode not in {"inline", "background"}:
+            raise ValueError("build_interpretation_snapshot execution_mode must be either 'inline' or 'background'.")
+
+        request = self._parse_interpretation_build_request(arguments)
+        if execution_mode == "background":
+            outbox_repository = self.bootstrap.outbox_repository
+            if outbox_repository is None:
+                raise ValueError("Interpretation background execution requires an outbox repository.")
+            event_ids = outbox_repository.append_events(
+                [self._build_interpretation_snapshot_requested_event(request)]
+            )
+            event_id = event_ids[0]
+            return {
+                "status": "queued",
+                "execution_mode": "background",
+                "job_id": event_id,
+                "event_id": event_id,
+                "event_type": "interpretation_snapshot_build_requested",
+            }
+        return self._run_interpretation_snapshot_build(request)
+
+    def _parse_interpretation_build_request(self, arguments: dict[str, object]) -> dict[str, object]:
         domain = self._required_string(arguments, "domain")
         partition = arguments.get("partition")
         if not isinstance(partition, dict):
@@ -288,6 +315,34 @@ class StrataWikiServer:
         )
         model_profile = str(arguments.get("model_profile") or "balanced_default")
         publish = bool(arguments.get("publish", True))
+        return {
+            "domain": domain,
+            "partition": {
+                "family": family,
+                "segment": subject_id,
+            },
+            "fact_ids": [fact["id"] for fact in facts],
+            "fact_snapshot": fact_snapshot,
+            "model_profile": model_profile,
+            "publish": publish,
+        }
+
+    def _run_interpretation_snapshot_build(self, request: dict[str, object]) -> dict[str, object]:
+        domain = str(request["domain"])
+        partition = request["partition"]
+        if not isinstance(partition, dict):
+            raise ValueError("Interpretation build request is missing a partition object.")
+        family = self._normalize_family(str(partition["family"]))
+        subject_id = str(partition["segment"])
+        fact_ids = request["fact_ids"]
+        if not isinstance(fact_ids, list) or not fact_ids:
+            raise ValueError("Interpretation build request requires fact_ids.")
+        facts = self.bootstrap.fact_repository.get_by_ids([str(item) for item in fact_ids], {"scope": "shared"})
+        if not facts:
+            raise ValueError("No facts were found for the supplied fact_ids.")
+        fact_snapshot = str(request["fact_snapshot"])
+        model_profile = str(request.get("model_profile") or "balanced_default")
+        publish = bool(request.get("publish", True))
         builder = self.bootstrap.interpretation_family_registry.get(family)
         if builder is None and family != "market_trend":
             raise ValueError(f"No interpretation builder is registered for family {family!r}.")
@@ -328,6 +383,24 @@ class StrataWikiServer:
             "records_created": len(proposals),
             "records_updated": 0,
             "records_superseded": records_superseded,
+        }
+
+    def _build_interpretation_snapshot_requested_event(
+        self,
+        request: dict[str, object],
+    ) -> dict[str, object]:
+        partition = request["partition"]
+        if not isinstance(partition, dict):
+            raise ValueError("Interpretation build request is missing partition metadata.")
+        segment = str(partition["segment"])
+        return {
+            "event_type": "interpretation_snapshot_build_requested",
+            "aggregate_layer": "interpretation",
+            "aggregate_id": f"{request['domain']}:{partition['family']}:{segment}",
+            "payload": {
+                **request,
+                "scope": "shared",
+            },
         }
 
     def _get_interpretation_record(self, arguments: dict[str, object]) -> dict[str, object]:

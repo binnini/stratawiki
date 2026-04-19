@@ -58,6 +58,7 @@ Current MVP caveats:
 - `ingest_fact_batch` remains available as a legacy transition path for source-driven or internal flows
 - `ingest_fact_batch` currently accepts inline `source_records` rather than source ids fetched from external connectors
 - `build_interpretation_snapshot` still requires explicit `fact_ids` on the happy path
+- `build_interpretation_snapshot` now accepts `execution_mode: "background"` to queue worker execution, but broader async job families remain follow-up work
 - the Domain Proposal tools are implemented even though they were not part of the original narrow Week 1 MVP tool list
 
 ### Current External Write Guidance
@@ -150,6 +151,23 @@ Ownership rules for this boundary:
 - StrataWiki owns canonical DB access, rendering side effects, snapshot state, and model-provider credentials
 - external clients own request sequencing and payload construction
 - `call_tool` should be used with the same input shapes documented for the current implemented tool surface
+
+### Current Background Build Guidance
+
+The first worker-compatible background path is interpretation build execution.
+
+Recommended sequence:
+
+1. call `build_interpretation_snapshot` with `execution_mode: "background"`
+2. let the StrataWiki worker claim the queued request
+3. inspect worker results and snapshot status through the canonical runtime
+
+Current baseline:
+
+- the queue carrier is the runtime-owned outbox repository
+- the worker entrypoint is `stratawiki worker`
+- only queued interpretation build requests are handled by this first worker path
+- broader scheduler and multi-job orchestration remain planned follow-up work
 
 ## Planned Tool Surface
 

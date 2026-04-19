@@ -216,6 +216,36 @@ Ownership remains on the StrataWiki side:
 - external clients own request construction and tool invocation sequencing
 - external clients should not directly access StrataWiki tables or filesystem render artifacts as part of the runtime contract
 
+## Worker Entry Point
+
+The repository now includes a minimal worker-compatible background path for interpretation builds.
+
+Queue an interpretation build request instead of running it inline:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --database-url postgresql://stratawiki:stratawiki@localhost:5432/stratawiki_dev \
+  --render-root data-dev \
+  call build_interpretation_snapshot \
+  --args '{"domain":"recruiting","partition":{"family":"market_trends","segment":"backend-japan-midlevel"},"fact_ids":["fact:job:1"],"fact_snapshot":"fact_snap:seed","model_profile":"balanced_default","publish":true,"execution_mode":"background"}'
+```
+
+Then process queued jobs through the worker entrypoint:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --database-url postgresql://stratawiki:stratawiki@localhost:5432/stratawiki_dev \
+  --render-root data-dev \
+  worker --limit 10
+```
+
+Current baseline:
+
+- `build_interpretation_snapshot` defaults to inline execution
+- `execution_mode: "background"` queues one outbox-backed job
+- `stratawiki worker` currently claims and processes queued interpretation build requests
+- scheduler orchestration and broader job families remain follow-up work
+
 ## Key Documents
 
 - `docs/mcp-architecture.md`
