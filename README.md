@@ -313,6 +313,19 @@ Current baseline:
 - `stratawiki worker` currently claims and processes queued interpretation build requests
 - scheduler orchestration and broader job families remain follow-up work
 
+## Interpretation Lifecycle Tooling
+
+The runtime now exposes operator-facing lifecycle tools around shared interpretation proposals.
+
+Current baseline:
+
+- `list_interpretation_proposals` lists non-public candidates for one shared partition
+- `validate_interpretation_proposal` promotes a candidate from `proposed` to `validated` when structural and evidence checks pass
+- `publish_interpretation_partition` publishes the matching shared partition candidates from one lifecycle state, usually `validated`
+- `get_interpretation_proposal_status` returns lifecycle plus review state for one candidate
+
+These tools sit on top of the existing interpretation publication service, so the first implementation publishes partition candidates one proposal at a time instead of as one fully atomic multi-record operator transaction.
+
 ## Personal Query Provisioning
 
 External clients should provision profile context through the StrataWiki runtime before calling `query_personal_knowledge`.

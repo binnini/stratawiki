@@ -6,6 +6,15 @@ from typing import Any
 
 from wiki_mcp.bootstrap import BootstrapContext, bootstrap_application
 from wiki_mcp.domains.recruiting import RecruitingSourceIngestionPlugin
+from wiki_mcp.schemas import (
+    INTERPRETATION_LIFECYCLE_STATUSES,
+    INTERPRETATION_STATUS_PROPOSED,
+    INTERPRETATION_STATUS_PUBLISHED,
+    INTERPRETATION_STATUS_REJECTED,
+    INTERPRETATION_STATUS_STALE,
+    INTERPRETATION_STATUS_SUPERSEDED,
+    INTERPRETATION_STATUS_VALIDATED,
+)
 from wiki_mcp.services.interpretation_families import InterpretationProposalContext
 from wiki_mcp.tools import ToolDefinition
 
@@ -120,6 +129,69 @@ def _tool_definitions() -> list[ToolDefinition]:
                 "properties": {
                     "domain": {"type": "string"},
                     "interpretation_id": {"type": "string"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="list_interpretation_proposals",
+            group="interpretation",
+            status="mvp",
+            description="List non-public interpretation proposals for operator review.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["domain"],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "partition": {"type": "object"},
+                    "status": {"type": "string"},
+                    "limit": {"type": "integer"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="validate_interpretation_proposal",
+            group="interpretation",
+            status="mvp",
+            description="Validate one proposed interpretation candidate for later publication.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["domain", "proposal_id"],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "proposal_id": {"type": "string"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="publish_interpretation_partition",
+            group="interpretation",
+            status="mvp",
+            description="Publish validated interpretation proposals for one family partition.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["domain", "partition"],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "partition": {"type": "object"},
+                    "source_state": {"type": "string"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="get_interpretation_proposal_status",
+            group="interpretation",
+            status="mvp",
+            description="Return lifecycle and review status for one interpretation proposal.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["domain", "proposal_id"],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "proposal_id": {"type": "string"},
                 },
             },
         ),
@@ -243,6 +315,14 @@ class StrataWikiServer:
             return self._build_interpretation_snapshot(args)
         if name == "get_interpretation_record":
             return self._get_interpretation_record(args)
+        if name == "list_interpretation_proposals":
+            return self._list_interpretation_proposals(args)
+        if name == "validate_interpretation_proposal":
+            return self._validate_interpretation_proposal(args)
+        if name == "publish_interpretation_partition":
+            return self._publish_interpretation_partition(args)
+        if name == "get_interpretation_proposal_status":
+            return self._get_interpretation_proposal_status(args)
         if name == "upsert_profile_context":
             return self._upsert_profile_context(args)
         if name == "query_personal_knowledge":
@@ -463,6 +543,125 @@ class StrataWikiServer:
             raise KeyError(f"Unknown interpretation record: {interpretation_id}")
         return {"status": "ok", "record": record}
 
+    def _list_interpretation_proposals(self, arguments: dict[str, object]) -> dict[str, object]:
+        domain = self._required_string(arguments, "domain")
+        partition = self._optional_interpretation_partition(arguments)
+        status_filter = arguments.get("status")
+        statuses = (
+            [self._interpretation_status(status_filter, field="status")]
+            if status_filter is not None
+            else [
+                INTERPRETATION_STATUS_PROPOSED,
+                INTERPRETATION_STATUS_VALIDATED,
+                INTERPRETATION_STATUS_REJECTED,
+                INTERPRETATION_STATUS_SUPERSEDED,
+            ]
+        )
+        records = self.bootstrap.interpretation_repository.list_records(
+            domain=domain,
+            scope_ref={"scope": "shared"},
+            family=partition["family"] if partition is not None else None,
+            subject_id=partition["subject_id"] if partition is not None else None,
+            statuses=statuses,
+            limit=self._optional_limit(arguments, default=50),
+        )
+        return {
+            "status": "ok",
+            "items": [self._proposal_summary(record) for record in records],
+        }
+
+    def _validate_interpretation_proposal(self, arguments: dict[str, object]) -> dict[str, object]:
+        domain = self._required_string(arguments, "domain")
+        proposal_id = self._required_string(arguments, "proposal_id")
+        self._require_interpretation_record(domain=domain, proposal_id=proposal_id)
+        result = self.bootstrap.interpretation_proposal_service.validate_proposal(
+            proposal_id=proposal_id,
+            scope_ref={"scope": "shared"},
+        )
+        return {
+            "status": "ok",
+            "proposal_id": proposal_id,
+            "ok": result["ok"],
+            "validation_state": result["status"],
+            "review_state": self._proposal_review_state(str(result["status"])),
+            "errors": result["errors"],
+        }
+
+    def _publish_interpretation_partition(self, arguments: dict[str, object]) -> dict[str, object]:
+        domain = self._required_string(arguments, "domain")
+        partition = self._required_interpretation_partition(arguments)
+        source_state = self._interpretation_status(
+            arguments.get("source_state", INTERPRETATION_STATUS_VALIDATED),
+            field="source_state",
+        )
+        candidates = self.bootstrap.interpretation_repository.list_records(
+            domain=domain,
+            scope_ref={"scope": "shared"},
+            family=partition["family"],
+            subject_id=partition["subject_id"],
+            statuses=[source_state],
+            limit=50,
+        )
+        if not candidates:
+            raise KeyError(
+                "No interpretation proposals matched "
+                f"domain={domain!r}, family={partition['family']!r}, "
+                f"subject_id={partition['subject_id']!r}, source_state={source_state!r}."
+            )
+
+        published_proposal_ids: list[str] = []
+        superseded_ids: list[str] = []
+        failures: list[dict[str, object]] = []
+        interpretation_snapshot = ""
+        for candidate in candidates:
+            publication = self.bootstrap.interpretation_publication_service.publish_proposal(
+                proposal_id=str(candidate["id"]),
+                scope_ref={"scope": "shared"},
+            )
+            if not publication["ok"]:
+                failures.append(
+                    {
+                        "proposal_id": candidate["id"],
+                        "status": publication["status"],
+                        "errors": publication["errors"],
+                    }
+                )
+                continue
+            published_proposal_ids.append(str(candidate["id"]))
+            superseded_ids.extend(str(record_id) for record_id in publication["superseded_ids"])
+            interpretation_snapshot = str(publication["interpretation_snapshot_id"])
+
+        return {
+            "status": "ok" if not failures else "partial",
+            "source_state": source_state,
+            "published_records": len(published_proposal_ids),
+            "published_proposal_ids": published_proposal_ids,
+            **({"interpretation_snapshot": interpretation_snapshot} if interpretation_snapshot else {}),
+            "superseded_ids": superseded_ids,
+            **({"failures": failures} if failures else {}),
+        }
+
+    def _get_interpretation_proposal_status(self, arguments: dict[str, object]) -> dict[str, object]:
+        domain = self._required_string(arguments, "domain")
+        proposal_id = self._required_string(arguments, "proposal_id")
+        record = self._require_interpretation_record(domain=domain, proposal_id=proposal_id)
+        lifecycle_state = str(record["status"])
+        return {
+            "status": "ok",
+            "proposal_id": proposal_id,
+            "lifecycle_state": lifecycle_state,
+            "review_state": self._proposal_review_state(lifecycle_state),
+            "family": record.get("family"),
+            "subject_id": record.get("subject_id"),
+            "title": record.get("title"),
+            "summary": record.get("summary"),
+            **(
+                {"interpretation_snapshot": record["interpretation_snapshot_id"]}
+                if record.get("interpretation_snapshot_id")
+                else {}
+            ),
+        }
+
     def _upsert_profile_context(self, arguments: dict[str, object]) -> dict[str, object]:
         repository = self.bootstrap.profile_context_repository
         if repository is None:
@@ -659,6 +858,98 @@ class StrataWikiServer:
         if profile_context is not None and profile_context.get("profile_version"):
             current_snapshots["profile_version"] = profile_context["profile_version"]
         return current_snapshots
+
+    def _require_interpretation_record(
+        self,
+        *,
+        domain: str,
+        proposal_id: str,
+    ) -> dict[str, object]:
+        records = self.bootstrap.interpretation_repository.get_by_ids(
+            [proposal_id],
+            {"scope": "shared"},
+        )
+        if not records or records[0].get("domain") != domain:
+            raise KeyError(
+                f"Unknown interpretation proposal {proposal_id!r} for domain {domain!r}."
+            )
+        return dict(records[0])
+
+    def _proposal_summary(self, record: dict[str, object]) -> dict[str, object]:
+        lifecycle_state = str(record["status"])
+        return {
+            "proposal_id": record["id"],
+            "interpretation_id": record["id"],
+            "lifecycle_state": lifecycle_state,
+            "review_state": self._proposal_review_state(lifecycle_state),
+            "family": record.get("family"),
+            "kind": record.get("kind"),
+            "subject_type": record.get("subject_type"),
+            "subject_id": record.get("subject_id"),
+            "title": record.get("title"),
+            "summary": record.get("summary"),
+            "computed_at": record.get("computed_at"),
+        }
+
+    def _proposal_review_state(self, lifecycle_state: str) -> str:
+        if lifecycle_state == INTERPRETATION_STATUS_PROPOSED:
+            return "pending_validation"
+        if lifecycle_state == INTERPRETATION_STATUS_VALIDATED:
+            return "ready_to_publish"
+        if lifecycle_state == INTERPRETATION_STATUS_PUBLISHED:
+            return "published"
+        if lifecycle_state == INTERPRETATION_STATUS_STALE:
+            return "refresh_recommended"
+        if lifecycle_state == INTERPRETATION_STATUS_SUPERSEDED:
+            return "superseded"
+        if lifecycle_state == INTERPRETATION_STATUS_REJECTED:
+            return "rejected"
+        return "unknown"
+
+    def _required_interpretation_partition(
+        self,
+        arguments: dict[str, object],
+    ) -> dict[str, str]:
+        partition = self._optional_interpretation_partition(arguments)
+        if partition is None:
+            raise ValueError("Missing required interpretation partition.")
+        return partition
+
+    def _optional_interpretation_partition(
+        self,
+        arguments: dict[str, object],
+    ) -> dict[str, str] | None:
+        partition = arguments.get("partition")
+        if partition is None:
+            return None
+        if not isinstance(partition, dict):
+            raise ValueError("partition must be an object when provided.")
+        return {
+            "family": self._normalize_family(self._required_string(partition, "family")),
+            "subject_id": self._required_string(
+                partition,
+                "segment",
+                fallback_key="subject_id",
+            ),
+        }
+
+    def _interpretation_status(self, value: object, *, field: str) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Missing required interpretation status: {field}")
+        normalized = value.strip().lower()
+        if normalized not in INTERPRETATION_LIFECYCLE_STATUSES:
+            raise ValueError(
+                f"{field} must be one of {list(INTERPRETATION_LIFECYCLE_STATUSES)}."
+            )
+        return normalized
+
+    def _optional_limit(self, arguments: dict[str, object], *, default: int) -> int:
+        value = arguments.get("limit")
+        if value is None:
+            return default
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError("limit must be a positive integer when provided.")
+        return value
 
     def _required_string(
         self,

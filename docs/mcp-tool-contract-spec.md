@@ -49,6 +49,10 @@ The repository currently exposes these runtime tools:
 - `get_fact_record`
 - `build_interpretation_snapshot`
 - `get_interpretation_record`
+- `list_interpretation_proposals`
+- `validate_interpretation_proposal`
+- `publish_interpretation_partition`
+- `get_interpretation_proposal_status`
 - `upsert_profile_context`
 - `query_personal_knowledge`
 - `get_snapshot_status`
@@ -61,6 +65,8 @@ Current MVP caveats:
 - `ingest_fact_batch` currently accepts inline `source_records` rather than source ids fetched from external connectors
 - `build_interpretation_snapshot` still requires explicit `fact_ids` on the happy path
 - `build_interpretation_snapshot` now accepts `execution_mode: "background"` to queue worker execution, but broader async job families remain follow-up work
+- interpretation proposal lifecycle is now operator-visible through list, validate, publish, and status tools
+- `publish_interpretation_partition` currently iterates the matching shared partition candidates and can return `status: "partial"` if one candidate publishes while another fails lifecycle checks
 - `query_personal_knowledge` now has a runtime-owned profile provisioning path through `upsert_profile_context`
 - `get_snapshot_status` now returns the per-layer registry when called with only `domain`, while partition-filtered calls still return the interpretation layer pointer
 - `get_cache_status` currently inspects saved Personal outputs by comparing their stored snapshot tuple against the current published snapshot tuple and current profile version
@@ -659,6 +665,7 @@ Output:
     {
       "proposal_id": "proposal_123",
       "interpretation_id": "interp_candidate_123",
+      "lifecycle_state": "proposed",
       "review_state": "pending_validation"
     }
   ]
@@ -684,8 +691,10 @@ Output:
 {
   "status": "ok",
   "proposal_id": "proposal_123",
+  "ok": true,
   "validation_state": "validated",
-  "warnings": []
+  "review_state": "ready_to_publish",
+  "errors": []
 }
 ```
 
@@ -712,9 +721,16 @@ Output:
 {
   "status": "ok",
   "interpretation_snapshot": "interp_snap_2026_04_15_market_trends_backend_japan_midlevel",
-  "published_records": 14
+  "published_records": 1,
+  "published_proposal_ids": ["proposal_123"],
+  "superseded_ids": []
 }
 ```
+
+Current MVP note:
+
+- the first implementation publishes shared-scope partition candidates one proposal at a time using the existing interpretation publication service
+- if one candidate fails after another already published, the tool reports `status: "partial"` with a `failures` list instead of pretending the whole partition succeeded atomically
 
 ### `get_interpretation_proposal_status`
 
@@ -736,7 +752,9 @@ Output:
   "status": "ok",
   "proposal_id": "proposal_123",
   "lifecycle_state": "validated",
-  "review_state": "ready_to_publish"
+  "review_state": "ready_to_publish",
+  "family": "market_trend",
+  "subject_id": "backend_japan_midlevel"
 }
 ```
 

@@ -643,6 +643,10 @@ def test_server_lists_mvp_tools(tmp_path: Path) -> None:
         "get_fact_record",
         "build_interpretation_snapshot",
         "get_interpretation_record",
+        "list_interpretation_proposals",
+        "validate_interpretation_proposal",
+        "publish_interpretation_partition",
+        "get_interpretation_proposal_status",
         "upsert_profile_context",
         "query_personal_knowledge",
         "get_snapshot_status",
@@ -835,6 +839,102 @@ def test_server_builds_interpretation_and_reads_snapshot_status(tmp_path: Path) 
     assert f"Interpretation Snapshot: `{result['interpretation_snapshot']}`" in rendered_page.read_text(
         encoding="utf-8"
     )
+
+
+def test_server_interpretation_lifecycle_tools_cover_proposal_validation_and_publish(
+    tmp_path: Path,
+) -> None:
+    server = build_fake_server(tmp_path)
+
+    build = server.call_tool(
+        "build_interpretation_snapshot",
+        {
+            "domain": "recruiting",
+            "partition": {"family": "market_trends", "segment": "backend-japan-midlevel"},
+            "fact_ids": ["fact:job:1"],
+            "fact_snapshot": "fact_snap:seed",
+            "model_profile": "balanced_default",
+            "publish": False,
+        },
+    )
+    proposals = server.call_tool(
+        "list_interpretation_proposals",
+        {
+            "domain": "recruiting",
+            "partition": {"family": "market_trends", "segment": "backend-japan-midlevel"},
+        },
+    )
+
+    assert build["status"] == "ok"
+    assert build["records_created"] == 1
+    assert proposals["status"] == "ok"
+    assert len(proposals["items"]) == 1
+    proposal_id = proposals["items"][0]["proposal_id"]
+    assert proposals["items"][0]["lifecycle_state"] == "proposed"
+    assert proposals["items"][0]["review_state"] == "pending_validation"
+
+    validated = server.call_tool(
+        "validate_interpretation_proposal",
+        {"domain": "recruiting", "proposal_id": proposal_id},
+    )
+    validated_status = server.call_tool(
+        "get_interpretation_proposal_status",
+        {"domain": "recruiting", "proposal_id": proposal_id},
+    )
+    publish = server.call_tool(
+        "publish_interpretation_partition",
+        {
+            "domain": "recruiting",
+            "partition": {"family": "market_trends", "segment": "backend-japan-midlevel"},
+            "source_state": "validated",
+        },
+    )
+    published_status = server.call_tool(
+        "get_interpretation_proposal_status",
+        {"domain": "recruiting", "proposal_id": proposal_id},
+    )
+
+    assert validated == {
+        "status": "ok",
+        "proposal_id": proposal_id,
+        "ok": True,
+        "validation_state": "validated",
+        "review_state": "ready_to_publish",
+        "errors": [],
+    }
+    assert validated_status["lifecycle_state"] == "validated"
+    assert validated_status["review_state"] == "ready_to_publish"
+    assert publish["status"] == "ok"
+    assert publish["published_records"] == 1
+    assert publish["published_proposal_ids"] == [proposal_id]
+    assert publish["interpretation_snapshot"].startswith(
+        "interp_snap:recruiting:market_trend:backend-japan-midlevel:"
+    )
+    assert published_status["lifecycle_state"] == "published"
+    assert published_status["review_state"] == "published"
+    assert published_status["interpretation_snapshot"] == publish["interpretation_snapshot"]
+
+
+def test_server_publish_interpretation_partition_reports_missing_candidates(
+    tmp_path: Path,
+) -> None:
+    server = build_fake_server(tmp_path)
+
+    try:
+        server.call_tool(
+            "publish_interpretation_partition",
+            {
+                "domain": "recruiting",
+                "partition": {"family": "market_trends", "segment": "backend-japan-midlevel"},
+                "source_state": "validated",
+            },
+        )
+    except KeyError as exc:
+        assert "No interpretation proposals matched" in str(exc)
+    else:
+        raise AssertionError(
+            "Expected publish_interpretation_partition to reject an empty validated partition."
+        )
 
 
 def test_server_get_cache_status_marks_personal_record_fresh(tmp_path: Path) -> None:
