@@ -57,6 +57,7 @@ The repository currently exposes these runtime tools:
 - `query_personal_knowledge`
 - `get_snapshot_status`
 - `get_cache_status`
+- `get_graph_neighbors`
 - `get_job_status`
 - `explain_result`
 
@@ -72,6 +73,7 @@ Current MVP caveats:
 - `query_personal_knowledge` now has a runtime-owned profile provisioning path through `upsert_profile_context`
 - `get_snapshot_status` now returns the per-layer registry when called with only `domain`, while partition-filtered calls still return the interpretation layer pointer
 - `get_cache_status` currently inspects saved Personal outputs by comparing their stored snapshot tuple against the current published snapshot tuple and current profile version
+- `get_graph_neighbors` currently exposes direct Fact, Interpretation, and Personal neighbors using existing evidence and anchor metadata
 - `get_job_status` currently reports runtime-owned outbox jobs, starting with interpretation build requests
 - `explain_result` currently explains shared Interpretation results and saved Personal outputs; broader rendered-page and graph explainability remains follow-up work
 - the Domain Proposal tools are implemented even though they were not part of the original narrow Week 1 MVP tool list
@@ -1172,16 +1174,27 @@ Output:
 ```json
 {
   "status": "ok",
+  "node_id": "personal_plan_123",
+  "layer": "personal",
   "neighbors": [
     {
-      "node_id": "fact_job_posting_999",
-      "edge_type": "evidence_for"
+      "node_id": "interp_123",
+      "layer": "interpretation",
+      "edge_type": "anchored_to",
+      "direction": "outgoing"
     }
   ]
 }
 ```
 
 This tool is suitable for bounded exploration, but clients should prefer narrower retrieval tools where possible to reduce fan-out and improve debuggability.
+
+Current MVP note:
+
+- `node_id` is currently used as the lookup key and the runtime infers the layer from the id prefix when possible
+- Personal node traversal requires `tenant_id` and `user_id`
+- Interpretation neighbors currently come from evidence fact ids and, when user scope is supplied, saved Personal outputs anchored to that interpretation
+- Fact neighbors currently come from shared Interpretation evidence scans and, when user scope is supplied, saved Personal outputs anchored to that fact
 
 ### `get_dependency_impact`
 

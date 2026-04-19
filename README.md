@@ -370,6 +370,17 @@ Current baseline:
 - `cache_state` can currently be `fresh`, `stale`, `invalid`, or `missing`
 - `profile_version` drift is treated as `invalid`
 
+## Graph Neighbor Visibility
+
+The runtime now exposes a first bounded graph lookup across the three main layers.
+
+Current baseline:
+
+- `get_graph_neighbors` returns direct neighbors for Personal, Interpretation, and Fact nodes
+- Personal neighbors currently come from saved anchor metadata
+- Interpretation neighbors currently come from evidence fact ids and optionally user-scoped Personal anchors
+- Fact neighbors currently come from shared Interpretation evidence scans and optionally user-scoped Personal anchors
+
 ## Job and Result Visibility
 
 The runtime now exposes a first operator-facing job and explainability surface.

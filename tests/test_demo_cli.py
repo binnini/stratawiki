@@ -41,6 +41,7 @@ def test_demo_cli_lists_tools_without_postgres(tmp_path: Path) -> None:
         "query_personal_knowledge",
         "get_snapshot_status",
         "get_cache_status",
+        "get_graph_neighbors",
         "get_job_status",
         "explain_result",
     ]

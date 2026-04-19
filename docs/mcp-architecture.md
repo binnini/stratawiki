@@ -64,6 +64,7 @@ Implemented today:
 - operator-facing interpretation lifecycle tools for listing, validating, publishing, and inspecting proposal state
 - a snapshot registry view plus minimal Personal cache-freshness inspection for operator-facing visibility
 - minimal operator visibility for queued jobs plus result explainability for Personal and Interpretation outputs
+- a first bounded graph neighbor tool that connects Personal anchors, Interpretation evidence, and Fact nodes
 - a profile context write path so external clients can provision Personal query prerequisites through the runtime
 - Domain Pack governance services for validation, compatibility review, approval gating, artifact loading, and proposal ingestion
 - a first worker entrypoint that can execute queued interpretation build requests outside the request path
@@ -162,6 +163,7 @@ Currently implemented:
 - `query_personal_knowledge`
 - `get_snapshot_status`
 - `get_cache_status`
+- `get_graph_neighbors`
 - `get_job_status`
 - `explain_result`
 

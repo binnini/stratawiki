@@ -186,7 +186,29 @@ class FakePersonalRepository:
         fact_ids: list[str],
         limit: int,
     ) -> list[dict[str, Any]]:
-        return []
+        matches: list[dict[str, Any]] = []
+        interpretation_set = set(interpretation_ids)
+        fact_set = set(fact_ids)
+        for record in self.records.values():
+            if record["domain"] != domain:
+                continue
+            if record.get("scope_ref") != scope_ref:
+                continue
+            body = record.get("body")
+            raw_anchors = body.get("anchors") if isinstance(body, dict) else []
+            if not isinstance(raw_anchors, list):
+                continue
+            has_match = False
+            for anchor in raw_anchors:
+                if not isinstance(anchor, dict):
+                    continue
+                if anchor.get("layer") == "interpretation" and anchor.get("id") in interpretation_set:
+                    has_match = True
+                if anchor.get("layer") == "fact" and anchor.get("id") in fact_set:
+                    has_match = True
+            if has_match:
+                matches.append(dict(record))
+        return matches[:limit]
 
     def save_record(self, record: dict[str, Any]) -> str:
         self.saved_records.append(dict(record))
@@ -657,6 +679,7 @@ def test_server_lists_mvp_tools(tmp_path: Path) -> None:
         "query_personal_knowledge",
         "get_snapshot_status",
         "get_cache_status",
+        "get_graph_neighbors",
         "get_job_status",
         "explain_result",
     ]
@@ -1055,6 +1078,76 @@ def test_server_get_cache_status_marks_missing_record(tmp_path: Path) -> None:
             "profile_version": "profile:v1",
         },
     }
+
+
+def test_server_get_graph_neighbors_returns_personal_anchor_relations(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    result = server.call_tool(
+        "get_graph_neighbors",
+        {
+            "domain": "recruiting",
+            "node_id": "personal:1",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+        },
+    )
+
+    assert result["status"] == "ok"
+    assert result["layer"] == "personal"
+    assert result["neighbors"] == [
+        {
+            "node_id": "interp:published:1",
+            "layer": "interpretation",
+            "edge_type": "anchored_to",
+            "direction": "outgoing",
+            "title": "Demand is rising",
+            "summary": "Demand is rising for backend roles with production AI exposure.",
+        },
+        {
+            "node_id": "fact:job:1",
+            "layer": "fact",
+            "edge_type": "anchored_to",
+            "direction": "outgoing",
+            "title": "Backend Engineer",
+            "summary": "Production AI systems experience preferred.",
+        },
+    ]
+
+
+def test_server_get_graph_neighbors_returns_fact_reverse_neighbors(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    result = server.call_tool(
+        "get_graph_neighbors",
+        {
+            "domain": "recruiting",
+            "node_id": "fact:job:1",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+        },
+    )
+
+    assert result["status"] == "ok"
+    assert result["layer"] == "fact"
+    assert result["neighbors"] == [
+        {
+            "node_id": "interp:published:1",
+            "layer": "interpretation",
+            "edge_type": "evidence_for",
+            "direction": "incoming",
+            "title": "Demand is rising",
+            "summary": "Demand is rising for backend roles with production AI exposure.",
+        },
+        {
+            "node_id": "personal:1",
+            "layer": "personal",
+            "edge_type": "anchored_to",
+            "direction": "incoming",
+            "title": "Existing plan",
+            "summary": "Anchored to shared context",
+        },
+    ]
 
 
 def test_server_get_job_status_tracks_background_job_lifecycle(tmp_path: Path) -> None:

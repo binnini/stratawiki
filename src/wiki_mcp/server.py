@@ -283,6 +283,24 @@ def _tool_definitions() -> list[ToolDefinition]:
             },
         ),
         ToolDefinition(
+            name="get_graph_neighbors",
+            group="graph",
+            status="mvp",
+            description="Return direct Personal/Interpretation/Fact neighbors for one node.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["domain", "node_id"],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "node_id": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "limit": {"type": "integer"},
+                },
+            },
+        ),
+        ToolDefinition(
             name="get_job_status",
             group="operator",
             status="mvp",
@@ -363,6 +381,8 @@ class StrataWikiServer:
             return self._get_snapshot_status(args)
         if name == "get_cache_status":
             return self._get_cache_status(args)
+        if name == "get_graph_neighbors":
+            return self._get_graph_neighbors(args)
         if name == "get_job_status":
             return self._get_job_status(args)
         if name == "explain_result":
@@ -816,6 +836,46 @@ class StrataWikiServer:
             "record_snapshots": record_snapshots,
         }
 
+    def _get_graph_neighbors(self, arguments: dict[str, object]) -> dict[str, object]:
+        domain = self._required_string(arguments, "domain")
+        node_id = self._required_string(arguments, "node_id")
+        limit = self._optional_limit(arguments, default=50)
+        layer = self._graph_node_layer(arguments, node_id=node_id)
+        if layer == "personal":
+            tenant_id = self._required_string(arguments, "tenant_id")
+            user_id = self._required_string(arguments, "user_id")
+            neighbors = self._personal_graph_neighbors(
+                domain=domain,
+                node_id=node_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                limit=limit,
+            )
+        elif layer == "interpretation":
+            neighbors = self._interpretation_graph_neighbors(
+                domain=domain,
+                node_id=node_id,
+                tenant_id=self._optional_string(arguments, "tenant_id"),
+                user_id=self._optional_string(arguments, "user_id"),
+                limit=limit,
+            )
+        elif layer == "fact":
+            neighbors = self._fact_graph_neighbors(
+                domain=domain,
+                node_id=node_id,
+                tenant_id=self._optional_string(arguments, "tenant_id"),
+                user_id=self._optional_string(arguments, "user_id"),
+                limit=limit,
+            )
+        else:
+            raise ValueError("get_graph_neighbors currently supports fact, interpretation, and personal nodes only.")
+        return {
+            "status": "ok",
+            "node_id": node_id,
+            "layer": layer,
+            "neighbors": neighbors[:limit],
+        }
+
     def _get_job_status(self, arguments: dict[str, object]) -> dict[str, object]:
         job_id = self._required_string(arguments, "job_id")
         outbox_repository = self.bootstrap.outbox_repository
@@ -918,6 +978,156 @@ class StrataWikiServer:
         if profile_context is not None and profile_context.get("profile_version"):
             current_snapshots["profile_version"] = profile_context["profile_version"]
         return current_snapshots
+
+    def _personal_graph_neighbors(
+        self,
+        *,
+        domain: str,
+        node_id: str,
+        tenant_id: str,
+        user_id: str,
+        limit: int,
+    ) -> list[dict[str, object]]:
+        scope_ref = {"scope": "user", "tenant_id": tenant_id, "user_id": user_id}
+        records = self.bootstrap.personal_repository.get_by_ids([node_id], scope_ref)
+        if not records or records[0].get("domain") != domain:
+            raise KeyError(f"Unknown personal result {node_id!r} for domain {domain!r}.")
+        record = dict(records[0])
+        anchors = self._graph_anchor_refs(record)
+        interpretation_ids = [
+            anchor["id"]
+            for anchor in anchors
+            if anchor["layer"] == "interpretation"
+        ]
+        fact_ids = [
+            anchor["id"]
+            for anchor in anchors
+            if anchor["layer"] == "fact"
+        ]
+        interpretation_records = self.bootstrap.interpretation_repository.get_by_ids(
+            interpretation_ids,
+            {"scope": "shared"},
+        )
+        fact_records = self.bootstrap.fact_repository.get_by_ids(
+            fact_ids,
+            {"scope": "shared"},
+        )
+        neighbors = [
+            self._graph_neighbor_item(
+                layer="interpretation",
+                record=item,
+                edge_type="anchored_to",
+                direction="outgoing",
+            )
+            for item in interpretation_records
+            if item.get("domain") == domain
+        ]
+        neighbors.extend(
+            self._graph_neighbor_item(
+                layer="fact",
+                record=item,
+                edge_type="anchored_to",
+                direction="outgoing",
+            )
+            for item in fact_records
+            if item.get("domain") == domain
+        )
+        return neighbors[:limit]
+
+    def _interpretation_graph_neighbors(
+        self,
+        *,
+        domain: str,
+        node_id: str,
+        tenant_id: str | None,
+        user_id: str | None,
+        limit: int,
+    ) -> list[dict[str, object]]:
+        record = self._require_shared_interpretation_record(domain=domain, interpretation_id=node_id)
+        fact_ids = [
+            fact_id
+            for fact_id in self._result_anchor_ids(record)
+            if fact_id.startswith("fact:")
+        ]
+        fact_records = self.bootstrap.fact_repository.get_by_ids(
+            fact_ids,
+            {"scope": "shared"},
+        )
+        neighbors = [
+            self._graph_neighbor_item(
+                layer="fact",
+                record=item,
+                edge_type="evidence_for",
+                direction="outgoing",
+            )
+            for item in fact_records
+            if item.get("domain") == domain
+        ]
+        if tenant_id is not None and user_id is not None:
+            personal_records = self.bootstrap.personal_repository.search_by_anchors(
+                domain=domain,
+                scope_ref={"scope": "user", "tenant_id": tenant_id, "user_id": user_id},
+                interpretation_ids=[node_id],
+                fact_ids=[],
+                limit=max(1, limit - len(neighbors)),
+            )
+            neighbors.extend(
+                self._graph_neighbor_item(
+                    layer="personal",
+                    record=item,
+                    edge_type="anchored_to",
+                    direction="incoming",
+                )
+                for item in personal_records
+            )
+        return neighbors[:limit]
+
+    def _fact_graph_neighbors(
+        self,
+        *,
+        domain: str,
+        node_id: str,
+        tenant_id: str | None,
+        user_id: str | None,
+        limit: int,
+    ) -> list[dict[str, object]]:
+        fact_records = self.bootstrap.fact_repository.get_by_ids([node_id], {"scope": "shared"})
+        if not fact_records or fact_records[0].get("domain") != domain:
+            raise KeyError(f"Unknown fact node {node_id!r} for domain {domain!r}.")
+        interpretation_records = self.bootstrap.interpretation_repository.list_records(
+            domain=domain,
+            scope_ref={"scope": "shared"},
+            statuses=list(INTERPRETATION_LIFECYCLE_STATUSES),
+            limit=max(limit * 4, 50),
+        )
+        neighbors = [
+            self._graph_neighbor_item(
+                layer="interpretation",
+                record=item,
+                edge_type="evidence_for",
+                direction="incoming",
+            )
+            for item in interpretation_records
+            if node_id in self._result_anchor_ids(item)
+        ]
+        if tenant_id is not None and user_id is not None:
+            personal_records = self.bootstrap.personal_repository.search_by_anchors(
+                domain=domain,
+                scope_ref={"scope": "user", "tenant_id": tenant_id, "user_id": user_id},
+                interpretation_ids=[],
+                fact_ids=[node_id],
+                limit=max(1, limit - len(neighbors)),
+            )
+            neighbors.extend(
+                self._graph_neighbor_item(
+                    layer="personal",
+                    record=item,
+                    edge_type="anchored_to",
+                    direction="incoming",
+                )
+                for item in personal_records
+            )
+        return neighbors[:limit]
 
     def _explain_interpretation_result(
         self,
@@ -1209,22 +1419,11 @@ class StrataWikiServer:
     def _result_anchor_ids(self, record: dict[str, object]) -> list[str]:
         anchors: list[str] = []
         seen: set[str] = set()
-        raw_anchors = record.get("anchors")
-        if not isinstance(raw_anchors, list):
-            body = record.get("body")
-            if isinstance(body, dict) and isinstance(body.get("anchors"), list):
-                raw_anchors = body.get("anchors")
-        if isinstance(raw_anchors, list):
-            for anchor in raw_anchors:
-                if not isinstance(anchor, dict):
-                    continue
-                anchor_id = anchor.get("id")
-                if not isinstance(anchor_id, str) or not anchor_id.strip():
-                    continue
-                normalized = anchor_id.strip()
-                if normalized not in seen:
-                    anchors.append(normalized)
-                    seen.add(normalized)
+        for anchor in self._graph_anchor_refs(record):
+            normalized = anchor["id"]
+            if normalized not in seen:
+                anchors.append(normalized)
+                seen.add(normalized)
         evidence = record.get("evidence")
         if isinstance(evidence, list):
             for item in evidence:
@@ -1238,6 +1437,80 @@ class StrataWikiServer:
                     anchors.append(normalized)
                     seen.add(normalized)
         return anchors
+
+    def _graph_anchor_refs(self, record: dict[str, object]) -> list[dict[str, str]]:
+        raw_anchors = record.get("anchors")
+        if not isinstance(raw_anchors, list):
+            body = record.get("body")
+            if isinstance(body, dict) and isinstance(body.get("anchors"), list):
+                raw_anchors = body.get("anchors")
+        anchors: list[dict[str, str]] = []
+        if not isinstance(raw_anchors, list):
+            return anchors
+        for anchor in raw_anchors:
+            if not isinstance(anchor, dict):
+                continue
+            layer = anchor.get("layer")
+            anchor_id = anchor.get("id")
+            if not isinstance(layer, str) or not layer.strip():
+                continue
+            if not isinstance(anchor_id, str) or not anchor_id.strip():
+                continue
+            anchors.append({"layer": layer.strip(), "id": anchor_id.strip()})
+        return anchors
+
+    def _graph_neighbor_item(
+        self,
+        *,
+        layer: str,
+        record: dict[str, object],
+        edge_type: str,
+        direction: str,
+    ) -> dict[str, object]:
+        return {
+            "node_id": record["id"],
+            "layer": layer,
+            "edge_type": edge_type,
+            "direction": direction,
+            **({"title": self._graph_record_title(layer, record)} if self._graph_record_title(layer, record) else {}),
+            **({"summary": self._graph_record_summary(layer, record)} if self._graph_record_summary(layer, record) else {}),
+        }
+
+    def _graph_record_title(self, layer: str, record: dict[str, object]) -> str:
+        if layer == "fact":
+            attributes = record.get("attributes")
+            if isinstance(attributes, dict):
+                title = attributes.get("title") or attributes.get("name") or attributes.get("label")
+                if isinstance(title, str) and title.strip():
+                    return title.strip()
+        title = record.get("title")
+        if isinstance(title, str) and title.strip():
+            return title.strip()
+        return ""
+
+    def _graph_record_summary(self, layer: str, record: dict[str, object]) -> str:
+        if layer == "fact":
+            attributes = record.get("attributes")
+            if isinstance(attributes, dict):
+                summary = attributes.get("summary") or attributes.get("description")
+                if isinstance(summary, str) and summary.strip():
+                    return summary.strip()
+        summary = record.get("summary")
+        if isinstance(summary, str) and summary.strip():
+            return summary.strip()
+        return ""
+
+    def _graph_node_layer(self, arguments: dict[str, object], *, node_id: str) -> str:
+        explicit = self._optional_string(arguments, "layer")
+        if explicit is not None:
+            return explicit.lower()
+        if node_id.startswith("fact:"):
+            return "fact"
+        if node_id.startswith("interp:"):
+            return "interpretation"
+        if node_id.startswith("personal:"):
+            return "personal"
+        raise ValueError("Unable to infer graph node layer from node_id; provide layer explicitly.")
 
     def _job_kind(self, event_type: str) -> str:
         if event_type == "interpretation_snapshot_build_requested":
@@ -1281,6 +1554,14 @@ class StrataWikiServer:
             value = default
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing required string argument: {key}")
+        return value.strip()
+
+    def _optional_string(self, arguments: dict[str, object], key: str) -> str | None:
+        value = arguments.get(key)
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{key} must be a non-empty string when provided.")
         return value.strip()
 
     def _scope_ref(self, arguments: dict[str, object], *, default_scope: str) -> dict[str, str]:
