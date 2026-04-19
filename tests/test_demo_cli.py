@@ -5,8 +5,6 @@ from io import StringIO
 from pathlib import Path
 
 from wiki_mcp.cli import run_cli
-
-
 def test_demo_cli_lists_tools_without_postgres(tmp_path: Path) -> None:
     stdout = StringIO()
     stderr = StringIO()
@@ -69,12 +67,26 @@ def test_demo_mvp_runs_end_to_end_and_writes_personal_output(tmp_path: Path) -> 
     assert payload["status"] == "ok"
     steps = payload["steps"]
     assert steps["ingest_fact_batch"]["status"] == "ok"
+    assert "fact:job_posting:EMP-DEMO-1" in steps["ingest_fact_batch"]["affected_fact_ids"]
     assert steps["build_interpretation_snapshot"]["status"] == "ok"
     assert steps["query_personal_knowledge"]["status"] == "ok"
     assert steps["get_snapshot_status"]["status"] == "ok"
+    assert steps["get_snapshot_status"]["fact_snapshot"] == steps["ingest_fact_batch"]["fact_snapshot"]
+    assert steps["get_snapshot_status"]["interpretation_snapshot"]
 
     answer_markdown = steps["query_personal_knowledge"]["answer_markdown"]
     assert "## Strategy" in answer_markdown
+    shared_page = (
+        tmp_path
+        / "wiki"
+        / "shared"
+        / "interpretations"
+        / "market_trend"
+        / "backend-japan-midlevel.md"
+    )
+    assert shared_page.exists()
+    shared_body = shared_page.read_text(encoding="utf-8")
+    assert "Production AI delivery demand is rising" in shared_body
     answers_dir = tmp_path / "wiki" / "users" / "user-1" / "answers"
     assert answers_dir.exists()
     persisted_files = list(answers_dir.glob("*.md"))
@@ -82,6 +94,47 @@ def test_demo_mvp_runs_end_to_end_and_writes_personal_output(tmp_path: Path) -> 
     persisted_body = persisted_files[0].read_text(encoding="utf-8")
     assert "stratawiki:personal_query_answer" in persisted_body
     assert stderr.getvalue() == ""
+
+
+def test_demo_mvp_is_repeatable_on_same_render_root(tmp_path: Path) -> None:
+    first_stdout = StringIO()
+    first_stderr = StringIO()
+    second_stdout = StringIO()
+    second_stderr = StringIO()
+    argv = [
+        "--demo",
+        "--seed-path",
+        "examples/demo/mvp-seed.json",
+        "--render-root",
+        str(tmp_path),
+        "demo-mvp",
+    ]
+
+    first_exit_code = run_cli(argv, stdout=first_stdout, stderr=first_stderr)
+    second_exit_code = run_cli(argv, stdout=second_stdout, stderr=second_stderr)
+
+    first_payload = json.loads(first_stdout.getvalue())
+    second_payload = json.loads(second_stdout.getvalue())
+
+    assert first_exit_code == 0
+    assert second_exit_code == 0
+    assert first_payload["status"] == "ok"
+    assert second_payload["status"] == "ok"
+    first_fact_ids = first_payload["steps"]["ingest_fact_batch"]["affected_fact_ids"]
+    assert "fact:job_posting:EMP-DEMO-1" in first_fact_ids
+    assert "fact:company:COMP-DEMO-1" in first_fact_ids
+    assert "fact:location:tokyo" in first_fact_ids
+    assert len(first_fact_ids) >= 6
+    assert second_payload["steps"]["query_personal_knowledge"]["status"] == "ok"
+    assert second_payload["steps"]["get_snapshot_status"]["status"] == "ok"
+    answers_dir = tmp_path / "wiki" / "users" / "user-1" / "answers"
+    persisted_files = list(answers_dir.glob("*.md"))
+    assert persisted_files
+    assert "stratawiki:personal_query_answer" in persisted_files[0].read_text(
+        encoding="utf-8"
+    )
+    assert first_stderr.getvalue() == ""
+    assert second_stderr.getvalue() == ""
 
 
 def test_demo_cli_validates_and_ingests_external_domain_proposal_example(tmp_path: Path) -> None:
