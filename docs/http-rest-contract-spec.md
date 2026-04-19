@@ -20,10 +20,11 @@ The intended first external consumers are service-to-service clients such as Job
 - runtime-owned worker execution through `stratawiki worker`
 - runtime-owned operator visibility through `get_job_status`, `get_snapshot_status`, `get_cache_status`, and `explain_result`
 - the current stable long-lived stdio contract through `stratawiki serve`
+- a generic HTTP server baseline through `stratawiki serve-http`
+- baseline HTTP probes and generic tool bridge endpoints
 
 ### Recommended but Not Yet Fixed
 
-- an HTTP server entrypoint that exposes the existing runtime over a network boundary
 - a service-to-service authentication baseline for HTTP clients
 - a machine-readable HTTP description such as OpenAPI
 - an HTTP deployment baseline for Jobs-Wiki and other external WAS clients
@@ -155,14 +156,24 @@ Error:
 }
 ```
 
-## Initial Endpoint Set
+## Baseline Endpoint Set
 
-The first REST wave should expose the currently implemented runtime capabilities rather than inventing a parallel application model.
+The first HTTP baseline intentionally exposes generic runtime endpoints before the resource-specific REST migration is complete.
 
 | Endpoint | Method | Source Tool | Purpose | Status |
 | --- | --- | --- | --- | --- |
-| `/healthz` | `GET` | n/a | liveness probe | planned |
-| `/readyz` | `GET` | n/a | readiness probe after runtime bootstrap validation | planned |
+| `/healthz` | `GET` | n/a | liveness probe | implemented |
+| `/readyz` | `GET` | n/a | readiness probe after runtime bootstrap validation | implemented |
+| `/api/v1/tools` | `GET` | tool registry | list compact tools or schemas | implemented |
+| `/api/v1/tools/{name}` | `GET` | tool registry | inspect one tool schema | implemented |
+| `/api/v1/tool-calls` | `POST` | any current tool | execute one tool with its existing argument shape | implemented |
+
+## Planned Resource-Specific Endpoint Set
+
+These endpoints remain the target migration surface for external clients such as Jobs-Wiki.
+
+| Endpoint | Method | Source Tool | Purpose | Status |
+| --- | --- | --- | --- | --- |
 | `/api/v1/domain-proposals/validate` | `POST` | `validate_domain_proposal_batch` | validate one `DomainProposalBatch` | planned |
 | `/api/v1/domain-proposals/ingest` | `POST` | `ingest_domain_proposal_batch` | ingest one validated `DomainProposalBatch` | planned |
 | `/api/v1/profile-contexts/{tenant_id}/{user_id}` | `PUT` | `upsert_profile_context` | upsert one profile context | planned |
@@ -176,6 +187,22 @@ The first REST wave should expose the currently implemented runtime capabilities
 ## Proposed Request Shapes
 
 The HTTP layer should preserve existing tool payloads as much as possible.
+
+### Generic Tool Call Bridge
+
+`POST /api/v1/tool-calls`
+
+```json
+{
+  "name": "get_snapshot_status",
+  "arguments": {
+    "domain": "recruiting"
+  }
+}
+```
+
+This baseline exists so the HTTP transport can reuse the current runtime immediately.
+The resource-specific endpoints above should gradually replace direct generic tool calls for external integrations.
 
 ### Validate Proposal Batch
 
@@ -335,4 +362,3 @@ After the HTTP baseline lands:
 - Should `readyz` be unauthenticated everywhere or only inside trusted infrastructure?
 - Should the first HTTP version keep a uniform response envelope for every endpoint or permit raw resource payloads for some reads?
 - Should `get_snapshot_status`, `get_cache_status`, and `explain_result` remain tool-shaped endpoints or evolve into more resource-oriented read models in `v2`?
-

@@ -260,6 +260,54 @@ Responses are emitted as one JSON object per line on stdout.
 
 The next planned networked boundary is documented in `docs/http-rest-contract-spec.md`, but the current stable external contract remains the stdio runtime until that work lands.
 
+## HTTP Runtime Baseline
+
+The repository now also includes a first HTTP server baseline for external clients that cannot own a stdio process directly.
+
+Start it locally against the same runtime bootstrap used by the stdio server:
+
+```bash
+/Users/yebin/venv/bin/python -m wiki_mcp.cli \
+  --database-url postgresql://stratawiki:stratawiki@localhost:5432/stratawiki_dev \
+  --render-root data-dev \
+  serve-http \
+  --host 127.0.0.1 \
+  --port 8080
+```
+
+Or configure the bind values through environment:
+
+```bash
+export STRATAWIKI_HTTP_HOST=127.0.0.1
+export STRATAWIKI_HTTP_PORT=8080
+```
+
+The first HTTP baseline intentionally stays close to the existing tool runtime instead of inventing a second application stack.
+
+Implemented baseline endpoints:
+
+- `GET /healthz`
+- `GET /readyz`
+- `GET /api/v1/tools`
+- `GET /api/v1/tools/{name}`
+- `POST /api/v1/tool-calls`
+
+Request example:
+
+```bash
+curl -s \
+  -H 'Content-Type: application/json' \
+  -H 'X-Request-Id: req-123' \
+  -d '{"name":"get_snapshot_status","arguments":{"domain":"recruiting"}}' \
+  http://127.0.0.1:8080/api/v1/tool-calls
+```
+
+Current status notes:
+
+- this is a migration baseline, not yet the full resource-specific REST surface
+- stdio remains the current stable external contract while the HTTP migration is still in progress
+- service-to-service auth and versioned HTTP policy are tracked separately
+
 Supported runtime methods today:
 
 - `health`

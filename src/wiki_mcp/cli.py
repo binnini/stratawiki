@@ -12,11 +12,14 @@ from wiki_mcp.runtime_protocol import (
     run_stdio_runtime,
     show_tool_payload,
 )
+from wiki_mcp.http_runtime import run_http_runtime
 from wiki_mcp.runtime_setup import (
     apply_postgres_bootstrap,
     run_mvp_seed_flow,
 )
 from wiki_mcp.runtime_validation import (
+    resolve_http_host,
+    resolve_http_port,
     resolve_bootstrap_sql_path,
     resolve_render_root,
     resolve_seed_path,
@@ -31,6 +34,7 @@ DatabaseBootstrapper = Callable[..., dict[str, object]]
 MvpSeedRunner = Callable[..., dict[str, object]]
 WorkerRunner = Callable[..., dict[str, object]]
 RuntimeValidator = Callable[..., dict[str, object]]
+HttpRuntimeRunner = Callable[..., int]
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -122,6 +126,21 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "serve",
         help="Start the long-lived stdio runtime for external clients.",
     )
+    serve_http = subparsers.add_parser(
+        "serve-http",
+        help="Start the long-lived HTTP runtime for external clients.",
+    )
+    serve_http.add_argument(
+        "--host",
+        default=resolve_http_host(),
+        help="Bind host for the HTTP runtime.",
+    )
+    serve_http.add_argument(
+        "--port",
+        type=int,
+        default=resolve_http_port(),
+        help="Bind port for the HTTP runtime.",
+    )
     worker = subparsers.add_parser(
         "worker",
         help="Claim and process queued background jobs once.",
@@ -143,6 +162,7 @@ def run_cli(
     mvp_seed_runner: MvpSeedRunner = run_mvp_seed_flow,
     worker_runner: WorkerRunner = run_worker_once,
     runtime_validator: RuntimeValidator = validate_runtime_prerequisites,
+    http_runtime_runner: HttpRuntimeRunner = run_http_runtime,
     stdin: TextIO | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
@@ -196,9 +216,10 @@ def run_cli(
         _write_json(resolved_stdout, result)
         return 0
 
-    if not args.demo and args.command in {"serve", "worker"}:
+    validation_result: dict[str, object] | None = None
+    if not args.demo and args.command in {"serve", "serve-http", "worker"}:
         try:
-            runtime_validator(
+            validation_result = runtime_validator(
                 database_url=args.database_url,
                 render_root=args.render_root,
                 domain_pack_paths=args.domain_pack_path,
@@ -232,6 +253,13 @@ def run_cli(
             result = mvp_seed_runner(server, seed_path=args.seed_path)
         elif args.command == "serve":
             return run_stdio_runtime(server, stdin=resolved_stdin, stdout=resolved_stdout)
+        elif args.command == "serve-http":
+            return http_runtime_runner(
+                server,
+                host=args.host,
+                port=args.port,
+                ready_payload=validation_result,
+            )
         elif args.command == "worker":
             result = worker_runner(server, limit=args.limit)
         else:

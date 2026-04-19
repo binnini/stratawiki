@@ -18,7 +18,7 @@ It is intentionally written from the external integration point of view.
 
 ### Recommended but Not Yet Fixed
 
-- an HTTP/REST boundary that replaces the wrapper for networked integration
+- a resource-specific HTTP/REST boundary that replaces the wrapper for networked integration
 - service-to-service auth for that HTTP boundary
 - a machine-readable REST contract
 - an HTTP deployment baseline that Jobs-Wiki can target directly
@@ -47,6 +47,8 @@ That path is still the right choice until the HTTP milestone reaches at least:
 - `#43` profile sync and Personal query over HTTP
 - `#46` service-to-service auth baseline
 - `#47` versioned HTTP contract and idempotency policy
+
+The `#41` baseline does introduce a generic HTTP bridge, but Jobs-Wiki should still treat that as migration infrastructure rather than the final consumer contract.
 
 ## Future Target Path
 
@@ -141,4 +143,3 @@ Jobs-Wiki should not do these things yet:
 - treat `DomainProposalBatch` as the only default external write contract
 - keep profile sync before Personal query
 - do not make background interpretation builds the default until job polling is wired
-

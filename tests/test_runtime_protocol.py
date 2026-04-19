@@ -161,3 +161,29 @@ def test_serve_cli_emits_structured_request_errors_and_keeps_running() -> None:
     assert responses[2]["result"]["status"] == "ok"
     assert fake_server.closed is True
     assert stderr.getvalue() == ""
+
+
+def test_serve_http_cli_uses_validated_host_and_port() -> None:
+    fake_server = FakeServeServer()
+    captured: dict[str, object] = {}
+
+    def fake_http_runner(server: FakeServeServer, *, host: str, port: int, ready_payload: dict[str, object] | None) -> int:
+        captured["server"] = server
+        captured["host"] = host
+        captured["port"] = port
+        captured["ready_payload"] = ready_payload
+        return 0
+
+    exit_code = run_cli(
+        ["serve-http", "--host", "0.0.0.0", "--port", "8091"],
+        server_factory=lambda **kwargs: fake_server,
+        runtime_validator=lambda **kwargs: {"status": "ok", "bootstrap_tables_checked": True},
+        http_runtime_runner=fake_http_runner,
+    )
+
+    assert exit_code == 0
+    assert captured["server"] is fake_server
+    assert captured["host"] == "0.0.0.0"
+    assert captured["port"] == 8091
+    assert captured["ready_payload"] == {"status": "ok", "bootstrap_tables_checked": True}
+    assert fake_server.closed is True

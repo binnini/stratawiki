@@ -114,6 +114,8 @@ It is a repository-owned newline-delimited JSON contract that lets external clie
 The planned HTTP migration should be treated as a follow-up contract layer, not as the current stable boundary.
 See `docs/http-rest-contract-spec.md` for the contract-first REST draft.
 
+The repository now includes a generic HTTP bridge baseline through `stratawiki serve-http`, but that is still earlier than the intended resource-specific HTTP migration surface for external clients.
+
 Request envelope:
 
 ```json

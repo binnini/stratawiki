@@ -15,6 +15,8 @@ from wiki_mcp.storage.postgres.base import managed_cursor
 DEFAULT_RENDER_ROOT_ENV = "STRATAWIKI_RENDER_ROOT"
 DEFAULT_BOOTSTRAP_SQL_ENV = "STRATAWIKI_POSTGRES_BOOTSTRAP_SQL"
 DEFAULT_SEED_PATH_ENV = "STRATAWIKI_SEED_PATH"
+DEFAULT_HTTP_HOST_ENV = "STRATAWIKI_HTTP_HOST"
+DEFAULT_HTTP_PORT_ENV = "STRATAWIKI_HTTP_PORT"
 
 REQUIRED_BOOTSTRAP_RELATIONS = (
     "fact.record_envelopes",
@@ -48,6 +50,26 @@ def resolve_seed_path(seed_path: str | Path | None = None) -> Path:
     if raw:
         return Path(raw)
     return Path(DEFAULT_DEMO_SEED_PATH)
+
+
+def resolve_http_host(host: str | None = None) -> str:
+    if host is not None and str(host).strip():
+        return str(host).strip()
+
+    raw = os.environ.get(DEFAULT_HTTP_HOST_ENV, "").strip()
+    if raw:
+        return raw
+    return "127.0.0.1"
+
+
+def resolve_http_port(port: int | str | None = None) -> int:
+    if port is not None and str(port).strip():
+        return _parse_http_port(str(port).strip())
+
+    raw = os.environ.get(DEFAULT_HTTP_PORT_ENV, "").strip()
+    if raw:
+        return _parse_http_port(raw)
+    return 8080
 
 
 def resolve_bootstrap_sql_path(bootstrap_sql_path: str | Path | None = None) -> Path:
@@ -155,3 +177,13 @@ def _read_relation_name(row: object) -> str | None:
         value = row[0]
         return str(value) if value is not None else None
     return None
+
+
+def _parse_http_port(raw: str) -> int:
+    try:
+        port = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"HTTP port must be an integer: {raw!r}") from exc
+    if port < 1 or port > 65535:
+        raise ValueError(f"HTTP port must be between 1 and 65535: {raw!r}")
+    return port
