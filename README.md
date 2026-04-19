@@ -282,6 +282,12 @@ export STRATAWIKI_HTTP_HOST=127.0.0.1
 export STRATAWIKI_HTTP_PORT=8080
 ```
 
+For shared or external-WAS environments, also configure a bearer token:
+
+```bash
+export STRATAWIKI_HTTP_AUTH_TOKEN=replace-me
+```
+
 The first HTTP baseline intentionally stays close to the existing tool runtime instead of inventing a second application stack.
 
 Implemented baseline endpoints:
@@ -306,7 +312,10 @@ Current status notes:
 
 - this is a migration baseline, not yet the full resource-specific REST surface
 - stdio remains the current stable external contract while the HTTP migration is still in progress
-- service-to-service auth and versioned HTTP policy are tracked separately
+- service-to-service auth is now available through `STRATAWIKI_HTTP_AUTH_TOKEN`
+- when that token is configured, `/api/v1/*` endpoints require `Authorization: Bearer <token>`
+- `GET /healthz` and `GET /readyz` remain unauthenticated baseline probes
+- versioned HTTP policy remains tracked separately
 
 Supported runtime methods today:
 

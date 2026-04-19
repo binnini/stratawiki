@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from wiki_mcp.auth import resolve_bearer_token, resolve_http_auth_token
 from wiki_mcp.runtime_protocol import (
     RUNTIME_PROTOCOL_VERSION,
     list_tools_payload,
@@ -32,12 +33,14 @@ def run_http_runtime(
     host: str,
     port: int,
     ready_payload: Mapping[str, Any] | None = None,
+    auth_token: str | None = None,
 ) -> int:
     http_server = _StrataWikiHTTPServer(
         (host, port),
         _make_request_handler(),
         stratawiki_server=server,
         ready_payload=dict(ready_payload or {"status": "ok"}),
+        auth_token=resolve_http_auth_token(auth_token),
     )
     try:
         http_server.serve_forever()
@@ -56,6 +59,7 @@ def dispatch_http_request(
     headers: Mapping[str, str] | None,
     body: bytes,
     ready_payload: Mapping[str, Any] | None = None,
+    auth_token: str | None = None,
 ) -> HttpRuntimeResponse:
     request_id = _resolve_request_id(headers)
     parsed = urlsplit(path)
@@ -88,6 +92,12 @@ def dispatch_http_request(
             "checks": dict(ready_payload or {"status": "ok"}),
         }
         return _success_response(request_id, payload)
+
+    resolved_auth_token = resolve_http_auth_token(auth_token)
+    if normalized_path.startswith("/api/") and resolved_auth_token is not None:
+        bearer_token = resolve_bearer_token(headers)
+        if bearer_token != resolved_auth_token:
+            return _unauthorized_response(request_id)
 
     if normalized_path == "/api/v1/tools":
         if normalized_method != "GET":
@@ -147,10 +157,12 @@ class _StrataWikiHTTPServer(HTTPServer):
         *,
         stratawiki_server: StrataWikiServer,
         ready_payload: dict[str, Any],
+        auth_token: str | None,
     ) -> None:
         super().__init__(server_address, handler_class)
         self.stratawiki_server = stratawiki_server
         self.ready_payload = ready_payload
+        self.auth_token = auth_token
 
 
 def _make_request_handler() -> type[BaseHTTPRequestHandler]:
@@ -176,6 +188,7 @@ def _make_request_handler() -> type[BaseHTTPRequestHandler]:
                 headers={key: value for key, value in self.headers.items()},
                 body=raw_body,
                 ready_payload=self.server.ready_payload,
+                auth_token=self.server.auth_token,
             )
             encoded = json.dumps(response.payload, sort_keys=True).encode("utf-8")
             self.send_response(response.status_code)
@@ -275,6 +288,24 @@ def _method_not_allowed(request_id: str, *, allowed: str) -> HttpRuntimeResponse
         headers={
             "X-Request-Id": request_id,
             "Allow": allowed,
+        },
+    )
+
+
+def _unauthorized_response(request_id: str) -> HttpRuntimeResponse:
+    return HttpRuntimeResponse(
+        status_code=int(HTTPStatus.UNAUTHORIZED),
+        payload={
+            "ok": False,
+            "request_id": request_id,
+            "error": {
+                "code": "unauthorized",
+                "message": "Missing or invalid bearer token.",
+            },
+        },
+        headers={
+            "X-Request-Id": request_id,
+            "WWW-Authenticate": "Bearer",
         },
     )
 

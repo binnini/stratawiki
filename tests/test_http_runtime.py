@@ -129,6 +129,46 @@ def test_http_runtime_executes_tool_call_and_propagates_request_id() -> None:
     assert fake_server.calls == [("get_snapshot_status", {"domain": "recruiting"})]
 
 
+def test_http_runtime_requires_bearer_token_when_configured() -> None:
+    fake_server = FakeHttpServer()
+
+    unauthorized = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/tools",
+        headers={},
+        body=b"",
+        auth_token="secret-token",
+    )
+    authorized = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/tools",
+        headers={"Authorization": "Bearer secret-token"},
+        body=b"",
+        auth_token="secret-token",
+    )
+    health = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/healthz",
+        headers={},
+        body=b"",
+        auth_token="secret-token",
+    )
+
+    assert unauthorized.status_code == 401
+    assert unauthorized.payload["ok"] is False
+    assert unauthorized.payload["error"]["code"] == "unauthorized"
+    assert unauthorized.headers["WWW-Authenticate"] == "Bearer"
+
+    assert authorized.status_code == 200
+    assert authorized.payload["ok"] is True
+
+    assert health.status_code == 200
+    assert health.payload["ok"] is True
+
+
 def test_http_runtime_maps_validation_and_lookup_errors() -> None:
     fake_server = FakeHttpServer()
 

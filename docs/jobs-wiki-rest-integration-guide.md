@@ -19,7 +19,6 @@ It is intentionally written from the external integration point of view.
 ### Recommended but Not Yet Fixed
 
 - a resource-specific HTTP/REST boundary that replaces the wrapper for networked integration
-- service-to-service auth for that HTTP boundary
 - a machine-readable REST contract
 - an HTTP deployment baseline that Jobs-Wiki can target directly
 
@@ -95,6 +94,12 @@ Recommended Jobs-Wiki additions:
 | `STRATAWIKI_BASE_URL` | Jobs-Wiki | yes for HTTP mode | HTTP read/write |
 | `STRATAWIKI_API_TOKEN` | Jobs-Wiki | expected | HTTP auth |
 
+StrataWiki runtime side:
+
+| Env var | Owner | Required in shared HTTP mode | Purpose |
+| --- | --- | --- | --- |
+| `STRATAWIKI_HTTP_AUTH_TOKEN` | StrataWiki | recommended | HTTP auth gate |
+
 ### Phase 2: HTTP-Primary Integration
 
 Move primary calls to HTTP and keep the wrapper only as a temporary rollback path if needed.
@@ -134,6 +139,7 @@ Jobs-Wiki should not do these things yet:
 - switch production-like traffic to HTTP before auth and idempotency are fixed
 - connect to the StrataWiki database directly
 - assume browser-style integration needs such as CORS are part of the first migration wave
+- assume the generic `/api/v1/tool-calls` bridge is the final long-term consumer contract
 
 ## Handoff Checklist for Jobs-Wiki
 

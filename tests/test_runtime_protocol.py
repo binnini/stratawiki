@@ -167,11 +167,19 @@ def test_serve_http_cli_uses_validated_host_and_port() -> None:
     fake_server = FakeServeServer()
     captured: dict[str, object] = {}
 
-    def fake_http_runner(server: FakeServeServer, *, host: str, port: int, ready_payload: dict[str, object] | None) -> int:
+    def fake_http_runner(
+        server: FakeServeServer,
+        *,
+        host: str,
+        port: int,
+        ready_payload: dict[str, object] | None,
+        auth_token: str | None,
+    ) -> int:
         captured["server"] = server
         captured["host"] = host
         captured["port"] = port
         captured["ready_payload"] = ready_payload
+        captured["auth_token"] = auth_token
         return 0
 
     exit_code = run_cli(
@@ -186,4 +194,5 @@ def test_serve_http_cli_uses_validated_host_and_port() -> None:
     assert captured["host"] == "0.0.0.0"
     assert captured["port"] == 8091
     assert captured["ready_payload"] == {"status": "ok", "bootstrap_tables_checked": True}
+    assert captured["auth_token"] is None
     assert fake_server.closed is True

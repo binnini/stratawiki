@@ -13,6 +13,7 @@ from wiki_mcp.runtime_protocol import (
     show_tool_payload,
 )
 from wiki_mcp.http_runtime import run_http_runtime
+from wiki_mcp.auth import resolve_http_auth_token
 from wiki_mcp.runtime_setup import (
     apply_postgres_bootstrap,
     run_mvp_seed_flow,
@@ -259,6 +260,7 @@ def run_cli(
                 host=args.host,
                 port=args.port,
                 ready_payload=validation_result,
+                auth_token=resolve_http_auth_token(),
             )
         elif args.command == "worker":
             result = worker_runner(server, limit=args.limit)

@@ -22,10 +22,10 @@ The intended first external consumers are service-to-service clients such as Job
 - the current stable long-lived stdio contract through `stratawiki serve`
 - a generic HTTP server baseline through `stratawiki serve-http`
 - baseline HTTP probes and generic tool bridge endpoints
+- a first service-to-service bearer-token gate for the HTTP runtime through `STRATAWIKI_HTTP_AUTH_TOKEN`
 
 ### Recommended but Not Yet Fixed
 
-- a service-to-service authentication baseline for HTTP clients
 - a machine-readable HTTP description such as OpenAPI
 - an HTTP deployment baseline for Jobs-Wiki and other external WAS clients
 
@@ -103,14 +103,16 @@ Recommended first approach:
 
 Status:
 
-- this is recommended but not yet implemented
-- the exact env var name and token-loading policy belong to the HTTP auth issue
+- this is now implemented as a static bearer token baseline
+- the current runtime env var is `STRATAWIKI_HTTP_AUTH_TOKEN`
+- if the env var is unset, the HTTP runtime remains open for local-only development
+- if the env var is set, `/api/v1/*` endpoints require a matching bearer token
 
 Recommended access policy:
 
 - `GET /healthz` may remain unauthenticated
 - `GET /readyz` may remain unauthenticated inside trusted infrastructure
-- tool-executing endpoints should require authentication
+- `/api/v1/*` endpoints should require authentication in shared environments
 
 ## Common Headers
 
