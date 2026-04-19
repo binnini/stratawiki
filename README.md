@@ -36,12 +36,13 @@ This repository currently contains:
 ## Current Gaps
 
 The main remaining gaps are no longer whether an MVP path exists at all.
-They are follow-up hardening and read-model work:
+They are now mostly read-model, scheduling, and deployment-surface hardening work:
 
-- Fact identity and metadata alignment with the current docs
-- interpretation read and shared-rendering follow-ups
-- persisted Personal anchor reuse for retrieval
-- worker, scheduler, and broader operator-runtime paths beyond the single-process demo
+- shared rendered-page read models remain thinner than the canonical interpretation and lifecycle flow
+- persisted Personal anchors are reusable, but still need a stronger indexed retrieval read model
+- the background path currently centers on interpretation builds; scheduler orchestration and broader job families remain follow-up work
+- graph operator tools exist, but durable graph artifacts and dedicated graph build workers are still follow-up work
+- the current stable long-lived runtime contract is stdio; later networked deployment surfaces remain a separate decision
 
 ## Local MVP Demo
 

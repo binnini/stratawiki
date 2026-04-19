@@ -60,7 +60,7 @@ Implemented today:
 - the Week 1 MVP thin slice across `Fact -> Interpretation -> Personal`
 - a local demo runtime and CLI that exercise the happy path end-to-end
 - a long-lived stdio runtime entrypoint for external clients that should not depend on one-shot subprocess execution
-- the MVP MCP tools for fact ingest, interpretation build and read, personal query, and snapshot status
+- the current runtime MCP tool surface for fact ingest, interpretation lifecycle, personal query, snapshot/cache visibility, graph neighbors, dependency impact, and operator visibility
 - operator-facing interpretation lifecycle tools for listing, validating, publishing, and inspecting proposal state
 - a snapshot registry view plus minimal Personal cache-freshness inspection for operator-facing visibility
 - minimal operator visibility for queued jobs plus result explainability for Personal and Interpretation outputs
@@ -74,8 +74,9 @@ Implemented today:
 Still open:
 
 - shared rendered-page read models remain thinner than the canonical interpretation flow
-- Personal anchor reuse is persisted but not yet fully indexed as a first-class retrieval read model
-- worker, scheduler, graph, and operator-runtime paths remain earlier than the single-process demo path
+- Personal anchor reuse is persisted and reusable, but not yet fully indexed as a first-class retrieval read model
+- scheduler and broader job families remain earlier than the current interpretation-build worker path
+- graph artifact materialization and dedicated graph jobs remain earlier than the current metadata-derived operator tools
 
 ## Target Architecture
 
@@ -161,6 +162,7 @@ Currently implemented:
 - `validate_interpretation_proposal`
 - `publish_interpretation_partition`
 - `get_interpretation_proposal_status`
+- `upsert_profile_context`
 - `query_personal_knowledge`
 - `get_snapshot_status`
 - `get_cache_status`
@@ -172,7 +174,6 @@ Currently implemented:
 Planned or partial follow-up examples:
 
 - `create_personal_plan`
-- `get_dependency_impact`
 - `fetch_source`
 - `list_sources`
 
@@ -283,7 +284,8 @@ Markdown is a view layer here, not the sole authority.
 Current implementation note:
 
 - persisted personal answer rendering exists on the MVP path
-- shared interpretation rendering and page read models remain follow-up work
+- shared interpretation rendering exists on the canonical publish path
+- rendered-page-first read models and broader graph artifact rendering remain follow-up work
 
 ### 7. Graph and Dependency Layer
 

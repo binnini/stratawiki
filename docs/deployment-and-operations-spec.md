@@ -376,6 +376,16 @@ Operators should be able to inspect at least:
 
 Without this visibility, the system will be difficult to trust and recover in practice.
 
+Current implementation baseline:
+
+- `get_snapshot_status` exposes the current published snapshot registry
+- `get_cache_status` exposes saved Personal cache freshness and invalidation reasons
+- `get_job_status` exposes runtime-owned outbox job state for the current background path
+- interpretation proposal lifecycle is operator-visible through list, validate, publish, and status tools
+- `explain_result` exposes snapshot tuple, anchors, lifecycle context, and change reason for Personal and Interpretation results
+- `get_graph_neighbors` and `get_dependency_impact` expose the first graph/dependency operator views
+- graph build status and markdown index freshness are still follow-up work
+
 ## Failure and Recovery Expectations
 
 The deployment model should assume:
@@ -434,7 +444,7 @@ Current repository baseline:
 - which state should persist across restarts in the first milestone
 - whether markdown indexes are rebuilt eagerly or lazily
 - whether graph artifacts are stored durably or rebuilt on demand
-- how operator tooling is exposed in early stages
+- whether operator tooling remains MCP-only or later grows a dedicated operator API/UI
 - when a shared cache backend becomes necessary
 
 ## Summary

@@ -568,8 +568,15 @@ Those concerns are intentionally not all part of the minimal pack contract yet.
 
 The current repository also includes a registry interface and an in-memory implementation for resolving packs by `domain + pack_version`.
 
-The full schema-governance flow is still incomplete.
-Pack validation, compatibility checking, and proposal ingestion remain follow-up work.
+The current repository now includes the first end-to-end schema-governance runtime:
+
+- pack validation
+- compatibility checking
+- approval gating
+- artifact loading
+- `DomainProposalBatch` validation and ingestion
+
+Broader multi-domain generalization, richer tooling, and stronger operator workflows remain follow-up work.
 
 ## Example: Recruiting Data Model Slice
 

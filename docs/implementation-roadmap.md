@@ -71,11 +71,12 @@ See `docs/deployment-and-operations-spec.md` for the runtime constraints view.
 
 ## Current Status Snapshot
 
-As of the current Week 1 MVP branch state:
+As of the current branch state:
 
 - the original thin vertical slice for issues `#1` through `#10` has landed
-- the repository has a working local `Fact -> Interpretation -> Personal` demo path
+- the repository has a working local `Fact -> Interpretation -> Personal` demo path plus a non-demo Postgres runtime path
 - schema-governance work originally described as late generalization work has already been pulled forward in part
+- the first worker-compatible runtime, operator visibility tools, and graph/dependency operator surfaces are now in place
 
 More concretely:
 
@@ -83,16 +84,21 @@ More concretely:
 - Phase 2 Fact ingestion and snapshot publishing are in place, with follow-up hardening still open
 - Phase 3 interpretation proposal, validation, publication, and read paths exist for one family
 - Phase 4 retrieval and personal-query orchestration exist on the curated MVP path
-- Phase 6 has a first personal persistence path, but anchor reuse still needs a stronger read model
+- Phase 6 has persistence, anchor reuse, and snapshot-aware cache inspection, but anchor reuse still needs a stronger indexed read model
+- Phase 7 has a first bounded graph neighbor tool and dependency impact lookup based on evidence and anchor metadata
+- Phase 8 has snapshot inspection, cache inspection, and interpretation-refresh-driven Personal stale marking
+- Phase 10 has a first operator-facing tool surface for lifecycle, jobs, cache state, graph neighbors, dependency impact, and explainability
+- Phase 11 has a checked-in deployment baseline with `stratawiki serve`, `stratawiki worker`, `stratawiki doctor`, `.env.example`, `Dockerfile`, and `docker-compose.yml`
 - Phase 12 foundation work has already landed for Domain Pack contract, validation, compatibility, approval, artifact loading, and proposal ingestion
 
-The remaining Week 1 MVP work is therefore mostly:
+The main follow-up work is therefore mostly:
 
-- documentation alignment
 - Fact hardening against the newer docs
-- interpretation read and render follow-ups
-- Personal anchor reuse
-- operator and runtime follow-ups beyond the local demo path
+- interpretation read and rendered-page read-model follow-ups
+- Personal anchor reuse as a stronger indexed retrieval path
+- broader scheduler and background job families beyond interpretation builds
+- graph artifact materialization and dedicated graph jobs beyond the current metadata-derived operator tools
+- networked deployment and transport decisions beyond the current stdio runtime boundary
 
 ## Implementation Quick Reference
 
@@ -605,4 +611,4 @@ The roadmap is functionally successful when:
 2. harden canonical Fact identity and metadata against the current docs
 3. complete persisted Personal anchor reuse for retrieval
 4. expose interpretation snapshot metadata and shared rendering read models more directly
-5. add the next worker-compatible interpretation publication and operator-facing follow-ups
+5. add broader worker-compatible graph, maintenance, and scheduler-driven job families
