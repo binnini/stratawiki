@@ -727,6 +727,29 @@ def test_server_fact_and_personal_tools_work_on_happy_path(tmp_path: Path) -> No
     assert answer["provenance"]["profile_version"] == "profile:v1"
 
 
+def test_server_personal_query_accepts_explicit_snapshot_override(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    answer = server.call_tool(
+        "query_personal_knowledge",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "question": "What should I focus on next?",
+            "profile_version": "profile:v1",
+            "model_profile": "balanced_default",
+            "fact_snapshot": "fact_snap:override",
+            "interpretation_snapshot": "interp_snap:override",
+            "save": False,
+        },
+    )
+
+    assert answer["status"] == "ok"
+    assert answer["provenance"]["fact_snapshot"] == "fact_snap:override"
+    assert answer["provenance"]["interpretation_snapshot"] == "interp_snap:override"
+
+
 def test_server_profile_context_write_unblocks_personal_query(tmp_path: Path) -> None:
     server = build_fake_server(tmp_path, profile_seeded=False)
 

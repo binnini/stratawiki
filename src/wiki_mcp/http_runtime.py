@@ -326,6 +326,9 @@ def _make_request_handler() -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:
             self._handle()
 
+        def do_PUT(self) -> None:
+            self._handle()
+
         def log_message(self, format: str, *args: object) -> None:
             return
 

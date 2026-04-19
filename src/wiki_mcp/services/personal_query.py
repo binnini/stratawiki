@@ -152,6 +152,7 @@ class PersonalKnowledgeQueryService:
         scope_ref: ScopeRef,
         profile_context: ProfileContext,
         model_profile: str,
+        snapshot_ref_override: SnapshotRef | None = None,
         save: bool = False,
         provider: str | None = None,
         model: str | None = None,
@@ -162,7 +163,11 @@ class PersonalKnowledgeQueryService:
             scope_ref=scope_ref,
             profile_context=profile_context,
         )
-        snapshot_ref = self._snapshot_ref(bundle, profile_context)
+        snapshot_ref = self._snapshot_ref(
+            bundle,
+            profile_context,
+            snapshot_ref_override=snapshot_ref_override,
+        )
         request = {
             "messages": self._build_messages(bundle),
             "model_profile": model_profile,
@@ -355,8 +360,12 @@ class PersonalKnowledgeQueryService:
         self,
         bundle: PersonalQueryBundle,
         profile_context: ProfileContext,
+        *,
+        snapshot_ref_override: SnapshotRef | None = None,
     ) -> SnapshotRef:
         snapshot_ref = dict(bundle.get("snapshot_ref") or {})
+        if snapshot_ref_override is not None:
+            snapshot_ref.update(snapshot_ref_override)
         if "fact_snapshot_id" not in snapshot_ref:
             raise ValueError(
                 "Personal query answers require a fact snapshot for provenance and persistence."

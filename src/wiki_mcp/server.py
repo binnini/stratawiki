@@ -246,6 +246,8 @@ def _tool_definitions() -> list[ToolDefinition]:
                     "question": {"type": "string"},
                     "profile_version": {"type": "string"},
                     "model_profile": {"type": "string"},
+                    "fact_snapshot": {"type": "string"},
+                    "interpretation_snapshot": {"type": "string"},
                     "save": {"type": "boolean"},
                 },
             },
@@ -778,6 +780,7 @@ class StrataWikiServer:
         question = self._required_string(arguments, "question")
         requested_profile_version = self._required_string(arguments, "profile_version")
         model_profile = self._required_string(arguments, "model_profile")
+        snapshot_ref_override = self._personal_query_snapshot_override(arguments, domain=domain)
         profile_context = self.bootstrap.profile_context_repository.get_profile_context(domain, tenant_id, user_id)
         if profile_context["profile_version"] != requested_profile_version:
             raise ValueError("Requested profile_version does not match the current stored profile context.")
@@ -787,6 +790,7 @@ class StrataWikiServer:
             scope_ref={"scope": "user", "tenant_id": tenant_id, "user_id": user_id},
             profile_context=profile_context,
             model_profile=model_profile,
+            snapshot_ref_override=snapshot_ref_override,
             save=bool(arguments.get("save", False)),
         )
         return {
@@ -797,6 +801,42 @@ class StrataWikiServer:
             "fact_records_used": answer["fact_records_used"],
             "provenance": answer["provenance"],
         }
+
+    def _personal_query_snapshot_override(
+        self,
+        arguments: dict[str, object],
+        *,
+        domain: str,
+    ) -> dict[str, str] | None:
+        fact_snapshot = self._optional_string(arguments, "fact_snapshot") or self._optional_string(
+            arguments,
+            "fact_snapshot_id",
+        )
+        interpretation_snapshot = self._optional_string(
+            arguments,
+            "interpretation_snapshot",
+        ) or self._optional_string(arguments, "interpretation_snapshot_id")
+
+        if fact_snapshot is None or interpretation_snapshot is None:
+            status = self.bootstrap.snapshot_repository.get_snapshot_status(domain=domain, layer=None)
+            layers = self._snapshot_layers(status)
+            fact_status = layers.get("fact")
+            interpretation_status = layers.get("interpretation")
+            if fact_snapshot is None and fact_status is not None:
+                current_fact_snapshot = fact_status.get("fact_snapshot_id")
+                if isinstance(current_fact_snapshot, str) and current_fact_snapshot:
+                    fact_snapshot = current_fact_snapshot
+            if interpretation_snapshot is None and interpretation_status is not None:
+                current_interpretation_snapshot = interpretation_status.get("interpretation_snapshot_id")
+                if isinstance(current_interpretation_snapshot, str) and current_interpretation_snapshot:
+                    interpretation_snapshot = current_interpretation_snapshot
+
+        snapshot_ref_override: dict[str, str] = {}
+        if fact_snapshot is not None:
+            snapshot_ref_override["fact_snapshot_id"] = fact_snapshot
+        if interpretation_snapshot is not None:
+            snapshot_ref_override["interpretation_snapshot_id"] = interpretation_snapshot
+        return snapshot_ref_override or None
 
     def _get_snapshot_status(self, arguments: dict[str, object]) -> dict[str, object]:
         domain = self._required_string(arguments, "domain")
