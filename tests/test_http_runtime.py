@@ -11,6 +11,30 @@ class FakeHttpServer:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self._tools = [
             ToolDefinition(
+                name="validate_domain_proposal_batch",
+                group="fact",
+                status="mvp",
+                description="Validate one proposal batch.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["batch"],
+                    "properties": {"batch": {"type": "object"}},
+                },
+            ),
+            ToolDefinition(
+                name="ingest_domain_proposal_batch",
+                group="fact",
+                status="mvp",
+                description="Ingest one proposal batch.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["batch"],
+                    "properties": {"batch": {"type": "object"}},
+                },
+            ),
+            ToolDefinition(
                 name="get_snapshot_status",
                 group="snapshot",
                 status="mvp",
@@ -41,6 +65,29 @@ class FakeHttpServer:
     def call_tool(self, name: str, arguments: dict[str, object] | None = None) -> dict[str, Any]:
         payload = dict(arguments or {})
         self.calls.append((name, payload))
+        if name == "validate_domain_proposal_batch":
+            batch = payload.get("batch")
+            if not isinstance(batch, dict):
+                raise ValueError("batch is required")
+            return {
+                "ok": True,
+                "committed": False,
+                "audit": {
+                    "evaluated_pack_version": batch.get("pack_version") or "2026-04-18",
+                },
+            }
+        if name == "ingest_domain_proposal_batch":
+            batch = payload.get("batch")
+            if not isinstance(batch, dict):
+                raise ValueError("batch is required")
+            return {
+                "ok": True,
+                "committed": True,
+                "affected_fact_ids": ["fact:job_posting:EMP-1"],
+                "audit": {
+                    "evaluated_pack_version": batch.get("pack_version") or "2026-04-18",
+                },
+            }
         if name == "get_snapshot_status":
             domain = payload.get("domain")
             if not isinstance(domain, str) or not domain.strip():
@@ -103,7 +150,8 @@ def test_http_runtime_lists_tools_and_shows_one_tool() -> None:
 
     assert list_response.status_code == 200
     assert list_response.payload["ok"] is True
-    assert list_response.payload["result"][0]["name"] == "get_snapshot_status"
+    tool_names = [tool["name"] for tool in list_response.payload["result"]]
+    assert "get_snapshot_status" in tool_names
 
     assert show_response.status_code == 200
     assert show_response.payload["ok"] is True
@@ -127,6 +175,67 @@ def test_http_runtime_executes_tool_call_and_propagates_request_id() -> None:
     assert response.payload["result"] == {"status": "ok", "domain": "recruiting"}
     assert response.headers["X-Request-Id"] == "req-123"
     assert fake_server.calls == [("get_snapshot_status", {"domain": "recruiting"})]
+
+
+def test_http_runtime_exposes_domain_proposal_validate_and_ingest_endpoints() -> None:
+    fake_server = FakeHttpServer()
+    payload = b'{"batch":{"batch_id":"jobs-wiki-batch-001","domain":"recruiting","producer":"jobs-wiki","pack_version":"2026-04-18","facts":[],"relations":[]}}'
+
+    validate_response = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/domain-proposals/validate",
+        headers={"X-Request-Id": "req-validate"},
+        body=payload,
+    )
+    ingest_response = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/domain-proposals/ingest",
+        headers={"X-Request-Id": "req-ingest"},
+        body=payload,
+    )
+
+    assert validate_response.status_code == 200
+    assert validate_response.payload["ok"] is True
+    assert validate_response.payload["request_id"] == "req-validate"
+    assert validate_response.payload["result"]["committed"] is False
+    assert validate_response.payload["result"]["audit"]["evaluated_pack_version"] == "2026-04-18"
+
+    assert ingest_response.status_code == 200
+    assert ingest_response.payload["ok"] is True
+    assert ingest_response.payload["request_id"] == "req-ingest"
+    assert ingest_response.payload["result"]["committed"] is True
+    assert "fact:job_posting:EMP-1" in ingest_response.payload["result"]["affected_fact_ids"]
+
+    assert fake_server.calls == [
+        (
+            "validate_domain_proposal_batch",
+            {
+                "batch": {
+                    "batch_id": "jobs-wiki-batch-001",
+                    "domain": "recruiting",
+                    "producer": "jobs-wiki",
+                    "pack_version": "2026-04-18",
+                    "facts": [],
+                    "relations": [],
+                }
+            },
+        ),
+        (
+            "ingest_domain_proposal_batch",
+            {
+                "batch": {
+                    "batch_id": "jobs-wiki-batch-001",
+                    "domain": "recruiting",
+                    "producer": "jobs-wiki",
+                    "pack_version": "2026-04-18",
+                    "facts": [],
+                    "relations": [],
+                }
+            },
+        ),
+    ]
 
 
 def test_http_runtime_requires_bearer_token_when_configured() -> None:

@@ -125,6 +125,26 @@ def dispatch_http_request(
         except KeyError as exc:
             return _tool_error_response(request_id, exc)
 
+    if normalized_path == "/api/v1/domain-proposals/validate":
+        if normalized_method != "POST":
+            return _method_not_allowed(request_id, allowed="POST")
+        return _dispatch_tool_post(
+            server,
+            request_id=request_id,
+            body=body,
+            tool_name="validate_domain_proposal_batch",
+        )
+
+    if normalized_path == "/api/v1/domain-proposals/ingest":
+        if normalized_method != "POST":
+            return _method_not_allowed(request_id, allowed="POST")
+        return _dispatch_tool_post(
+            server,
+            request_id=request_id,
+            body=body,
+            tool_name="ingest_domain_proposal_batch",
+        )
+
     if normalized_path == "/api/v1/tool-calls":
         if normalized_method != "POST":
             return _method_not_allowed(request_id, allowed="POST")
@@ -136,8 +156,7 @@ def dispatch_http_request(
             arguments = payload.get("arguments", {})
             if not isinstance(arguments, dict):
                 raise ValueError("Field 'arguments' must decode to an object when provided.")
-            result = server.call_tool(name.strip(), arguments)
-            return _success_response(request_id, result)
+            return _call_tool(server, request_id=request_id, tool_name=name.strip(), arguments=arguments)
         except Exception as exc:
             return _tool_error_response(request_id, exc)
 
@@ -212,6 +231,31 @@ def _parse_json_object(raw_body: bytes) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError("HTTP request body must decode to one JSON object.")
     return payload
+
+
+def _dispatch_tool_post(
+    server: StrataWikiServer,
+    *,
+    request_id: str,
+    body: bytes,
+    tool_name: str,
+) -> HttpRuntimeResponse:
+    try:
+        payload = _parse_json_object(body)
+        return _call_tool(server, request_id=request_id, tool_name=tool_name, arguments=payload)
+    except Exception as exc:
+        return _tool_error_response(request_id, exc)
+
+
+def _call_tool(
+    server: StrataWikiServer,
+    *,
+    request_id: str,
+    tool_name: str,
+    arguments: dict[str, object],
+) -> HttpRuntimeResponse:
+    result = server.call_tool(tool_name, arguments)
+    return _success_response(request_id, result)
 
 
 def _tool_error_response(request_id: str, exc: Exception) -> HttpRuntimeResponse:

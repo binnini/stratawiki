@@ -297,6 +297,8 @@ Implemented baseline endpoints:
 - `GET /api/v1/tools`
 - `GET /api/v1/tools/{name}`
 - `POST /api/v1/tool-calls`
+- `POST /api/v1/domain-proposals/validate`
+- `POST /api/v1/domain-proposals/ingest`
 
 Request example:
 
@@ -316,6 +318,24 @@ Current status notes:
 - when that token is configured, `/api/v1/*` endpoints require `Authorization: Bearer <token>`
 - `GET /healthz` and `GET /readyz` remain unauthenticated baseline probes
 - versioned HTTP policy remains tracked separately
+
+Preferred external write example:
+
+```bash
+curl -s \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer replace-me' \
+  --data @examples/integration/recruiting-domain-proposal-batch.json \
+  http://127.0.0.1:8080/api/v1/domain-proposals/validate
+```
+
+```bash
+curl -s \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer replace-me' \
+  --data @examples/integration/recruiting-domain-proposal-batch.json \
+  http://127.0.0.1:8080/api/v1/domain-proposals/ingest
+```
 
 Supported runtime methods today:
 

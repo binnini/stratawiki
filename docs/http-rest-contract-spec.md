@@ -23,6 +23,7 @@ The intended first external consumers are service-to-service clients such as Job
 - a generic HTTP server baseline through `stratawiki serve-http`
 - baseline HTTP probes and generic tool bridge endpoints
 - a first service-to-service bearer-token gate for the HTTP runtime through `STRATAWIKI_HTTP_AUTH_TOKEN`
+- resource-specific DomainProposalBatch validate and ingest endpoints
 
 ### Recommended but Not Yet Fixed
 
@@ -169,6 +170,8 @@ The first HTTP baseline intentionally exposes generic runtime endpoints before t
 | `/api/v1/tools` | `GET` | tool registry | list compact tools or schemas | implemented |
 | `/api/v1/tools/{name}` | `GET` | tool registry | inspect one tool schema | implemented |
 | `/api/v1/tool-calls` | `POST` | any current tool | execute one tool with its existing argument shape | implemented |
+| `/api/v1/domain-proposals/validate` | `POST` | `validate_domain_proposal_batch` | validate one `DomainProposalBatch` | implemented |
+| `/api/v1/domain-proposals/ingest` | `POST` | `ingest_domain_proposal_batch` | ingest one validated `DomainProposalBatch` | implemented |
 
 ## Planned Resource-Specific Endpoint Set
 
@@ -176,8 +179,6 @@ These endpoints remain the target migration surface for external clients such as
 
 | Endpoint | Method | Source Tool | Purpose | Status |
 | --- | --- | --- | --- | --- |
-| `/api/v1/domain-proposals/validate` | `POST` | `validate_domain_proposal_batch` | validate one `DomainProposalBatch` | planned |
-| `/api/v1/domain-proposals/ingest` | `POST` | `ingest_domain_proposal_batch` | ingest one validated `DomainProposalBatch` | planned |
 | `/api/v1/profile-contexts/{tenant_id}/{user_id}` | `PUT` | `upsert_profile_context` | upsert one profile context | planned |
 | `/api/v1/personal-queries` | `POST` | `query_personal_knowledge` | run one Personal query | planned |
 | `/api/v1/interpretation-builds` | `POST` | `build_interpretation_snapshot` | request one interpretation build | planned |
@@ -228,6 +229,9 @@ The resource-specific endpoints above should gradually replace direct generic to
 `POST /api/v1/domain-proposals/ingest`
 
 Body shape should remain the same as validation.
+
+These two proposal endpoints are now the preferred REST write surface for external producer clients.
+The generic `/api/v1/tool-calls` bridge should no longer be treated as the default write path for proposal ingestion.
 
 ### Upsert Profile Context
 

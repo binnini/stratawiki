@@ -18,7 +18,7 @@ It is intentionally written from the external integration point of view.
 
 ### Recommended but Not Yet Fixed
 
-- a resource-specific HTTP/REST boundary that replaces the wrapper for networked integration
+- the remaining resource-specific HTTP/REST boundary that replaces the wrapper for networked integration
 - a machine-readable REST contract
 - an HTTP deployment baseline that Jobs-Wiki can target directly
 
@@ -41,13 +41,17 @@ Jobs-Wiki WAS
 
 That path is still the right choice until the HTTP milestone reaches at least:
 
-- `#41` HTTP server baseline
-- `#42` DomainProposalBatch over HTTP
 - `#43` profile sync and Personal query over HTTP
 - `#46` service-to-service auth baseline
 - `#47` versioned HTTP contract and idempotency policy
 
-The `#41` baseline does introduce a generic HTTP bridge, but Jobs-Wiki should still treat that as migration infrastructure rather than the final consumer contract.
+The current REST state after `#41`, `#42`, and `#46` is:
+
+- generic HTTP bridge exists
+- proposal validation and ingest endpoints now exist
+- bearer token auth baseline now exists
+
+Jobs-Wiki should still treat the wrapper path as the safest default until the Personal and interpretation endpoints also land, but the proposal write path can now be tested over HTTP.
 
 ## Future Target Path
 
@@ -115,8 +119,8 @@ Recommended condition before removing the wrapper path:
 
 ### Fact Write Sequence
 
-1. submit one proposal batch for validation
-2. if validation succeeds, submit the same batch for ingest
+1. submit one proposal batch to `/api/v1/domain-proposals/validate`
+2. if validation succeeds, submit the same batch to `/api/v1/domain-proposals/ingest`
 3. record the returned affected Fact identifiers or snapshot metadata for downstream calls
 
 ### Personal Query Sequence
@@ -147,5 +151,6 @@ Jobs-Wiki should not do these things yet:
 - keep the current wrapper path as the source of truth until HTTP reaches parity
 - prepare dual-mode config keys for wrapper and HTTP
 - treat `DomainProposalBatch` as the only default external write contract
+- prefer the new HTTP proposal endpoints over the generic `/api/v1/tool-calls` bridge for write traffic
 - keep profile sync before Personal query
 - do not make background interpretation builds the default until job polling is wired
