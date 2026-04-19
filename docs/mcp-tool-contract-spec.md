@@ -111,6 +111,9 @@ python -m wiki_mcp.cli serve
 This is not full JSON-RPC.
 It is a repository-owned newline-delimited JSON contract that lets external clients keep one StrataWiki runtime process open instead of shelling out for each tool call.
 
+The planned HTTP migration should be treated as a follow-up contract layer, not as the current stable boundary.
+See `docs/http-rest-contract-spec.md` for the contract-first REST draft.
+
 Request envelope:
 
 ```json

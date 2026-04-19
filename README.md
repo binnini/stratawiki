@@ -258,6 +258,8 @@ For external clients that should not depend on one-shot subprocess calls, the re
 That process keeps the StrataWiki runtime open and accepts one JSON request per line on stdin.
 Responses are emitted as one JSON object per line on stdout.
 
+The next planned networked boundary is documented in `docs/http-rest-contract-spec.md`, but the current stable external contract remains the stdio runtime until that work lands.
+
 Supported runtime methods today:
 
 - `health`
