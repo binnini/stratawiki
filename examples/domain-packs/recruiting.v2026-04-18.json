@@ -1,0 +1,83 @@
+{
+  "manifest": {
+    "domain": "recruiting",
+    "pack_version": "2026-04-18",
+    "status": "active",
+    "compatibility": {
+      "min_stratawiki_version": "0.1.0"
+    },
+    "owner": {
+      "system": "jobs-wiki"
+    }
+  },
+  "entity_types": {
+    "job_posting": {
+      "name": "job_posting",
+      "attributes": {
+        "title": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "markdown",
+          "nullable": true
+        }
+      },
+      "required_attributes": [
+        "title"
+      ],
+      "identity": {
+        "mode": "external_id",
+        "field": "source_id",
+        "prefix": "job_posting"
+      },
+      "merge_policy": {
+        "mode": "upsert",
+        "conflict_strategy": "prefer_newer_source"
+      }
+    },
+    "company": {
+      "name": "company",
+      "attributes": {
+        "name": {
+          "type": "string"
+        },
+        "homepage_url": {
+          "type": "url",
+          "nullable": true
+        }
+      },
+      "required_attributes": [
+        "name"
+      ],
+      "identity": {
+        "mode": "composite",
+        "fields": [
+          "name"
+        ],
+        "prefix": "company",
+        "normalization": [
+          "trim",
+          "lowercase",
+          "slugify"
+        ]
+      },
+      "merge_policy": {
+        "mode": "upsert",
+        "conflict_strategy": "manual_review"
+      }
+    }
+  },
+  "relation_types": {
+    "posted_by": {
+      "name": "posted_by",
+      "from_entity_types": [
+        "job_posting"
+      ],
+      "to_entity_types": [
+        "company"
+      ],
+      "attributes": {},
+      "evidence_policy": "required"
+    }
+  }
+}

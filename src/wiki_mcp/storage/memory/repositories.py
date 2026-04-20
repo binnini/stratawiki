@@ -1,0 +1,519 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
+
+from wiki_mcp.schemas.domain_pack_review import DomainPackApprovalAuditRecord
+from wiki_mcp.services.personal_assets import PersonalAssetConflictError
+
+
+def _matches_text(query_text: str, query_tokens: list[str], *parts: object) -> bool:
+    haystack = " ".join(str(part or "") for part in parts).lower()
+    if query_text and query_text.lower() in haystack:
+        return True
+    return any(token in haystack for token in query_tokens)
+
+
+@dataclass
+class InMemoryFactRepository:
+    records: dict[str, dict[str, Any]] = field(default_factory=dict)
+    relations: list[dict[str, Any]] = field(default_factory=list)
+
+    def get_by_canonical_keys(self, canonical_keys: list[str], scope_ref: dict[str, Any]) -> list[dict[str, Any]]:
+        return [dict(record) for record in self.records.values() if record["canonical_key"] in canonical_keys]
+
+    def get_by_ids(self, ids: list[str], scope_ref: dict[str, Any]) -> list[dict[str, Any]]:
+        return [dict(self.records[record_id]) for record_id in ids if record_id in self.records]
+
+    def search_for_retrieval(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any],
+        query_text: str,
+        query_tokens: list[str],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        matches = [
+            dict(record)
+            for record in self.records.values()
+            if record["domain"] == domain
+            and _matches_text(
+                query_text,
+                query_tokens,
+                record["id"],
+                record["entity_type"],
+                record["canonical_key"],
+                record.get("attributes", {}).get("title"),
+                record.get("attributes", {}).get("name"),
+                record.get("attributes", {}).get("label"),
+                record.get("attributes", {}).get("summary"),
+            )
+        ]
+        return matches[:limit]
+
+    def write_facts(
+        self,
+        records: list[dict[str, Any]],
+        relations: list[dict[str, Any]],
+        *,
+        fact_snapshot_id: str,
+    ) -> dict[str, Any]:
+        facts_created = 0
+        facts_updated = 0
+        timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+        for record in records:
+            scope = str(record["scope"])
+            existing_by_key = next(
+                (
+                    existing
+                    for existing in self.records.values()
+                    if existing["canonical_key"] == record["canonical_key"]
+                    and existing["scope"] == scope
+                    and existing.get("tenant_id") == record.get("tenant_id")
+                    and existing.get("user_id") == record.get("user_id")
+                ),
+                None,
+            )
+            if existing_by_key is not None and existing_by_key["id"] != record["id"]:
+                raise ValueError(
+                    "Canonical Fact identity conflict at storage boundary for "
+                    f"{record['canonical_key']!r}: existing id {existing_by_key['id']!r}, "
+                    f"incoming id {record['id']!r}."
+                )
+
+            existing_by_id = self.records.get(record["id"])
+            current = existing_by_id or existing_by_key
+            persisted = dict(record)
+            persisted["layer"] = "fact"
+            persisted["fact_snapshot_id"] = fact_snapshot_id
+            persisted["status"] = str(record.get("status") or (current or {}).get("status") or "active")
+            persisted["version"] = (
+                int(record["version"])
+                if "version" in record
+                else int((current or {}).get("version") or 0) + 1
+            )
+            persisted["created_at"] = str(record.get("created_at") or (current or {}).get("created_at") or timestamp)
+            persisted["updated_at"] = str(record.get("updated_at") or timestamp)
+            self.records[persisted["id"]] = persisted
+            if current is None:
+                facts_created += 1
+            else:
+                facts_updated += 1
+        self.relations.extend(dict(relation) for relation in relations)
+        return {
+            "facts_created": facts_created,
+            "facts_updated": facts_updated,
+            "relations_created": len(relations),
+            "affected_fact_ids": [record["id"] for record in records],
+        }
+
+
+@dataclass
+class InMemoryInterpretationRepository:
+    records: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def get_by_ids(self, ids: list[str], scope_ref: dict[str, Any]) -> list[dict[str, Any]]:
+        return [dict(self.records[record_id]) for record_id in ids if record_id in self.records]
+
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any],
+        family: str | None = None,
+        kind: str | None = None,
+        subject_type: str | None = None,
+        subject_id: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        matches: list[dict[str, Any]] = []
+        for record in self.records.values():
+            if record["domain"] != domain:
+                continue
+            if family is not None and record.get("family") != family:
+                continue
+            if kind is not None and record.get("kind") != kind:
+                continue
+            if subject_type is not None and record.get("subject_type") != subject_type:
+                continue
+            if subject_id is not None and record.get("subject_id") != subject_id:
+                continue
+            if statuses and record.get("status") not in statuses:
+                continue
+            matches.append(dict(record))
+        return matches[:limit]
+
+    def search_for_retrieval(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any],
+        query_text: str,
+        query_tokens: list[str],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        matches = [
+            dict(record)
+            for record in self.records.values()
+            if record["domain"] == domain
+            and record.get("status") in {"published", "stale"}
+            and _matches_text(
+                query_text,
+                query_tokens,
+                record["id"],
+                record.get("family"),
+                record.get("kind"),
+                record.get("subject_id"),
+                record.get("title"),
+                record.get("claim"),
+                record.get("summary"),
+            )
+        ]
+        return matches[:limit]
+
+    def save_records(self, records: list[dict[str, Any]], snapshot_ref: dict[str, Any]) -> list[str]:
+        for record in records:
+            persisted = dict(record)
+            self.records[persisted["id"]] = persisted
+        return [record["id"] for record in records]
+
+
+@dataclass
+class InMemoryInterpretationPublicationRepository:
+    interpretation_repository: InMemoryInterpretationRepository
+    snapshot_repository: InMemorySnapshotRepository
+    outbox_repository: "InMemoryOutboxRepository"
+
+    def publish_bundle(
+        self,
+        *,
+        records: list[dict[str, Any]],
+        domain: str,
+        snapshot_ref: dict[str, Any],
+        outbox_events: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        records_backup = {
+            record["id"]: dict(self.interpretation_repository.records[record["id"]])
+            for record in records
+            if record["id"] in self.interpretation_repository.records
+        }
+        missing_ids = [
+            record["id"]
+            for record in records
+            if record["id"] not in self.interpretation_repository.records
+        ]
+        snapshot_backup = {
+            layer: dict(status)
+            for layer, status in self.snapshot_repository.status_by_layer.items()
+        }
+        outbox_backup = [dict(event) for event in self.outbox_repository.events]
+        try:
+            record_ids = self.interpretation_repository.save_records(records, snapshot_ref)
+            snapshot_id = self.snapshot_repository.publish_snapshot(
+                "interpretation",
+                domain,
+                snapshot_ref,
+            )
+            outbox_event_ids = self.outbox_repository.append_events(outbox_events)
+        except Exception:
+            self.snapshot_repository.status_by_layer = snapshot_backup
+            self.outbox_repository.events = outbox_backup
+            for record_id, prior in records_backup.items():
+                self.interpretation_repository.records[record_id] = prior
+            for record_id in missing_ids:
+                self.interpretation_repository.records.pop(record_id, None)
+            raise
+        return {
+            "record_ids": record_ids,
+            "snapshot_id": snapshot_id,
+            "outbox_event_ids": outbox_event_ids,
+        }
+
+
+@dataclass
+class InMemoryPersonalRepository:
+    records: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def get_by_ids(self, ids: list[str], scope_ref: dict[str, Any]) -> list[dict[str, Any]]:
+        return [dict(self.records[record_id]) for record_id in ids if record_id in self.records]
+
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any],
+        kind: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        matches: list[dict[str, Any]] = []
+        for record in self.records.values():
+            if record["domain"] != domain:
+                continue
+            if record["scope_ref"].get("tenant_id") != scope_ref.get("tenant_id"):
+                continue
+            if record["scope_ref"].get("user_id") != scope_ref.get("user_id"):
+                continue
+            if kind is not None and record.get("kind") != kind:
+                continue
+            if statuses and record.get("status") not in statuses:
+                continue
+            matches.append(dict(record))
+        matches.sort(key=lambda item: (str(item.get("updated_at") or ""), str(item["id"])), reverse=True)
+        return matches[:limit]
+
+    def search_for_retrieval(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any],
+        query_text: str,
+        query_tokens: list[str],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        matches = [
+            dict(record)
+            for record in self.records.values()
+            if record["domain"] == domain
+            and record["scope_ref"].get("tenant_id") == scope_ref.get("tenant_id")
+            and record["scope_ref"].get("user_id") == scope_ref.get("user_id")
+            and record.get("status") != "deleted"
+            and _matches_text(
+                query_text,
+                query_tokens,
+                record["id"],
+                record.get("kind"),
+                record.get("title"),
+                record.get("summary"),
+                record.get("body_path"),
+            )
+        ]
+        return matches[:limit]
+
+    def search_by_anchors(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any] | None,
+        interpretation_ids: list[str],
+        fact_ids: list[str],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        if limit <= 0 or (not interpretation_ids and not fact_ids):
+            return []
+
+        interpretation_id_set = set(interpretation_ids)
+        fact_id_set = set(fact_ids)
+        matches = [
+            dict(record)
+            for record in self.records.values()
+            if record["domain"] == domain
+            and (
+                scope_ref is None
+                or (
+                    record["scope_ref"].get("tenant_id") == scope_ref.get("tenant_id")
+                    and record["scope_ref"].get("user_id") == scope_ref.get("user_id")
+                )
+            )
+            and any(
+                isinstance(anchor, dict)
+                and (
+                    (anchor.get("layer") == "interpretation" and anchor.get("id") in interpretation_id_set)
+                    or (anchor.get("layer") == "fact" and anchor.get("id") in fact_id_set)
+                )
+                for anchor in (record.get("anchors") or [])
+            )
+        ]
+        return matches[:limit]
+
+    def save_record(self, record: dict[str, Any]) -> str:
+        self.records[record["id"]] = dict(record)
+        return str(record["id"])
+
+
+@dataclass
+class InMemoryPersonalAssetRepository:
+    records: dict[str, dict[str, Any]] = field(default_factory=dict)
+    identity_to_asset_id: dict[str, str] = field(default_factory=dict)
+
+    def create_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        asset_id = str(record["asset_id"])
+        identity_key = str(record["identity_key"])
+        existing_id = self.identity_to_asset_id.get(identity_key)
+        if existing_id is not None:
+            raise PersonalAssetConflictError(
+                "Personal asset is already registered for this user scope.",
+                details={"asset_id": existing_id},
+            )
+        stored = dict(record)
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        stored["created_at"] = stored.get("created_at") or now
+        stored["updated_at"] = stored.get("updated_at") or stored["created_at"]
+        self.records[asset_id] = stored
+        self.identity_to_asset_id[identity_key] = asset_id
+        return dict(stored)
+
+
+@dataclass
+class InMemoryProfileContextRepository:
+    profiles: dict[tuple[str, str, str], dict[str, Any]] = field(default_factory=dict)
+
+    def get_profile_context(self, domain: str, tenant_id: str, user_id: str) -> dict[str, Any]:
+        key = (domain, tenant_id, user_id)
+        if key not in self.profiles:
+            raise KeyError(
+                f"No profile context found for domain={domain!r}, tenant_id={tenant_id!r}, user_id={user_id!r}"
+            )
+        return dict(self.profiles[key])
+
+    def save_profile_context(self, profile: dict[str, Any]) -> None:
+        key = (profile["domain"], profile["tenant_id"], profile["user_id"])
+        self.profiles[key] = dict(profile)
+
+
+@dataclass
+class InMemorySnapshotRepository:
+    status_by_layer: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def publish_snapshot(self, layer: str, domain: str, snapshot_ref: dict[str, Any]) -> str:
+        snapshot_id = snapshot_ref.get("interpretation_snapshot_id") or snapshot_ref["fact_snapshot_id"]
+        self.status_by_layer[layer] = {
+            "layer": layer,
+            "domain": domain,
+            "current_snapshot_id": snapshot_id,
+            "fact_snapshot_id": snapshot_ref["fact_snapshot_id"],
+            **(
+                {"interpretation_snapshot_id": snapshot_ref["interpretation_snapshot_id"]}
+                if "interpretation_snapshot_id" in snapshot_ref
+                else {}
+            ),
+            **({"profile_version": snapshot_ref["profile_version"]} if "profile_version" in snapshot_ref else {}),
+            "published_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        }
+        return str(snapshot_id)
+
+    def get_snapshot_status(self, *, layer: str | None = None, domain: str) -> dict[str, object] | None:
+        if layer is None:
+            if not self.status_by_layer:
+                return None
+            return {
+                "domain": domain,
+                "layers": {
+                    status_layer: dict(status)
+                    for status_layer, status in self.status_by_layer.items()
+                },
+            }
+        status = self.status_by_layer.get(layer)
+        if status is None:
+            return None
+        return dict(status)
+
+
+@dataclass
+class InMemoryOutboxRepository:
+    events: list[dict[str, Any]] = field(default_factory=list)
+
+    def append_events(self, events: list[dict[str, Any]]) -> list[str]:
+        stored_ids: list[str] = []
+        for event in events:
+            idempotency_key = event.get("idempotency_key")
+            if idempotency_key is not None:
+                existing = next(
+                    (
+                        stored
+                        for stored in self.events
+                        if stored.get("idempotency_key") == idempotency_key
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    stored_ids.append(str(existing["id"]))
+                    continue
+
+            event_id = f"evt-{len(self.events) + 1}"
+            now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            stored = {
+                "id": event_id,
+                "event_type": event["event_type"],
+                "aggregate_layer": event["aggregate_layer"],
+                "aggregate_id": event["aggregate_id"],
+                "payload": dict(event["payload"]),
+                "status": "pending",
+                "attempt_count": 0,
+                "available_at": now,
+                "claimed_at": None,
+                "processed_at": None,
+                "last_error": None,
+                "idempotency_key": idempotency_key,
+            }
+            self.events.append(stored)
+            stored_ids.append(event_id)
+        return stored_ids
+
+    def get_event(self, event_id: str) -> dict[str, Any]:
+        return dict(self._get_event(event_id))
+
+    def claim_pending(
+        self,
+        *,
+        limit: int,
+        event_types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        claimed: list[dict[str, Any]] = []
+        for stored in self.events:
+            if len(claimed) >= limit:
+                break
+            if stored["status"] != "pending":
+                continue
+            if event_types and stored["event_type"] not in event_types:
+                continue
+            if str(stored["available_at"]) > now:
+                continue
+            stored["status"] = "claimed"
+            stored["claimed_at"] = now
+            stored["attempt_count"] = int(stored["attempt_count"]) + 1
+            claimed.append(dict(stored))
+        return claimed
+
+    def mark_processed(self, event_id: str) -> None:
+        stored = self._get_event(event_id)
+        stored["status"] = "processed"
+        stored["processed_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        stored["last_error"] = None
+
+    def mark_failed(
+        self,
+        event_id: str,
+        error_message: str,
+        *,
+        retryable: bool = True,
+    ) -> None:
+        stored = self._get_event(event_id)
+        should_retry = retryable and int(stored["attempt_count"]) < 3
+        stored["status"] = "pending" if should_retry else "failed"
+        stored["claimed_at"] = None if should_retry else stored.get("claimed_at")
+        stored["last_error"] = error_message
+        stored["available_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+    def _get_event(self, event_id: str) -> dict[str, Any]:
+        for stored in self.events:
+            if stored["id"] == event_id:
+                return stored
+        raise KeyError(f"Unknown outbox event: {event_id}")
+
+
+@dataclass
+class InMemoryDomainPackReviewAuditRepository:
+    records: list[DomainPackApprovalAuditRecord] = field(default_factory=list)
+
+    def append_record(self, record: DomainPackApprovalAuditRecord) -> str:
+        stored = dict(record)
+        record_id = str(stored.get("record_id") or f"pack_audit:{len(self.records) + 1}")
+        stored["record_id"] = record_id
+        self.records.append(stored)
+        return record_id

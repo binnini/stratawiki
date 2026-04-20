@@ -7,7 +7,7 @@ This document proposes an MCP-native architecture for a multi-user three-layer L
 The architecture is intended to support:
 
 - shared knowledge with personal overlays
-- domain-specific plugins
+- versioned domain packs for canonical schema semantics
 - provider-agnostic LLM orchestration
 - rendered markdown wiki views
 - snapshot-aware retrieval and invalidation
@@ -31,7 +31,7 @@ This architecture should be understood as:
 - support bounded LLM exploration without giving up canonical control
 - support multi-user and multi-tenant scope boundaries
 - preserve provenance, snapshot traceability, and explainability
-- keep domain-specific logic modular
+- keep domain semantics modular and registry-driven
 - support graph-based retrieval expansion and dependency routing
 
 ## Non-Goals
@@ -50,6 +50,33 @@ The system uses three semantic layers:
 - `Personal`: user-scoped strategy, notes, and cached outputs
 
 This split exists to prevent shared truth, shared meaning, and user-specific strategy from being mixed together.
+
+## Current Implementation Snapshot
+
+The repository is no longer only at the architecture-sketch stage.
+
+Implemented today:
+
+- the Week 1 MVP thin slice across `Fact -> Interpretation -> Personal`
+- a local demo runtime and CLI that exercise the happy path end-to-end
+- a long-lived stdio runtime entrypoint for external clients that should not depend on one-shot subprocess execution
+- the current runtime MCP tool surface for fact ingest, interpretation lifecycle, personal query, snapshot/cache visibility, graph neighbors, dependency impact, and operator visibility
+- operator-facing interpretation lifecycle tools for listing, validating, publishing, and inspecting proposal state
+- a snapshot registry view plus minimal Personal cache-freshness inspection for operator-facing visibility
+- minimal operator visibility for queued jobs plus result explainability for Personal and Interpretation outputs
+- a first bounded graph neighbor tool that connects Personal anchors, Interpretation evidence, and Fact nodes
+- minimal dependency impact lookup plus interpretation-refresh-driven Personal stale marking
+- a profile context write path so external clients can provision Personal query prerequisites through the runtime
+- Domain Pack governance services for validation, compatibility review, approval gating, artifact loading, and proposal ingestion
+- a first worker entrypoint that can execute queued interpretation build requests outside the request path
+- a hardened interpretation publish path that commits record state, snapshot movement, and outbox append as one bundle while restoring prior shared pages on handled publish failure
+
+Still open:
+
+- shared rendered-page read models remain thinner than the canonical interpretation flow
+- Personal anchor reuse is persisted and reusable, but not yet fully indexed as a first-class retrieval read model
+- scheduler and broader job families remain earlier than the current interpretation-build worker path
+- graph artifact materialization and dedicated graph jobs remain earlier than the current metadata-derived operator tools
 
 ## Target Architecture
 
@@ -114,14 +141,39 @@ Responsibilities:
 - return structured outputs
 - avoid embedding provider-specific behavior in tool definitions
 
+Current transport note:
+
+- the first stable long-lived external boundary is a StrataWiki-managed stdio runtime started through `stratawiki serve`
+- external clients should treat that runtime as the owner of DB access, render side effects, and model-provider credentials
+- direct database access is outside the intended external contract
+- the first background execution boundary is a StrataWiki-managed worker started through `stratawiki worker`
+
 Examples:
 
+Currently implemented:
+
 - `ingest_fact_batch`
+- `validate_domain_proposal_batch`
+- `ingest_domain_proposal_batch`
+- `get_fact_record`
 - `build_interpretation_snapshot`
+- `get_interpretation_record`
+- `list_interpretation_proposals`
+- `validate_interpretation_proposal`
+- `publish_interpretation_partition`
+- `get_interpretation_proposal_status`
+- `upsert_profile_context`
 - `query_personal_knowledge`
-- `create_personal_plan`
-- `get_dependency_impact`
+- `get_snapshot_status`
 - `get_cache_status`
+- `get_graph_neighbors`
+- `get_dependency_impact`
+- `get_job_status`
+- `explain_result`
+
+Planned or partial follow-up examples:
+
+- `create_personal_plan`
 - `fetch_source`
 - `list_sources`
 
@@ -161,6 +213,25 @@ Initial adapters:
 - Notion
 - Slack
 - GitHub
+
+### 3.5. Domain Pack Registry and Schema Governance Layer
+
+This layer owns versioned domain semantics that should not stay hardcoded in core services.
+
+Responsibilities:
+
+- register `DomainPack` artifacts
+- resolve packs by `domain` and optional `pack_version`
+- expose one active version per domain
+- provide entity, relation, identity, merge, and projection metadata to future validators and ingestion gates
+
+Current status:
+
+- a Domain Pack contract, registry, validator, compatibility checker, approval service, proposal-ingestion gateway, and artifact-loading path exist in the codebase
+- the current MVP Fact ingest path still uses `SourceRecord` plus a thin domain ingestion plugin
+- pack-governed proposal ingestion now exists alongside the source-driven path
+- external integration clients should treat the proposal-ingestion path as the preferred write contract
+- the remaining gap is reducing the legacy source-driven path from the external contract surface down to transition or internal use only
 
 ### 4. LLM Router Layer
 
@@ -209,6 +280,12 @@ Responsibilities:
 - preserve snapshot references used for rendering
 
 Markdown is a view layer here, not the sole authority.
+
+Current implementation note:
+
+- persisted personal answer rendering exists on the MVP path
+- shared interpretation rendering exists on the canonical publish path
+- rendered-page-first read models and broader graph artifact rendering remain follow-up work
 
 ### 7. Graph and Dependency Layer
 
@@ -270,6 +347,9 @@ The architectural pivot is to ingest everything through a provider-neutral sourc
 
 Every adapter should produce this shape before the Fact ingest pipeline runs.
 
+The current runtime still follows this source-first ingest path.
+The new schema-governance direction adds a registry for canonical domain semantics without yet replacing the existing source-driven ingestion flow.
+
 ## Core Data Flows
 
 ### Fact Ingest Flow
@@ -280,6 +360,12 @@ Every adapter should produce this shape before the Fact ingest pipeline runs.
 4. write Fact records
 5. publish fact snapshot or delta metadata
 6. route dependency impact to downstream layers
+
+Near-term evolution:
+
+- keep the existing `SourceRecord` path working
+- resolve domain semantics through registered `DomainPack` artifacts
+- add a future proposal-ingestion path that validates against the registry before canonical writes
 
 ### Interpretation Projection Flow
 
@@ -416,4 +502,4 @@ Use this architecture document as the high-level system view, then rely on the d
 - cache, invalidation, and consistency
 - graph, indexing, and propagation
 - MCP tool contracts
-- domain-specific schemas
+- domain-specific schemas and schema governance

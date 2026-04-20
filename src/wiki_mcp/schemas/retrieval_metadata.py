@@ -11,5 +11,5 @@ class RetrievalMetadata(TypedDict):
     backend: str
     personal_anchor_status: Literal["present", "absent", "not_available"]
     interpretation_source: Literal["personal_anchors", "search_fallback", "none"]
-    fact_source: Literal["interpretation_evidence", "search_fallback", "mixed", "none"]
+    fact_source: Literal["interpretation_evidence", "personal_anchors", "search_fallback", "mixed", "none"]
     evidence_fact_limit: int

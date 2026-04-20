@@ -1,0 +1,65 @@
+{
+  "batch": {
+    "batch_id": "jobs-wiki-batch-001",
+    "domain": "recruiting",
+    "pack_version": "2026-04-18",
+    "producer": "jobs-wiki",
+    "facts": [
+      {
+        "proposal_id": "fact:posting:EMP-1",
+        "domain": "recruiting",
+        "entity_type": "job_posting",
+        "attributes": {
+          "title": "Backend Engineer",
+          "summary": "Production AI delivery role"
+        },
+        "identity_hints": {
+          "source_id": "EMP-1"
+        },
+        "evidence": [
+          {
+            "connector": "worknet",
+            "source_id": "EMP-1",
+            "pointer": "/posting/title"
+          }
+        ]
+      },
+      {
+        "proposal_id": "fact:company:JobsWiki",
+        "domain": "recruiting",
+        "entity_type": "company",
+        "attributes": {
+          "name": "JobsWiki",
+          "homepage_url": "https://jobswiki.example.com"
+        },
+        "evidence": [
+          {
+            "connector": "worknet",
+            "source_id": "EMP-1",
+            "pointer": "/company"
+          }
+        ]
+      }
+    ],
+    "relations": [
+      {
+        "proposal_id": "rel:posted_by:EMP-1",
+        "domain": "recruiting",
+        "relation_type": "posted_by",
+        "from_ref": {
+          "proposal_id": "fact:posting:EMP-1"
+        },
+        "to_ref": {
+          "proposal_id": "fact:company:JobsWiki"
+        },
+        "evidence": [
+          {
+            "connector": "worknet",
+            "source_id": "EMP-1",
+            "pointer": "/company"
+          }
+        ]
+      }
+    ]
+  }
+}

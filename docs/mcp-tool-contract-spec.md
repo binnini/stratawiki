@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines a concrete MCP tool surface for a three-layer LLM Wiki MCP server.
+This document defines the MCP tool surface for a three-layer LLM Wiki MCP server.
 
 The tool surface is designed to expose:
 
@@ -14,6 +14,11 @@ The tool surface is designed to expose:
 
 The tools are intentionally provider-agnostic. Clients should not need to know which LLM vendor or internal storage technology was used.
 
+This document distinguishes between:
+
+- the currently implemented Week 1 MVP tool surface
+- the broader target tool surface that the architecture is designed to grow into
+
 ## Design Goals
 
 - keep tool contracts stable
@@ -21,7 +26,7 @@ The tools are intentionally provider-agnostic. Clients should not need to know w
 - make provenance and snapshot usage explicit
 - expose invalidation state without leaking internal implementation details
 - support bounded exploratory retrieval without exposing unrestricted datastore access
-- support domain plugins without redesigning the core protocol
+- support registered domain packs without redesigning the core protocol
 
 ## Tool Families
 
@@ -33,6 +38,165 @@ The tools are intentionally provider-agnostic. Clients should not need to know w
 - retrieval and exploration tools
 - cache and snapshot tools
 - admin tools
+
+## Current Implemented Tool Surface
+
+The repository currently exposes these runtime tools:
+
+- `ingest_fact_batch`
+- `validate_domain_proposal_batch`
+- `ingest_domain_proposal_batch`
+- `get_fact_record`
+- `build_interpretation_snapshot`
+- `get_interpretation_record`
+- `list_interpretation_proposals`
+- `validate_interpretation_proposal`
+- `publish_interpretation_partition`
+- `get_interpretation_proposal_status`
+- `upsert_profile_context`
+- `query_personal_knowledge`
+- `get_snapshot_status`
+- `get_cache_status`
+- `get_graph_neighbors`
+- `get_dependency_impact`
+- `get_job_status`
+- `explain_result`
+
+Current MVP caveats:
+
+- external integration clients should prefer `validate_domain_proposal_batch` and `ingest_domain_proposal_batch`
+- `ingest_fact_batch` remains available as a legacy transition path for source-driven or internal flows
+- `ingest_fact_batch` currently accepts inline `source_records` rather than source ids fetched from external connectors
+- `build_interpretation_snapshot` still requires explicit `fact_ids` on the happy path
+- `build_interpretation_snapshot` now accepts `execution_mode: "background"` to queue worker execution, but broader async job families remain follow-up work
+- interpretation proposal lifecycle is now operator-visible through list, validate, publish, and status tools
+- `publish_interpretation_partition` currently iterates the matching shared partition candidates and can return `status: "partial"` if one candidate publishes while another fails lifecycle checks
+- `query_personal_knowledge` now has a runtime-owned profile provisioning path through `upsert_profile_context`
+- `get_snapshot_status` now returns the per-layer registry when called with only `domain`, while partition-filtered calls still return the interpretation layer pointer
+- `get_cache_status` currently inspects saved Personal outputs by comparing their stored snapshot tuple against the current published snapshot tuple and current profile version
+- `get_graph_neighbors` currently exposes direct Fact, Interpretation, and Personal neighbors using existing evidence and anchor metadata
+- `get_dependency_impact` currently derives impact from existing evidence and anchor metadata and marks Personal records stale when an interpretation publish supersedes anchored shared records
+- `get_job_status` currently reports runtime-owned outbox jobs, starting with interpretation build requests
+- `explain_result` currently explains shared Interpretation results and saved Personal outputs; broader rendered-page and graph explainability remains follow-up work
+- the Domain Proposal tools are implemented even though they were not part of the original narrow Week 1 MVP tool list
+
+### Current External Write Guidance
+
+The current preferred external write contract is `DomainProposalBatch`.
+
+Recommended sequence:
+
+1. load or configure the active Domain Pack for the target domain
+2. call `validate_domain_proposal_batch`
+3. call `ingest_domain_proposal_batch`
+
+The repository keeps `ingest_fact_batch` for transition and internal source-driven paths, but external producers should not treat it as the default write surface.
+
+### Current Long-Lived Runtime Boundary
+
+The current intended long-lived runtime contract is a StrataWiki-managed stdio process.
+
+Start it with:
+
+```bash
+stratawiki serve
+```
+
+or equivalently:
+
+```bash
+python -m wiki_mcp.cli serve
+```
+
+This is not full JSON-RPC.
+It is a repository-owned newline-delimited JSON contract that lets external clients keep one StrataWiki runtime process open instead of shelling out for each tool call.
+
+The planned HTTP migration should be treated as a follow-up contract layer, not as the current stable boundary.
+See `docs/http-rest-contract-spec.md` for the contract-first REST draft.
+
+The repository now includes a generic HTTP bridge baseline through `stratawiki serve-http`, but that is still earlier than the intended resource-specific HTTP migration surface for external clients.
+
+Request envelope:
+
+```json
+{
+  "id": "req-1",
+  "method": "call_tool",
+  "params": {
+    "name": "get_snapshot_status",
+    "arguments": {
+      "domain": "recruiting"
+    }
+  }
+}
+```
+
+Response envelope:
+
+```json
+{
+  "id": "req-1",
+  "ok": true,
+  "protocol_version": "2026-04-19",
+  "result": {
+    "status": "ok"
+  }
+}
+```
+
+Error envelope:
+
+```json
+{
+  "id": "req-1",
+  "ok": false,
+  "protocol_version": "2026-04-19",
+  "error": {
+    "code": "tool_error",
+    "message": "Unknown tool: ...",
+    "details": {
+      "type": "KeyError"
+    }
+  }
+}
+```
+
+Supported runtime methods today:
+
+- `health`
+- `list_tools`
+- `show_tool`
+- `call_tool`
+- `shutdown`
+
+Ownership rules for this boundary:
+
+- external clients talk to the runtime process, not to Postgres directly
+- StrataWiki owns canonical DB access, rendering side effects, snapshot state, and model-provider credentials
+- external clients own request sequencing and payload construction
+- `call_tool` should be used with the same input shapes documented for the current implemented tool surface
+
+### Current Background Build Guidance
+
+The first worker-compatible background path is interpretation build execution.
+
+Recommended sequence:
+
+1. call `build_interpretation_snapshot` with `execution_mode: "background"`
+2. let the StrataWiki worker claim the queued request
+3. inspect worker results and snapshot status through the canonical runtime
+
+Current baseline:
+
+- the queue carrier is the runtime-owned outbox repository
+- the worker entrypoint is `stratawiki worker`
+- only queued interpretation build requests are handled by this first worker path
+- broader scheduler and multi-job orchestration remain planned follow-up work
+
+## Planned Tool Surface
+
+The remaining sections describe the broader target protocol shape.
+They should be read as design targets unless a tool is explicitly listed above as currently implemented.
 
 ## Tool Design Principle
 
@@ -177,6 +341,12 @@ Output:
 
 Ingest one or more normalized sources into the Fact layer.
 
+Current contract note:
+
+- implemented
+- not the preferred external write path for integration clients
+- retained for transition and internal source-driven use
+
 Input:
 
 ```json
@@ -203,6 +373,111 @@ Output:
   "affected_fact_ids": [
     "job_posting_123",
     "company_42"
+  ]
+}
+```
+
+### `validate_domain_proposal_batch`
+
+Validate one `DomainProposalBatch` against the active Domain Pack without committing writes.
+
+Input:
+
+```json
+{
+  "batch": {
+    "domain": "recruiting",
+    "pack_version": "2026-04-18",
+    "producer": "jobs-wiki",
+    "facts": [
+      {
+        "proposal_id": "fact:posting:EMP-1",
+        "domain": "recruiting",
+        "entity_type": "job_posting",
+        "attributes": {
+          "title": "Backend Engineer"
+        },
+        "identity_hints": {
+          "source_id": "EMP-1"
+        },
+        "evidence": [
+          {
+            "connector": "worknet",
+            "source_id": "EMP-1"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Output:
+
+```json
+{
+  "ok": true,
+  "committed": false,
+  "dry_run": true,
+  "audit": {
+    "evaluated_pack_version": "2026-04-18"
+  },
+  "write_plan": {
+    "facts_to_create": 1,
+    "facts_to_update": 0,
+    "facts_to_noop": 0,
+    "relations_to_create": 0
+  }
+}
+```
+
+### `ingest_domain_proposal_batch`
+
+Commit one validated `DomainProposalBatch` through the canonical proposal gateway.
+
+Input:
+
+```json
+{
+  "batch": {
+    "domain": "recruiting",
+    "pack_version": "2026-04-18",
+    "producer": "jobs-wiki",
+    "facts": [
+      {
+        "proposal_id": "fact:posting:EMP-1",
+        "domain": "recruiting",
+        "entity_type": "job_posting",
+        "attributes": {
+          "title": "Backend Engineer"
+        },
+        "identity_hints": {
+          "source_id": "EMP-1"
+        },
+        "evidence": [
+          {
+            "connector": "worknet",
+            "source_id": "EMP-1"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Output:
+
+```json
+{
+  "ok": true,
+  "committed": true,
+  "fact_snapshot_id": "fact_snap_2026_04_15_1200",
+  "facts_created": 1,
+  "facts_updated": 0,
+  "relations_created": 0,
+  "affected_fact_ids": [
+    "fact:job_posting:EMP-1"
   ]
 }
 ```
@@ -403,6 +678,7 @@ Output:
     {
       "proposal_id": "proposal_123",
       "interpretation_id": "interp_candidate_123",
+      "lifecycle_state": "proposed",
       "review_state": "pending_validation"
     }
   ]
@@ -428,8 +704,10 @@ Output:
 {
   "status": "ok",
   "proposal_id": "proposal_123",
+  "ok": true,
   "validation_state": "validated",
-  "warnings": []
+  "review_state": "ready_to_publish",
+  "errors": []
 }
 ```
 
@@ -456,9 +734,16 @@ Output:
 {
   "status": "ok",
   "interpretation_snapshot": "interp_snap_2026_04_15_market_trends_backend_japan_midlevel",
-  "published_records": 14
+  "published_records": 1,
+  "published_proposal_ids": ["proposal_123"],
+  "superseded_ids": []
 }
 ```
+
+Current MVP note:
+
+- the first implementation publishes shared-scope partition candidates one proposal at a time using the existing interpretation publication service
+- if one candidate fails after another already published, the tool reports `status: "partial"` with a `failures` list instead of pretending the whole partition succeeded atomically
 
 ### `get_interpretation_proposal_status`
 
@@ -480,7 +765,9 @@ Output:
   "status": "ok",
   "proposal_id": "proposal_123",
   "lifecycle_state": "validated",
-  "review_state": "ready_to_publish"
+  "review_state": "ready_to_publish",
+  "family": "market_trend",
+  "subject_id": "backend_japan_midlevel"
 }
 ```
 
@@ -498,6 +785,53 @@ Output:
 
 ## Personal Tools
 
+### `upsert_profile_context`
+
+Create or update the stored profile context required for later Personal query calls.
+
+Input:
+
+```json
+{
+  "domain": "recruiting",
+  "tenant_id": "tenant_a",
+  "user_id": "user_42",
+  "profile_version": "profile_v7",
+  "goals": [
+    "move into backend roles in Tokyo startups"
+  ],
+  "preferences": {
+    "location": "tokyo"
+  },
+  "attributes": {
+    "level": "mid"
+  }
+}
+```
+
+Output:
+
+```json
+{
+  "status": "ok",
+  "profile_context": {
+    "domain": "recruiting",
+    "tenant_id": "tenant_a",
+    "user_id": "user_42",
+    "profile_version": "profile_v7",
+    "goals": [
+      "move into backend roles in Tokyo startups"
+    ],
+    "preferences": {
+      "location": "tokyo"
+    },
+    "attributes": {
+      "level": "mid"
+    }
+  }
+}
+```
+
 ### `query_personal_knowledge`
 
 Run a user-scoped query using the default retrieval flow:
@@ -505,6 +839,11 @@ Run a user-scoped query using the default retrieval flow:
 - Personal
 - Interpretation
 - Fact
+
+Current contract note:
+
+- clients should provision the matching stored profile first through `upsert_profile_context`
+- the requested `profile_version` must still match the current stored profile context exactly
 
 Input:
 
@@ -598,6 +937,52 @@ Input:
   "status": "active"
 }
 ```
+
+### Personal Authoring Follow-up
+
+The current implemented surface still centers on Personal query and plan generation.
+
+For workspace-first Personal document CRUD, raw-to-wiki generation, and asset registration,
+see:
+
+- `docs/personal-document-tool-and-rest-spec.md`
+
+That document defines the planned next Personal tool family:
+
+- `get_shared_page`
+- `list_personal_documents`
+- `get_personal_document`
+- `create_personal_document`
+- `update_personal_document`
+- `delete_personal_document`
+- `register_personal_asset`
+- `summarize_personal_document_to_wiki`
+- `rewrite_personal_document_to_wiki`
+- `structure_personal_document_to_wiki`
+- `suggest_personal_wiki_links`
+- `attach_personal_wiki_links`
+
+The concrete raw-to-wiki generation contract is defined in:
+
+- `docs/personal-raw-to-wiki-generation-contract.md`
+
+Contract notes fixed by `#51` for the Personal document tools:
+
+- authoritative write tools are `create_personal_document`, `update_personal_document`, and `delete_personal_document`
+- Personal document identity is `domain + tenant_id + user_id + document_id`
+- there is no separate `profile_id`; the existing profile scope marker is `profile_version`
+- `create_personal_document` and `update_personal_document` require an already provisioned profile context plus matching `profile_version`
+- `update_personal_document` and `delete_personal_document` require optimistic `if_version`
+- immediate post-write visibility is guaranteed only through `get_personal_document` and `list_personal_documents`
+
+Contract notes fixed by `#50` for the Personal asset tool:
+
+- authoritative asset registration write tool is `register_personal_asset`
+- blob upload transport remains external-client-owned; the tool only registers an already uploaded blob
+- Personal asset identity is `domain + tenant_id + user_id + asset_id`
+- the original uploaded blob remains the Personal/raw authority boundary
+- extracted metadata must remain a separate derived Personal record that references `asset_id`
+- successful registration does not imply extraction or shared publication
 
 ## Retrieval and Exploration Tools
 
@@ -842,16 +1227,27 @@ Output:
 ```json
 {
   "status": "ok",
+  "node_id": "personal_plan_123",
+  "layer": "personal",
   "neighbors": [
     {
-      "node_id": "fact_job_posting_999",
-      "edge_type": "evidence_for"
+      "node_id": "interp_123",
+      "layer": "interpretation",
+      "edge_type": "anchored_to",
+      "direction": "outgoing"
     }
   ]
 }
 ```
 
 This tool is suitable for bounded exploration, but clients should prefer narrower retrieval tools where possible to reduce fan-out and improve debuggability.
+
+Current MVP note:
+
+- `node_id` is currently used as the lookup key and the runtime infers the layer from the id prefix when possible
+- Personal node traversal requires `tenant_id` and `user_id`
+- Interpretation neighbors currently come from evidence fact ids and, when user scope is supplied, saved Personal outputs anchored to that interpretation
+- Fact neighbors currently come from shared Interpretation evidence scans and, when user scope is supplied, saved Personal outputs anchored to that fact
 
 ### `get_dependency_impact`
 
@@ -872,17 +1268,26 @@ Output:
 ```json
 {
   "status": "ok",
-  "affected_interpretations": [
+  "record_id": "job_posting_123",
+  "record_type": "fact",
+  "affected_interpretation_ids": [
     "interp_123"
   ],
-  "affected_rendered_pages": [
+  "affected_rendered_paths": [
     "wiki/shared/market/backend-japan-midlevel.md"
   ],
-  "affected_personal_records": [
+  "affected_personal_ids": [
     "personal_plan_123"
   ]
 }
 ```
+
+Current MVP note:
+
+- `record_type` currently supports `fact` and `interpretation`
+- Fact impact scans shared Interpretation evidence plus saved Personal anchors
+- Interpretation impact currently reports the shared rendered page path plus saved Personal anchors
+- when a new interpretation publish supersedes prior shared interpretations, anchored Personal records are marked `stale` immediately
 
 ### `build_graph_artifacts`
 
@@ -934,9 +1339,26 @@ Output:
   "status": "ok",
   "fact_snapshot": "fact_snap_2026_04_15",
   "interpretation_snapshot": "interp_snap_2026_04_15_market_trends",
-  "published_at": "2026-04-15T12:30:00Z"
+  "layers": {
+    "fact": {
+      "fact_snapshot_id": "fact_snap_2026_04_15",
+      "current_snapshot_id": "fact_snap_2026_04_15",
+      "published_at": "2026-04-15T12:00:00Z"
+    },
+    "interpretation": {
+      "fact_snapshot_id": "fact_snap_2026_04_15",
+      "interpretation_snapshot_id": "interp_snap_2026_04_15_market_trends",
+      "current_snapshot_id": "interp_snap_2026_04_15_market_trends",
+      "published_at": "2026-04-15T12:30:00Z"
+    }
+  }
 }
 ```
+
+Current MVP note:
+
+- `domain` only returns a domain-level snapshot registry with one entry per published layer
+- `partition.family` still narrows the lookup to the interpretation layer; true partition-granular snapshot registries remain follow-up work
 
 ### `get_cache_status`
 
@@ -959,17 +1381,26 @@ Output:
 {
   "status": "ok",
   "cache_state": "stale",
-  "reason": "interpretation_refresh",
+  "reason": "interpretation_snapshot_changed",
   "current_snapshots": {
     "fact_snapshot": "fact_snap_2026_04_15",
-    "interpretation_snapshot": "interp_snap_2026_04_15"
+    "interpretation_snapshot": "interp_snap_2026_04_15",
+    "profile_version": "profile_v7"
   },
   "record_snapshots": {
     "fact_snapshot": "fact_snap_2026_04_14",
-    "interpretation_snapshot": "interp_snap_2026_04_14"
+    "interpretation_snapshot": "interp_snap_2026_04_14",
+    "profile_version": "profile_v6"
   }
 }
 ```
+
+Current MVP note:
+
+- the implemented cache inspection path is currently for saved Personal outputs only
+- missing records return `cache_state: "missing"`
+- `profile_version` drift is treated as `invalid`
+- broader retrieval, graph, and rendered-page cache families remain follow-up work
 
 ### `explain_result`
 
@@ -980,6 +1411,9 @@ Input:
 ```json
 {
   "domain": "recruiting",
+  "layer": "personal",
+  "tenant_id": "tenant-1",
+  "user_id": "user-1",
   "result_id": "personal_plan_123"
 }
 ```
@@ -989,6 +1423,8 @@ Output:
 ```json
 {
   "status": "ok",
+  "layer": "personal",
+  "result_id": "personal_plan_123",
   "explanation": {
     "based_on": {
       "fact_snapshot": "fact_snap_2026_04_15",
@@ -999,10 +1435,18 @@ Output:
       "interp_123",
       "fact_job_posting_999"
     ],
-    "change_reason": "new interpretation snapshot"
+    "change_reason": "interpretation_snapshot_changed",
+    "cache_state": "stale"
   }
 }
 ```
+
+Current MVP note:
+
+- `layer` may be `personal` or `interpretation`
+- Personal explanations currently require `tenant_id` and `user_id`
+- Personal explanations reuse the same snapshot drift reasons as `get_cache_status`
+- Interpretation explanations currently summarize lifecycle state, current published partition ids, evidence-backed anchors, and snapshot drift against the current shared registry
 
 ## Admin Tools
 
@@ -1042,20 +1486,18 @@ Output:
   "status": "ok",
   "job": {
     "job_id": "job_123",
-    "state": "running",
-    "kind": "interpretation_publish"
+    "state": "processed",
+    "kind": "interpretation_build",
+    "event_type": "interpretation_snapshot_build_requested"
   }
 }
 ```
 
-Output:
+Current MVP note:
 
-```json
-{
-  "status": "ok",
-  "job_id": "job_123"
-}
-```
+- the first implementation reads the runtime-owned outbox store directly
+- it currently reports queued or processed interpretation build jobs
+- broader job families will show up here as the worker surface expands
 
 ### `mark_records_stale`
 
@@ -1112,13 +1554,19 @@ Recommended error codes:
 - `REGENERATION_REQUIRED`
 - `CACHE_INVALID`
 
-## Domain Plugin Extensibility
+## Domain Pack Extensibility
 
 The core tool names should remain stable across domains.
 
-Domain plugins extend behavior through:
+Registered domain packs extend canonical behavior through:
 
 - domain-specific schemas
+- identity rules
+- merge policies
+- projection hints
+
+Adjacent domain-owned modules may still extend behavior through:
+
 - filter fields
 - rendering templates
 - interpretation builders

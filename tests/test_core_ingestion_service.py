@@ -5,7 +5,7 @@ from wiki_mcp.services.core_ingestion import DefaultCoreIngestionService
 
 class StubPlugin:
     domain_name = "recruiting"
-    schema_version = "v1"
+    schema_version = "fact.v1"
 
     def accepts(self, source: dict[str, object]) -> bool:
         return source["domain"] == "recruiting"
@@ -28,7 +28,7 @@ class StubPlugin:
                 "canonical_key": "job_posting:emp-1",
                 "attributes": {"title": "Backend Engineer"},
                 "scope": "shared",
-                "schema_version": "v1",
+                "schema_version": "fact.v1",
                 "provenance": {"source_id": source["source_id"]},
             },
             {
@@ -38,7 +38,7 @@ class StubPlugin:
                 "canonical_key": "company:comp-1",
                 "attributes": {"name": "JobsWiki"},
                 "scope": "shared",
-                "schema_version": "v1",
+                "schema_version": "fact.v1",
                 "provenance": {"source_id": source["source_id"]},
             },
         ]
@@ -55,7 +55,7 @@ class StubPlugin:
                 "from_canonical_key": records[0]["canonical_key"],
                 "to_canonical_key": records[1]["canonical_key"],
                 "scope": "shared",
-                "schema_version": "v1",
+                "schema_version": "fact.v1",
                 "provenance": {"source_id": source["source_id"]},
             }
         ]
@@ -159,7 +159,7 @@ def test_prepare_batch_rejects_invalid_relation_targets() -> None:
                     "from_canonical_key": "job_posting:missing",
                     "to_canonical_key": "company:missing",
                     "scope": "shared",
-                    "schema_version": "v1",
+                    "schema_version": "fact.v1",
                     "provenance": {"source_id": source["source_id"]},
                 }
             ]

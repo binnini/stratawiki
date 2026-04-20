@@ -13,7 +13,7 @@ The current direction is broader:
 - snapshot-aware derivation
 - graph-based dependency routing
 - bounded LLM orchestration and retrieval
-- domain-plugin extensibility
+- domain-pack extensibility
 
 This roadmap focuses on implementation order rather than repository migration mechanics.
 
@@ -69,6 +69,37 @@ This workstream includes:
 
 See `docs/deployment-and-operations-spec.md` for the runtime constraints view.
 
+## Current Status Snapshot
+
+As of the current branch state:
+
+- the original thin vertical slice for issues `#1` through `#10` has landed
+- the repository has a working local `Fact -> Interpretation -> Personal` demo path plus a non-demo Postgres runtime path
+- schema-governance work originally described as late generalization work has already been pulled forward in part
+- the first worker-compatible runtime, operator visibility tools, and graph/dependency operator surfaces are now in place
+
+More concretely:
+
+- Phase 1 contract work is in place at MVP depth
+- Phase 2 Fact ingestion and snapshot publishing are in place, with follow-up hardening still open
+- Phase 3 interpretation proposal, validation, publication, and read paths exist for one family
+- Phase 4 retrieval and personal-query orchestration exist on the curated MVP path
+- Phase 6 has persistence, anchor reuse, and snapshot-aware cache inspection, but anchor reuse still needs a stronger indexed read model
+- Phase 7 has a first bounded graph neighbor tool and dependency impact lookup based on evidence and anchor metadata
+- Phase 8 has snapshot inspection, cache inspection, and interpretation-refresh-driven Personal stale marking
+- Phase 10 has a first operator-facing tool surface for lifecycle, jobs, cache state, graph neighbors, dependency impact, and explainability
+- Phase 11 has a checked-in deployment baseline with `stratawiki serve`, `stratawiki worker`, `stratawiki doctor`, `.env.example`, `Dockerfile`, and `docker-compose.yml`
+- Phase 12 foundation work has already landed for Domain Pack contract, validation, compatibility, approval, artifact loading, and proposal ingestion
+
+The main follow-up work is therefore mostly:
+
+- Fact hardening against the newer docs
+- interpretation read and rendered-page read-model follow-ups
+- Personal anchor reuse as a stronger indexed retrieval path
+- broader scheduler and background job families beyond interpretation builds
+- graph artifact materialization and dedicated graph jobs beyond the current metadata-derived operator tools
+- networked deployment and transport decisions beyond the current stdio runtime boundary
+
 ## Implementation Quick Reference
 
 | Area                       | Primary owner                          | Early reference spec                               |
@@ -78,7 +109,11 @@ See `docs/deployment-and-operations-spec.md` for the runtime constraints view.
 | Retrieval mode policy      | retrieval and orchestration layer      | `docs/llm-orchestration-and-retrieval-spec.md`     |
 | Graph traversal and impact | graph layer                            | `docs/graph-index-and-propagation-spec.md`         |
 | Cache key and stale policy | cache and snapshot layer               | `docs/cache-invalidation-consistency-spec.md`      |
+| Domain pack governance     | schema governance layer                | `docs/domain-pack-and-schema-governance-spec.md`   |
 | Runtime topology           | deployment and operations              | `docs/deployment-and-operations-spec.md`           |
+
+Schema-governance foundation can land before full multi-domain generalization.
+The contract and registry work unblock validator, compatibility, and proposal-ingestion phases even while the current source-driven ingest path remains active.
 
 ## Phase 1: Core Contracts and LLM Interface
 
@@ -501,7 +536,7 @@ Primary specs:
 
 - `docs/deployment-and-operations-spec.md`
 
-## Phase 12: Domain Plugin Generalization
+## Phase 12: Domain Pack and Schema Governance Generalization
 
 Objective:
 
@@ -509,15 +544,16 @@ Objective:
 
 Deliverables:
 
-- domain plugin contract
+- pack-governed ingest as a normal runtime path rather than only a sidecar path
 - one second domain stub or pilot
 
 Implementation tasks:
 
-- extract domain-specific schemas into plugin modules
+- keep extracting domain-specific schemas into domain-pack artifacts
 - extract rendering templates by domain
-- extract freshness defaults by domain
-- define plugin registration path
+- extract freshness defaults into domain-owned semantics
+- make pack-governed proposal ingestion a default or primary write path where appropriate
+- reduce hardcoded recruiting semantics still embedded in the source-driven plugin path
 
 Possible second domains:
 
@@ -571,8 +607,8 @@ The roadmap is functionally successful when:
 
 ## Recommended Immediate Next Build Steps
 
-1. scaffold the repository around the current docs
-2. implement the recruiting Fact slice
-3. implement one interpretation family and its rendered page
-4. implement one personal query flow with anchors
-5. implement one dependency impact tool
+1. keep docs aligned with the implemented runtime and open follow-up issues
+2. harden canonical Fact identity and metadata against the current docs
+3. complete persisted Personal anchor reuse for retrieval
+4. expose interpretation snapshot metadata and shared rendering read models more directly
+5. add broader worker-compatible graph, maintenance, and scheduler-driven job families

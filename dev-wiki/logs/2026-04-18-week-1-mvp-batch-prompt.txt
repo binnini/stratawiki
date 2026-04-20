@@ -1,0 +1,30 @@
+Continue work on branch `batch/week-1-open-issues`.
+
+State already completed on this branch:
+- closed backlog hygiene issues `#20`, `#28`, and `#19`
+- resolved and closed `#21`
+
+Process the remaining `Week 1 MVP` open issues in this order:
+1. `#27`
+2. `#29`
+3. `#23`
+4. `#25`
+5. `#24`
+6. `#26`
+7. `#22`
+
+Rules:
+- consult the relevant docs before each issue
+- keep scope aligned to the current issue
+- run targeted tests before closing an issue
+- make at least one focused commit per completed issue
+- push `batch/week-1-open-issues` after each issue commit
+- if a follow-up issue is needed, create it before closing the current issue
+- use existing labels only
+- use the `Week 1 MVP` milestone only when the follow-up still belongs in that scope
+- close completed issues with the commit SHA and tests run
+- do not stop for approval if the runtime policy already allows the needed git, gh, and test commands
+- leave concise progress updates only at issue boundaries
+
+If docs and code disagree, prefer `docs/`.
+Use `dev-wiki/logs/2026-04-18-week-1-mvp-batch-runbook.md` as the execution runbook.

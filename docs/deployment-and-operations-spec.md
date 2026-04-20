@@ -87,6 +87,12 @@ Responsibilities:
 
 The scheduler may be a dedicated process or a thin wrapper over a simpler job system in early stages.
 
+Current early baseline:
+
+- interpretation build requests can already be queued from the request path
+- the worker can claim and execute those queued requests
+- broader scheduler coordination remains follow-up work
+
 ### Optional Markdown Indexer
 
 Responsibilities:
@@ -107,10 +113,19 @@ Recommended shape:
 - one MCP server process
 - worker and scheduler may run inline or as simple local processes
 - local durable storage is acceptable
+- repository-provided database bootstrap artifacts should be enough to initialize the local canonical store
 
 Goal:
 
 - maximize iteration speed while preserving core architectural boundaries
+
+Current local baseline:
+
+- the repository now supports a long-lived stdio runtime entrypoint through `stratawiki serve`
+- this gives external clients a stable process boundary without giving them direct database access
+- it is acceptable as the first long-lived runtime contract before a later networked deployment surface is chosen
+- the repository now also supports a minimal worker entrypoint through `stratawiki worker --limit N`
+- the repository now ships `.env.example` plus `stratawiki doctor` so another developer can validate the non-demo runtime before starting server and worker roles
 
 ### Single-Node Shared Environment
 
@@ -124,6 +139,27 @@ Recommended shape:
 Goal:
 
 - validate async flows, snapshot publishing, and operator workflows before more distributed deployment
+
+The single-node shared environment may still use the stdio runtime boundary when one upstream producer launches and owns the StrataWiki process.
+Later networked or queue-backed deployment surfaces can be added without changing ownership of canonical state.
+
+Current first deployment target:
+
+- `Dockerfile`
+- `docker-compose.yml`
+- one Postgres container
+- one interactive stdio server container
+- one networked HTTP server container
+- one looping worker container
+- one repository-provided HTTP smoke container
+- shared render volume for filesystem artifacts
+
+Current HTTP deployment baseline:
+
+- `server-http` runs `stratawiki serve-http`
+- `worker` shares the same Postgres-backed canonical store and render volume
+- `http-smoke` performs a small end-to-end HTTP validation against the same durable store
+- `STRATAWIKI_HTTP_AUTH_TOKEN` is the first service-to-service auth control for shared environments
 
 ### Multi-Process Production-Like Environment
 
@@ -242,6 +278,9 @@ Appropriate tasks:
 - LLM generation for user-facing answers
 - lightweight persistence
 
+The current long-lived stdio runtime belongs to the request path.
+It is a transport boundary for tool requests, not a substitute for worker or scheduler roles.
+
 Inappropriate tasks:
 
 - large interpretation family rebuilds
@@ -276,6 +315,12 @@ Recommended early options:
 - simple job queue
 - scheduled jobs plus durable job metadata
 
+Current implementation baseline:
+
+- queued interpretation build requests use the outbox repository as the first job carrier
+- `stratawiki worker` claims queued interpretation build requests and executes them out of band
+- `stratawiki doctor` can validate that the Postgres bootstrap relations exist before the worker starts
+
 Heavyweight event infrastructure is not required on day one.
 
 ## Publish Boundaries
@@ -290,6 +335,12 @@ Important examples:
 - markdown index publish after page render update
 
 Partially published state should not become the default read target.
+
+Current interpretation baseline:
+
+- interpretation record updates, snapshot pointer movement, and outbox append are now committed as one publish bundle
+- shared page replacement is handled through a rollback-capable filesystem swap
+- if the publish bundle raises before completion, the prior rendered page is restored and the canonical default read target does not advance
 
 ## LLM Runtime Considerations
 
@@ -333,6 +384,16 @@ Operators should be able to inspect at least:
 - explanation metadata for changed outputs
 
 Without this visibility, the system will be difficult to trust and recover in practice.
+
+Current implementation baseline:
+
+- `get_snapshot_status` exposes the current published snapshot registry
+- `get_cache_status` exposes saved Personal cache freshness and invalidation reasons
+- `get_job_status` exposes runtime-owned outbox job state for the current background path
+- interpretation proposal lifecycle is operator-visible through list, validate, publish, and status tools
+- `explain_result` exposes snapshot tuple, anchors, lifecycle context, and change reason for Personal and Interpretation results
+- `get_graph_neighbors` and `get_dependency_impact` expose the first graph/dependency operator views
+- graph build status and markdown index freshness are still follow-up work
 
 ## Failure and Recovery Expectations
 
@@ -379,12 +440,20 @@ For early implementation, a reasonable target is:
 
 This is enough to validate the architecture without overcommitting to heavyweight infrastructure.
 
+Current repository baseline:
+
+- copy `.env.example` to `.env`
+- run `stratawiki init-db`
+- run `stratawiki doctor`
+- start one stdio server and one worker against the same durable store
+- use `docker compose` as the first checked-in deployment target for that baseline
+
 ## Open Deployment Questions
 
 - which state should persist across restarts in the first milestone
 - whether markdown indexes are rebuilt eagerly or lazily
 - whether graph artifacts are stored durably or rebuilt on demand
-- how operator tooling is exposed in early stages
+- whether operator tooling remains MCP-only or later grows a dedicated operator API/UI
 - when a shared cache backend becomes necessary
 
 ## Summary

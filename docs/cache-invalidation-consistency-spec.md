@@ -372,7 +372,8 @@ Example policy shape:
 }
 ```
 
-This is one reason domain plugins should own freshness defaults.
+This is one reason domain-owned semantics should own freshness defaults.
+Where freshness policy is eventually formalized in `DomainPack` or adjacent domain artifacts, cache policy should read from that domain-owned definition rather than from hardcoded core assumptions.
 
 ## Cache Warming Strategy
 

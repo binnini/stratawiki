@@ -11,7 +11,7 @@ This document defines a concrete data model for a three-layer LLM Wiki MCP serve
 The model is intended to support:
 
 - shared knowledge
-- domain-specific plugins
+- versioned domain packs
 - user-scoped personalization
 - markdown rendering
 - cache-aware recomputation
@@ -24,7 +24,7 @@ This is not a vendor-specific schema. It is a conceptual spec that can be implem
 - Every derived record must retain provenance
 - Shared and user-scoped records must be separable
 - Markdown pages are rendered artifacts, not the only source of truth
-- Domain plugins should specialize the schema without breaking the core contracts
+- Domain packs should specialize the schema without breaking the core contracts
 - Every record family should carry an explicit `schema_version`
 
 ## Core Concepts
@@ -137,7 +137,7 @@ Common subtype categories:
 - `observation`
 - `classification`
 
-Domain plugins define the concrete types.
+Registered domain packs define the concrete types and identity rules.
 
 ### Example: Recruiting Fact Types
 
@@ -298,6 +298,8 @@ Interpretation should support:
 Personal records represent user-scoped strategy, notes, plans, and cached derived views.
 
 Personal records are allowed to be opinionated and user-specific.
+They may include both user-authored raw artifacts and LLM-reworked personal wiki artifacts.
+They must remain user-scoped and must not silently promote into shared `Interpretation` or canonical `Fact`.
 
 ### Personal Record Interface
 
@@ -338,16 +340,58 @@ Personal records are allowed to be opinionated and user-specific.
 - `strategy`
 - `plan`
 - `note`
+- `raw_note`
+- `raw_document`
+- `wiki_note`
+- `wiki_summary`
 - `answer_cache`
 - `reading_list`
 - `priority_tree`
 - `weekly_actions`
 - `profile_gap_analysis`
 
+### Personal Subspaces
+
+The Personal layer should distinguish at least two authoring subspaces.
+
+#### `personal/raw`
+
+This subspace is for user-authored or user-uploaded source material.
+
+Examples:
+
+- markdown drafts
+- imported PDF references
+- handwritten research notes
+- job-specific preparation notes
+
+#### `personal/wiki`
+
+This subspace is for LLM-reworked or user-curated wiki artifacts built from raw material plus upper-layer context.
+
+Examples:
+
+- summarized notes
+- rewritten strategy pages
+- linked topic notes
+- job-specific wiki summaries
+
+Rules:
+
+- `personal/raw` and `personal/wiki` remain user-scoped
+- both may anchor into `Interpretation` and `Fact`
+- neither may directly mutate shared `Interpretation` or canonical `Fact`
+- promotion from Personal into shared state, if ever desired, must be an explicit separate proposal flow
+
 ### Recommended Storage
 
 - primary: user-scoped markdown or wiki pages plus metadata store
 - optional secondary: object store or document DB for large cached bodies
+
+Recommended conceptual path split:
+
+- `wiki/users/<user_id>/raw/`
+- `wiki/users/<user_id>/wiki/`
 
 ### Personal Anchoring
 
@@ -371,6 +415,9 @@ These anchors support:
 - stale detection
 - explainability
 - selective regeneration
+
+Anchoring is not promotion.
+An anchored Personal page remains user-scoped even when it references shared `Interpretation` or canonical `Fact`.
 
 ### Personal Indexing
 
@@ -461,6 +508,9 @@ Scope values:
 
 Rendered pages should also retain the snapshot tuple used to produce them.
 
+Interpretation-backed rendered pages with `scope: "shared"` should be treated as read-only views.
+User-authorable pages belong in the Personal layer with `scope: "user"`.
+
 ## Graph Model
 
 The graph should be multi-layer aware.
@@ -493,33 +543,90 @@ Shared and user-scoped graphs should be separable.
 
 The graph should be treated as a cross-layer index and dependency system, not as the sole canonical store.
 
-## Domain Plugin Contract
+## Domain Pack Contract
 
-Each domain plugin should define:
+Canonical domain semantics should be expressed through a versioned `DomainPack`.
+
+The minimal current pack contract defines:
 
 - fact entity types
 - fact relation types
-- interpretation categories
+- identity rules
+- merge policies
+- projection hints
+
+Adjacent domain-owned code may still define:
+
 - interpretation builders
 - rendering templates
 - freshness policies
-- validation rules
-- schema evolution and migration rules where needed
+- proposal mappers
+- schema evolution support
 
-### Minimal Domain Plugin Shape
+Those concerns are intentionally not all part of the minimal pack contract yet.
+
+### Minimal Domain Pack Shape
 
 ```json
 {
-  "domain": "recruiting",
-  "fact_types": ["job_posting", "company", "skill"],
-  "interpretation_kinds": ["trend", "comparison", "risk"],
-  "personal_kinds": ["strategy", "weekly_actions"],
-  "freshness": {
-    "fact_hours": 24,
-    "interpretation_hours": 24
+  "manifest": {
+    "domain": "recruiting",
+    "pack_version": "2026-04-18",
+    "compatibility": {
+      "min_stratawiki_version": "0.1.0"
+    },
+    "owner": {
+      "system": "jobs-wiki"
+    }
+  },
+  "entity_types": {
+    "job_posting": {
+      "name": "job_posting",
+      "required_attributes": ["title"],
+      "attributes": {
+        "title": {
+          "type": "string"
+        }
+      },
+      "identity": {
+        "mode": "external_id",
+        "field": "source_id",
+        "prefix": "job_posting"
+      },
+      "merge_policy": {
+        "mode": "upsert",
+        "conflict_strategy": "prefer_newer_source"
+      }
+    }
+  },
+  "relation_types": {
+    "posted_by": {
+      "name": "posted_by",
+      "from_entity_types": ["job_posting"],
+      "to_entity_types": ["company"],
+      "cardinality": "many_to_many",
+      "evidence_policy": "required"
+    }
+  },
+  "projection_hints": {
+    "default_title_attribute": {
+      "job_posting": "title"
+    }
   }
 }
 ```
+
+The current repository also includes a registry interface and an in-memory implementation for resolving packs by `domain + pack_version`.
+
+The current repository now includes the first end-to-end schema-governance runtime:
+
+- pack validation
+- compatibility checking
+- approval gating
+- artifact loading
+- `DomainProposalBatch` validation and ingestion
+
+Broader multi-domain generalization, richer tooling, and stronger operator workflows remain follow-up work.
 
 ## Example: Recruiting Data Model Slice
 

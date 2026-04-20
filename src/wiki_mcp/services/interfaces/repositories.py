@@ -9,6 +9,7 @@ from wiki_mcp.schemas.fact_relation import FactRelation
 from wiki_mcp.schemas.fact_write_result import FactWriteResult
 from wiki_mcp.schemas.interpretation_record import InterpretationRecord
 from wiki_mcp.schemas.outbox_event import OutboxEvent, OutboxEventRecord
+from wiki_mcp.schemas.personal_asset import PersonalAssetRecord
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
 from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
@@ -120,8 +121,37 @@ class PersonalRepository(Protocol):
     ) -> list[PersonalRecord]:
         """Search Personal records as bounded retrieval candidates."""
 
+    def search_by_anchors(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef | None,
+        interpretation_ids: list[str],
+        fact_ids: list[str],
+        limit: int,
+    ) -> list[PersonalRecord]:
+        """Search Personal records by persisted anchor targets, optionally across all scopes."""
+
     def save_record(self, record: PersonalRecord) -> str:
         """Persist one Personal metadata record and return its id."""
+
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        kind: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[PersonalRecord]:
+        """List Personal records for one user scope in recency order."""
+
+
+class PersonalAssetRepository(Protocol):
+    """Persistence boundary for user-scoped Personal asset registrations."""
+
+    def create_record(self, record: PersonalAssetRecord) -> PersonalAssetRecord:
+        """Persist one Personal asset registration and return the stored record."""
 
 
 class ProfileContextRepository(Protocol):
@@ -135,12 +165,32 @@ class ProfileContextRepository(Protocol):
     ) -> ProfileContext:
         """Return the current persisted profile context."""
 
+    def save_profile_context(self, profile: ProfileContext) -> None:
+        """Persist or update one profile context."""
+
 
 class RenderingRepository(Protocol):
     """Persistence boundary for readable rendered artifacts."""
 
     def write_artifact(self, artifact: RenderedArtifact) -> str:
         """Persist one rendered artifact and return its path."""
+
+    def replace_artifact_atomically(self, artifact: RenderedArtifact) -> dict[str, object]:
+        """Swap one rendered artifact into place with rollback metadata."""
+
+    def commit_artifact_replacement(self, receipt: dict[str, object]) -> None:
+        """Finalize a previously swapped rendered artifact replacement."""
+
+    def rollback_artifact_replacement(self, receipt: dict[str, object]) -> None:
+        """Restore the prior rendered artifact after a failed publish attempt."""
+
+    def read_body(
+        self,
+        *,
+        path: str,
+        scope_ref: ScopeRef,
+    ) -> str | None:
+        """Read one rendered artifact body by path with scope filtering."""
 
     def get_page(
         self,
@@ -174,12 +224,23 @@ class SnapshotRepository(Protocol):
     ) -> str:
         """Publish the current snapshot pointer for a layer or partition."""
 
+    def get_snapshot_status(
+        self,
+        *,
+        layer: str | None = None,
+        domain: str,
+    ) -> dict[str, object] | None:
+        """Return one layer status or the current per-layer snapshot registry for a domain."""
+
 
 class OutboxRepository(Protocol):
     """Persistence boundary for asynchronous projection events."""
 
     def append_events(self, events: list[OutboxEvent]) -> list[str]:
         """Append outbox events and return stored event ids."""
+
+    def get_event(self, event_id: str) -> OutboxEventRecord:
+        """Return one stored outbox event for operator visibility."""
 
     def claim_pending(
         self,
@@ -200,6 +261,20 @@ class OutboxRepository(Protocol):
         retryable: bool = True,
     ) -> None:
         """Requeue or terminally fail a claimed outbox event."""
+
+
+class InterpretationPublicationRepository(Protocol):
+    """Atomic publication boundary for interpretation state and side effects."""
+
+    def publish_bundle(
+        self,
+        *,
+        records: list[InterpretationRecord],
+        domain: str,
+        snapshot_ref: SnapshotRef,
+        outbox_events: list[OutboxEvent],
+    ) -> dict[str, object]:
+        """Persist one publish bundle atomically and return stored ids."""
 
 
 class DependencyRepository(Protocol):

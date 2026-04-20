@@ -7,10 +7,35 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TextIO
 
+from wiki_mcp.runtime_protocol import (
+    list_tools_payload,
+    run_stdio_runtime,
+    show_tool_payload,
+)
+from wiki_mcp.http_runtime import run_http_runtime
+from wiki_mcp.auth import resolve_http_auth_token
+from wiki_mcp.runtime_setup import (
+    apply_postgres_bootstrap,
+    run_mvp_seed_flow,
+)
+from wiki_mcp.runtime_validation import (
+    resolve_http_host,
+    resolve_http_port,
+    resolve_bootstrap_sql_path,
+    resolve_render_root,
+    resolve_seed_path,
+    validate_runtime_prerequisites,
+)
 from wiki_mcp.server import StrataWikiServer, build_server
+from wiki_mcp.worker import run_worker_once
 
 
 ServerFactory = Callable[..., StrataWikiServer]
+DatabaseBootstrapper = Callable[..., dict[str, object]]
+MvpSeedRunner = Callable[..., dict[str, object]]
+WorkerRunner = Callable[..., dict[str, object]]
+RuntimeValidator = Callable[..., dict[str, object]]
+HttpRuntimeRunner = Callable[..., int]
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -24,52 +49,109 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--render-root",
-        default="data",
+        default=str(resolve_render_root()),
         help="Render root passed into the StrataWiki bootstrap.",
+    )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Run against the local in-memory demo runtime instead of Postgres.",
+    )
+    parser.add_argument(
+        "--seed-path",
+        default=str(resolve_seed_path()),
+        help="Seed path used by demo mode, demo-mvp, and seed-mvp.",
+    )
+    parser.add_argument(
+        "--domain-pack-path",
+        action="append",
+        default=None,
+        help="Path to a Domain Pack artifact to load during bootstrap. Repeat to load multiple packs.",
+    )
+    parser.add_argument(
+        "--activate-domain-pack",
+        action="append",
+        default=None,
+        help="Explicit active domain pack mapping in domain=version form. Repeat for multiple domains.",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    list_tools = subparsers.add_parser(
-        "list-tools",
-        help="List the currently registered tools.",
-    )
-    list_tools.add_argument(
-        "--group",
-        help="Optional tool group filter.",
-    )
+    list_tools = subparsers.add_parser("list-tools", help="List the currently registered tools.")
+    list_tools.add_argument("--group", help="Optional tool group filter.")
     list_tools.add_argument(
         "--schemas",
         action="store_true",
         help="Emit the full exported schemas instead of the compact tool list.",
     )
 
-    show_tool = subparsers.add_parser(
-        "show-tool",
-        help="Show one exported tool schema.",
-    )
+    show_tool = subparsers.add_parser("show-tool", help="Show one exported tool schema.")
     show_tool.add_argument("name", help="Tool name to inspect.")
 
-    call_tool = subparsers.add_parser(
-        "call",
-        help="Call one tool with JSON arguments.",
-    )
+    call_tool = subparsers.add_parser("call", help="Call one tool with JSON arguments.")
     call_tool.add_argument("name", help="Tool name to invoke.")
-    call_tool.add_argument(
-        "--args",
-        default="{}",
-        help="Inline JSON object of tool arguments.",
-    )
-    call_tool.add_argument(
-        "--args-file",
-        help="Path to a JSON file containing tool arguments.",
-    )
+    call_tool.add_argument("--args", default="{}", help="Inline JSON object of tool arguments.")
+    call_tool.add_argument("--args-file", help="Path to a JSON file containing tool arguments.")
     call_tool.add_argument(
         "--envelope",
         action="store_true",
         help="Wrap the response in the registry ok/error envelope.",
     )
 
+    init_db = subparsers.add_parser(
+        "init-db",
+        help="Apply the checked-in Postgres bootstrap SQL to the configured database.",
+    )
+    init_db.add_argument(
+        "--bootstrap-sql",
+        default=str(resolve_bootstrap_sql_path()),
+        help="Path to the SQL file used to initialize the local Postgres schema.",
+    )
+
+    doctor = subparsers.add_parser(
+        "doctor",
+        help="Validate the non-demo runtime prerequisites for server and worker startup.",
+    )
+    doctor.add_argument(
+        "--skip-schema-check",
+        action="store_true",
+        help="Skip the Postgres bootstrap table check and only validate connectivity and paths.",
+    )
+
+    subparsers.add_parser(
+        "seed-mvp",
+        help="Load the sample MVP seed into the current runtime using the real storage path.",
+    )
+    subparsers.add_parser("demo-mvp", help="Run the Week 1 MVP flow locally with the demo seed in one process.")
+    subparsers.add_parser(
+        "serve",
+        help="Start the long-lived stdio runtime for external clients.",
+    )
+    serve_http = subparsers.add_parser(
+        "serve-http",
+        help="Start the long-lived HTTP runtime for external clients.",
+    )
+    serve_http.add_argument(
+        "--host",
+        default=resolve_http_host(),
+        help="Bind host for the HTTP runtime.",
+    )
+    serve_http.add_argument(
+        "--port",
+        type=int,
+        default=resolve_http_port(),
+        help="Bind port for the HTTP runtime.",
+    )
+    worker = subparsers.add_parser(
+        "worker",
+        help="Claim and process queued background jobs once.",
+    )
+    worker.add_argument(
+        "--limit",
+        type=int,
+        default=10,
+        help="Maximum queued jobs to claim in one run.",
+    )
     return parser
 
 
@@ -77,51 +159,118 @@ def run_cli(
     argv: Sequence[str] | None = None,
     *,
     server_factory: ServerFactory = build_server,
+    database_bootstrapper: DatabaseBootstrapper = apply_postgres_bootstrap,
+    mvp_seed_runner: MvpSeedRunner = run_mvp_seed_flow,
+    worker_runner: WorkerRunner = run_worker_once,
+    runtime_validator: RuntimeValidator = validate_runtime_prerequisites,
+    http_runtime_runner: HttpRuntimeRunner = run_http_runtime,
+    stdin: TextIO | None = None,
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
 ) -> int:
     parser = build_argument_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
+    resolved_stdin = stdin or sys.stdin
     resolved_stdout = stdout or sys.stdout
     resolved_stderr = stderr or sys.stderr
 
     try:
         tool_arguments = _load_tool_arguments(args)
+        active_domain_pack_versions = _parse_active_domain_pack_versions(args.activate_domain_pack)
     except ValueError as exc:
         parser.exit(2, f"{parser.prog}: error: {exc}\n")
         return 2
 
+    if args.command == "seed-mvp" and args.demo:
+        parser.exit(2, f"{parser.prog}: error: seed-mvp cannot be combined with --demo; use demo-mvp instead.\n")
+        return 2
+    if args.command == "init-db" and args.demo:
+        parser.exit(2, f"{parser.prog}: error: init-db targets the Postgres runtime and cannot be combined with --demo.\n")
+        return 2
+    if args.command == "doctor" and args.demo:
+        parser.exit(2, f"{parser.prog}: error: doctor targets the Postgres runtime and cannot be combined with --demo.\n")
+        return 2
+
+    if args.command == "init-db":
+        try:
+            result = database_bootstrapper(
+                database_url=args.database_url,
+                bootstrap_sql_path=args.bootstrap_sql,
+            )
+        except Exception as exc:
+            resolved_stderr.write(json.dumps({"ok": False, "error": exc.__class__.__name__, "message": str(exc)}) + "\n")
+            return 1
+        _write_json(resolved_stdout, result)
+        return 0
+
+    if args.command == "doctor":
+        try:
+            result = runtime_validator(
+                database_url=args.database_url,
+                render_root=args.render_root,
+                domain_pack_paths=args.domain_pack_path,
+                require_bootstrap_tables=not args.skip_schema_check,
+            )
+        except Exception as exc:
+            resolved_stderr.write(json.dumps({"ok": False, "error": exc.__class__.__name__, "message": str(exc)}) + "\n")
+            return 1
+        _write_json(resolved_stdout, result)
+        return 0
+
+    validation_result: dict[str, object] | None = None
+    if not args.demo and args.command in {"serve", "serve-http", "worker"}:
+        try:
+            validation_result = runtime_validator(
+                database_url=args.database_url,
+                render_root=args.render_root,
+                domain_pack_paths=args.domain_pack_path,
+                require_bootstrap_tables=True,
+            )
+        except Exception as exc:
+            resolved_stderr.write(json.dumps({"ok": False, "error": exc.__class__.__name__, "message": str(exc)}) + "\n")
+            return 1
+
     server = server_factory(
         database_url=args.database_url,
         render_root=Path(args.render_root),
+        demo_mode=args.demo,
+        seed_path=args.seed_path,
+        domain_pack_paths=[Path(path) for path in args.domain_pack_path]
+        if args.domain_pack_path is not None
+        else None,
+        active_domain_pack_versions=active_domain_pack_versions,
     )
     try:
         result: object
         if args.command == "list-tools":
-            result = _list_tools(server, group=args.group, full_schemas=args.schemas)
+            result = list_tools_payload(server, group=args.group, full_schemas=args.schemas)
         elif args.command == "show-tool":
-            result = _show_tool(server, args.name)
+            result = show_tool_payload(server, args.name)
         elif args.command == "call":
-            if args.envelope:
-                result = server.call_tool_with_envelope(args.name, tool_arguments)
-            else:
-                result = server.call_tool(args.name, tool_arguments)
+            result = server.call_tool_with_envelope(args.name, tool_arguments) if args.envelope else server.call_tool(args.name, tool_arguments)
+        elif args.command == "seed-mvp":
+            result = mvp_seed_runner(server, seed_path=args.seed_path)
+        elif args.command == "demo-mvp":
+            result = mvp_seed_runner(server, seed_path=args.seed_path)
+        elif args.command == "serve":
+            return run_stdio_runtime(server, stdin=resolved_stdin, stdout=resolved_stdout)
+        elif args.command == "serve-http":
+            return http_runtime_runner(
+                server,
+                host=args.host,
+                port=args.port,
+                ready_payload=validation_result,
+                auth_token=resolve_http_auth_token(),
+            )
+        elif args.command == "worker":
+            result = worker_runner(server, limit=args.limit)
         else:
             raise ValueError(f"Unsupported command: {args.command}")
     except KeyError as exc:
         resolved_stderr.write(json.dumps({"ok": False, "error": str(exc)}) + "\n")
         return 1
     except Exception as exc:
-        resolved_stderr.write(
-            json.dumps(
-                {
-                    "ok": False,
-                    "error": exc.__class__.__name__,
-                    "message": str(exc),
-                }
-            )
-            + "\n"
-        )
+        resolved_stderr.write(json.dumps({"ok": False, "error": exc.__class__.__name__, "message": str(exc)}) + "\n")
         return 1
     finally:
         server.close()
@@ -164,40 +313,30 @@ def _parse_json_object(raw_text: str, *, source: str) -> dict[str, object]:
     return payload
 
 
-def _list_tools(
-    server: StrataWikiServer,
-    *,
-    group: str | None,
-    full_schemas: bool,
-) -> object:
-    if full_schemas:
-        schemas = server.export_tool_schemas()
-        if group is None:
-            return schemas
-        return [schema for schema in schemas if schema["group"] == group]
-
-    tools = [
-        {
-            "name": tool.name,
-            "group": tool.group,
-            "status": tool.status,
-            "description": tool.description,
-            "entrypoint": tool.entrypoint,
-        }
-        for tool in server.list_tools()
-    ]
-    if group is None:
-        return tools
-    return [tool for tool in tools if tool["group"] == group]
-
-
-def _show_tool(server: StrataWikiServer, name: str) -> dict[str, object]:
-    for schema in server.export_tool_schemas():
-        if schema["name"] == name:
-            return schema
-    raise KeyError(f"Unknown tool: {name}")
-
-
 def _write_json(stream: TextIO, payload: object) -> None:
     json.dump(payload, stream, indent=2, sort_keys=True)
     stream.write("\n")
+
+
+def _parse_active_domain_pack_versions(raw_values: Sequence[str] | None) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    if raw_values is None:
+        return mapping
+    for item in raw_values:
+        if "=" not in item:
+            raise ValueError(
+                "--activate-domain-pack entries must use domain=version format."
+            )
+        domain, pack_version = item.split("=", 1)
+        normalized_domain = domain.strip()
+        normalized_version = pack_version.strip()
+        if not normalized_domain or not normalized_version:
+            raise ValueError(
+                "--activate-domain-pack entries must use domain=version format."
+            )
+        mapping[normalized_domain] = normalized_version
+    return mapping
+
+
+if __name__ == "__main__":
+    main()

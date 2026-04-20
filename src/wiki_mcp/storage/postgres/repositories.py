@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from wiki_mcp.schemas.dependency_impact import DependencyImpact
@@ -12,17 +13,20 @@ from wiki_mcp.schemas.interpretation_record import InterpretationRecord
 from wiki_mcp.schemas.metadata_validation import (
     ensure_interpretation_status,
     ensure_non_empty_string,
+    ensure_personal_anchors,
     ensure_provenance,
     ensure_scope_ref,
     ensure_scope_shape,
     ensure_snapshot_ref,
 )
 from wiki_mcp.schemas.outbox_event import OutboxEvent, OutboxEventRecord
+from wiki_mcp.schemas.personal_asset import PersonalAssetRecord
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
 from wiki_mcp.storage.postgres.base import PostgresRepositoryBase, managed_cursor
+from wiki_mcp.services.personal_assets import PersonalAssetConflictError
 
 
 def _normalized_text_sql(*parts: str) -> str:
@@ -37,7 +41,11 @@ def _normalized_text_sql(*parts: str) -> str:
 def _fts_query_sql(
     *,
     query_text: str,
+    query_tokens: list[str] | None = None,
 ) -> tuple[str, list[Any]]:
+    normalized_tokens = [token for token in (query_tokens or []) if token]
+    if normalized_tokens:
+        return "to_tsquery('simple', %s)", [" | ".join(normalized_tokens)]
     return "websearch_to_tsquery('simple', %s)", [query_text]
 
 
@@ -65,6 +73,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
                 f"""
                 SELECT
                     id,
+                    layer,
                     domain,
                     entity_type,
                     canonical_key,
@@ -72,6 +81,10 @@ class PostgresFactRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     tenant_id,
                     user_id,
+                    status,
+                    version,
+                    created_at,
+                    updated_at,
                     schema_version,
                     attributes_json,
                     provenance_json
@@ -96,6 +109,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
                 f"""
                 SELECT
                     id,
+                    layer,
                     domain,
                     entity_type,
                     canonical_key,
@@ -103,6 +117,10 @@ class PostgresFactRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     tenant_id,
                     user_id,
+                    status,
+                    version,
+                    created_at,
+                    updated_at,
                     schema_version,
                     attributes_json,
                     provenance_json
@@ -138,12 +156,16 @@ class PostgresFactRepository(PostgresRepositoryBase):
             "attributes_json->>'headline'",
         )
         vector_sql = _fts_vector_sql(search_expr=search_expr)
-        query_sql, query_params = _fts_query_sql(query_text=query_text)
+        query_sql, query_params = _fts_query_sql(
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
                 SELECT
                     id,
+                    layer,
                     domain,
                     entity_type,
                     canonical_key,
@@ -151,6 +173,10 @@ class PostgresFactRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     tenant_id,
                     user_id,
+                    status,
+                    version,
+                    created_at,
+                    updated_at,
                     schema_version,
                     attributes_json,
                     provenance_json
@@ -177,12 +203,21 @@ class PostgresFactRepository(PostgresRepositoryBase):
         affected_fact_ids: list[str] = []
 
         with managed_cursor(self.connection) as cursor:
-            for record in records:
-                self._validate_fact_record(record, fact_snapshot_id=fact_snapshot_id)
+            prepared_records = [
+                self._prepare_fact_record_for_write(
+                    cursor=cursor,
+                    record=record,
+                    fact_snapshot_id=fact_snapshot_id,
+                )
+                for record in records
+            ]
+
+            for record in prepared_records:
                 cursor.execute(
                     """
                     INSERT INTO fact.record_envelopes (
                         id,
+                        layer,
                         domain,
                         entity_type,
                         canonical_key,
@@ -190,13 +225,18 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         fact_snapshot_id,
                         tenant_id,
                         user_id,
+                        status,
+                        version,
+                        created_at,
+                        updated_at,
                         schema_version,
                         attributes_json,
                         provenance_json
                     ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
                     )
                     ON CONFLICT (id) DO UPDATE SET
+                        layer = EXCLUDED.layer,
                         domain = EXCLUDED.domain,
                         entity_type = EXCLUDED.entity_type,
                         canonical_key = EXCLUDED.canonical_key,
@@ -204,14 +244,17 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         fact_snapshot_id = EXCLUDED.fact_snapshot_id,
                         tenant_id = EXCLUDED.tenant_id,
                         user_id = EXCLUDED.user_id,
+                        status = EXCLUDED.status,
+                        version = EXCLUDED.version,
+                        updated_at = EXCLUDED.updated_at,
                         schema_version = EXCLUDED.schema_version,
                         attributes_json = EXCLUDED.attributes_json,
-                        provenance_json = EXCLUDED.provenance_json,
-                        updated_at = NOW()
+                        provenance_json = EXCLUDED.provenance_json
                     RETURNING (xmax = 0) AS inserted
                     """,
                     (
                         record["id"],
+                        record["layer"],
                         record["domain"],
                         record["entity_type"],
                         record["canonical_key"],
@@ -219,6 +262,10 @@ class PostgresFactRepository(PostgresRepositoryBase):
                         fact_snapshot_id,
                         record.get("tenant_id"),
                         record.get("user_id"),
+                        record["status"],
+                        record["version"],
+                        record["created_at"],
+                        record["updated_at"],
                         record["schema_version"],
                         self._json(record["attributes"]),
                         self._json(record["provenance"]),
@@ -272,10 +319,136 @@ class PostgresFactRepository(PostgresRepositoryBase):
             "affected_fact_ids": affected_fact_ids,
         }
 
+    def _prepare_fact_record_for_write(
+        self,
+        *,
+        cursor: Any,
+        record: FactRecord,
+        fact_snapshot_id: str,
+    ) -> FactRecord:
+        self._validate_fact_record(record, fact_snapshot_id=fact_snapshot_id)
+
+        existing_by_id = self._load_existing_fact_by_id(cursor=cursor, record_id=record["id"])
+        existing_by_key = self._load_existing_fact_by_canonical_identity(
+            cursor=cursor,
+            canonical_key=record["canonical_key"],
+            scope_ref=self._scope_ref_for_fact(record),
+        )
+        if existing_by_key is not None and existing_by_key["id"] != record["id"]:
+            raise ValueError(
+                "Canonical Fact identity conflict at storage boundary for "
+                f"{record['canonical_key']!r}: existing id {existing_by_key['id']!r}, "
+                f"incoming id {record['id']!r}."
+            )
+
+        timestamp = self._now_timestamp()
+        current = existing_by_id or existing_by_key
+        created_at = str(record.get("created_at") or (current or {}).get("created_at") or timestamp)
+        version = int(record.get("version") or (current or {}).get("version") or 0) + (
+            0 if "version" in record else 1
+        )
+        if current is None and "version" not in record:
+            version = 1
+
+        normalized = dict(record)
+        normalized["layer"] = "fact"
+        normalized["fact_snapshot_id"] = fact_snapshot_id
+        normalized["status"] = str(record.get("status") or (current or {}).get("status") or "active")
+        normalized["version"] = version
+        normalized["created_at"] = created_at
+        normalized["updated_at"] = str(record.get("updated_at") or timestamp)
+        return normalized  # type: ignore[return-value]
+
+    def _load_existing_fact_by_id(
+        self,
+        *,
+        cursor: Any,
+        record_id: str,
+    ) -> FactRecord | None:
+        cursor.execute(
+            """
+            SELECT
+                id,
+                layer,
+                domain,
+                entity_type,
+                canonical_key,
+                scope,
+                fact_snapshot_id,
+                tenant_id,
+                user_id,
+                status,
+                version,
+                created_at,
+                updated_at,
+                schema_version,
+                attributes_json,
+                provenance_json
+            FROM fact.record_envelopes
+            WHERE id = %s
+            """,
+            [record_id],
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return self._row_to_fact_record(row)
+
+    def _load_existing_fact_by_canonical_identity(
+        self,
+        *,
+        cursor: Any,
+        canonical_key: str,
+        scope_ref: ScopeRef,
+    ) -> FactRecord | None:
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        cursor.execute(
+            f"""
+            SELECT
+                id,
+                layer,
+                domain,
+                entity_type,
+                canonical_key,
+                scope,
+                fact_snapshot_id,
+                tenant_id,
+                user_id,
+                status,
+                version,
+                created_at,
+                updated_at,
+                schema_version,
+                attributes_json,
+                provenance_json
+            FROM fact.record_envelopes
+            WHERE canonical_key = %s AND {scope_sql}
+            ORDER BY updated_at DESC, id ASC
+            LIMIT 1
+            """,
+            [canonical_key, *scope_params],
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return self._row_to_fact_record(row)
+
+    def _scope_ref_for_fact(self, record: FactRecord) -> ScopeRef:
+        scope_ref: ScopeRef = {"scope": record["scope"]}
+        if record.get("tenant_id") is not None:
+            scope_ref["tenant_id"] = record["tenant_id"]
+        if record.get("user_id") is not None:
+            scope_ref["user_id"] = record["user_id"]
+        return scope_ref
+
+    def _now_timestamp(self) -> str:
+        return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
     def _row_to_fact_record(self, row: Any) -> FactRecord:
         data = self._row_to_dict(row)
         return {
             "id": data["id"],
+            "layer": str(data.get("layer") or "fact"),
             "domain": data["domain"],
             "entity_type": data["entity_type"],
             "canonical_key": data["canonical_key"],
@@ -288,6 +461,10 @@ class PostgresFactRepository(PostgresRepositoryBase):
             ),
             **({"tenant_id": data["tenant_id"]} if data.get("tenant_id") else {}),
             **({"user_id": data["user_id"]} if data.get("user_id") else {}),
+            "status": str(data.get("status") or "active"),
+            "version": int(data.get("version") or 1),
+            **({"created_at": str(data["created_at"])} if data.get("created_at") else {}),
+            **({"updated_at": str(data["updated_at"])} if data.get("updated_at") else {}),
             "schema_version": data["schema_version"],
             "provenance": self._load_json(data["provenance_json"]),
         }
@@ -318,6 +495,15 @@ class PostgresFactRepository(PostgresRepositoryBase):
             raise ValueError(
                 f"FactRecord {record['id']} fact_snapshot_id does not match the write snapshot."
             )
+        if "status" in record:
+            ensure_non_empty_string(record["status"], label=f"FactRecord {record['id']}.status")
+        if "version" in record:
+            version = record["version"]
+            if not isinstance(version, int) or version <= 0:
+                raise ValueError(f"FactRecord {record['id']}.version must be a positive integer.")
+        for field in ("created_at", "updated_at"):
+            if field in record:
+                ensure_non_empty_string(record[field], label=f"FactRecord {record['id']}.{field}")
         if not isinstance(record.get("attributes"), dict):
             raise ValueError(f"FactRecord {record['id']}.attributes must be a mapping.")
 
@@ -356,6 +542,140 @@ class PostgresFactRepository(PostgresRepositoryBase):
         return json.loads(value)
 
 
+class PostgresPersonalAssetRepository(PostgresRepositoryBase):
+    def create_record(self, record: PersonalAssetRecord) -> PersonalAssetRecord:
+        self._validate_personal_asset_record(record)
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                """
+                SELECT asset_id
+                FROM personal.asset
+                WHERE domain = %s
+                  AND tenant_id = %s
+                  AND user_id = %s
+                  AND identity_key = %s
+                LIMIT 1
+                """,
+                (
+                    record["domain"],
+                    record["tenant_id"],
+                    record["user_id"],
+                    record["identity_key"],
+                ),
+            )
+            existing = cursor.fetchone()
+            if existing is not None:
+                existing_row = self._row_to_dict(existing)
+                raise PersonalAssetConflictError(
+                    "Personal asset is already registered for this user scope.",
+                    details={"asset_id": existing_row["asset_id"]},
+                )
+
+            cursor.execute(
+                """
+                INSERT INTO personal.asset (
+                    asset_id,
+                    domain,
+                    tenant_id,
+                    user_id,
+                    asset_kind,
+                    media_type,
+                    filename,
+                    blob_sha256,
+                    size_bytes,
+                    storage_ref,
+                    identity_key,
+                    status,
+                    extraction_status,
+                    schema_version
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                RETURNING
+                    asset_id,
+                    domain,
+                    tenant_id,
+                    user_id,
+                    asset_kind,
+                    media_type,
+                    filename,
+                    blob_sha256,
+                    size_bytes,
+                    storage_ref,
+                    identity_key,
+                    status,
+                    extraction_status,
+                    schema_version,
+                    created_at,
+                    updated_at
+                """,
+                (
+                    record["asset_id"],
+                    record["domain"],
+                    record["tenant_id"],
+                    record["user_id"],
+                    record["asset_kind"],
+                    record["media_type"],
+                    record["filename"],
+                    record.get("blob_sha256"),
+                    record.get("size_bytes"),
+                    record["storage_ref"],
+                    record["identity_key"],
+                    record["status"],
+                    record["extraction_status"],
+                    record["schema_version"],
+                ),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise RuntimeError("Failed to persist personal asset registration.")
+        return self._row_to_personal_asset_record(row)
+
+    def _row_to_personal_asset_record(self, row: Any) -> PersonalAssetRecord:
+        data = self._row_to_dict(row)
+        return {
+            "asset_id": data["asset_id"],
+            "domain": data["domain"],
+            "tenant_id": data["tenant_id"],
+            "user_id": data["user_id"],
+            "asset_kind": data["asset_kind"],
+            "media_type": data["media_type"],
+            "filename": data["filename"],
+            "storage_ref": data["storage_ref"],
+            "identity_key": data["identity_key"],
+            "status": data["status"],
+            "extraction_status": data["extraction_status"],
+            "schema_version": data["schema_version"],
+            **({"blob_sha256": data["blob_sha256"]} if data.get("blob_sha256") else {}),
+            **({"size_bytes": int(data["size_bytes"])} if data.get("size_bytes") is not None else {}),
+            **({"created_at": str(data["created_at"])} if data.get("created_at") else {}),
+            **({"updated_at": str(data["updated_at"])} if data.get("updated_at") else {}),
+        }
+
+    def _validate_personal_asset_record(self, record: PersonalAssetRecord) -> None:
+        for field in (
+            "asset_id",
+            "domain",
+            "tenant_id",
+            "user_id",
+            "asset_kind",
+            "media_type",
+            "filename",
+            "storage_ref",
+            "identity_key",
+            "status",
+            "extraction_status",
+            "schema_version",
+        ):
+            ensure_non_empty_string(record.get(field), label=f"PersonalAssetRecord.{field}")
+        if "blob_sha256" in record:
+            ensure_non_empty_string(record.get("blob_sha256"), label="PersonalAssetRecord.blob_sha256")
+        if "size_bytes" in record:
+            size_bytes = record["size_bytes"]
+            if not isinstance(size_bytes, int) or size_bytes < 0:
+                raise ValueError("PersonalAssetRecord.size_bytes must be a non-negative integer.")
+
+
 class PostgresInterpretationRepository(PostgresRepositoryBase):
     def get_by_ids(
         self,
@@ -383,6 +703,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     status,
                     confidence,
                     fact_snapshot_id,
+                    interpretation_snapshot_id,
                     computed_at,
                     expires_at,
                     title,
@@ -454,6 +775,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     status,
                     confidence,
                     fact_snapshot_id,
+                    interpretation_snapshot_id,
                     computed_at,
                     expires_at,
                     title,
@@ -499,7 +821,10 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             "body_json->>'headline'",
         )
         vector_sql = _fts_vector_sql(search_expr=search_expr)
-        query_sql, query_params = _fts_query_sql(query_text=query_text)
+        query_sql, query_params = _fts_query_sql(
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -517,6 +842,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                     status,
                     confidence,
                     fact_snapshot_id,
+                    interpretation_snapshot_id,
                     computed_at,
                     expires_at,
                     title,
@@ -579,11 +905,12 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                         relations_json,
                         provenance_json,
                         render_hints_json,
-                        fact_snapshot_id
+                        fact_snapshot_id,
+                        interpretation_snapshot_id
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
-                        %s::jsonb, %s
+                        %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
+                        %s::jsonb, %s, %s
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         family = EXCLUDED.family,
@@ -607,6 +934,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                         provenance_json = EXCLUDED.provenance_json,
                         render_hints_json = EXCLUDED.render_hints_json,
                         fact_snapshot_id = EXCLUDED.fact_snapshot_id,
+                        interpretation_snapshot_id = EXCLUDED.interpretation_snapshot_id,
                         updated_at = NOW()
                     """,
                     (
@@ -633,6 +961,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                         self._json(record["provenance"]),
                         self._json(record["render_hints"]),
                         validated_snapshot_ref["fact_snapshot_id"],
+                        record.get("interpretation_snapshot_id"),
                     ),
                 )
                 stored_ids.append(record["id"])
@@ -656,8 +985,13 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             "status": data["status"],
             "confidence": data["confidence"],
             "fact_snapshot_id": data["fact_snapshot_id"],
-            "computed_at": data["computed_at"],
-            "expires_at": data["expires_at"],
+            **(
+                {"interpretation_snapshot_id": data["interpretation_snapshot_id"]}
+                if data.get("interpretation_snapshot_id")
+                else {}
+            ),
+            "computed_at": str(data["computed_at"]),
+            "expires_at": str(data["expires_at"]) if data.get("expires_at") else None,
             **({"title": data["title"]} if data.get("title") else {}),
             **({"claim": data["claim"]} if data.get("claim") else {}),
             **({"summary": data["summary"]} if data.get("summary") else {}),
@@ -722,6 +1056,11 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             raise ValueError(
                 f"InterpretationRecord {record['id']} fact_snapshot_id does not match the save snapshot."
             )
+        if record.get("interpretation_snapshot_id") is not None:
+            ensure_non_empty_string(
+                record["interpretation_snapshot_id"],
+                label=f"InterpretationRecord {record['id']}.interpretation_snapshot_id",
+            )
         if not isinstance(record.get("body"), dict):
             raise ValueError(f"InterpretationRecord {record['id']}.body must be a mapping.")
         if not isinstance(record.get("render_hints"), dict):
@@ -753,6 +1092,268 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         return loaded if isinstance(loaded, list) else []
 
 
+class PostgresInterpretationPublicationRepository(PostgresInterpretationRepository):
+    def publish_bundle(
+        self,
+        *,
+        records: list[InterpretationRecord],
+        domain: str,
+        snapshot_ref: SnapshotRef,
+        outbox_events: list[OutboxEvent],
+    ) -> dict[str, Any]:
+        validated_snapshot_ref = ensure_snapshot_ref(
+            snapshot_ref,
+            label="InterpretationPublicationRepository.snapshot_ref",
+        )
+        cursor = self.connection.cursor()
+        try:
+            record_ids = self._save_records_with_cursor(
+                cursor=cursor,
+                records=records,
+                snapshot_ref=validated_snapshot_ref,
+            )
+            snapshot_id = self._publish_snapshot_with_cursor(
+                cursor=cursor,
+                layer="interpretation",
+                domain=domain,
+                snapshot_ref=validated_snapshot_ref,
+            )
+            outbox_event_ids = self._append_events_with_cursor(
+                cursor=cursor,
+                events=outbox_events,
+            )
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
+        return {
+            "record_ids": record_ids,
+            "snapshot_id": snapshot_id,
+            "outbox_event_ids": outbox_event_ids,
+        }
+
+    def _save_records_with_cursor(
+        self,
+        *,
+        cursor: Any,
+        records: list[InterpretationRecord],
+        snapshot_ref: SnapshotRef,
+    ) -> list[str]:
+        stored_ids: list[str] = []
+        for record in records:
+            self._validate_interpretation_record(record, snapshot_ref=snapshot_ref)
+            scope_ref = record["scope_ref"]
+            cursor.execute(
+                """
+                INSERT INTO interp.record (
+                    id,
+                    domain,
+                    family,
+                    kind,
+                    subject_type,
+                    subject_id,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    schema_version,
+                    status,
+                    confidence,
+                    computed_at,
+                    expires_at,
+                    title,
+                    claim,
+                    summary,
+                    body_json,
+                    evidence_json,
+                    relations_json,
+                    provenance_json,
+                    render_hints_json,
+                    fact_snapshot_id,
+                    interpretation_snapshot_id
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
+                    %s::jsonb, %s, %s
+                )
+                ON CONFLICT (id) DO UPDATE SET
+                    family = EXCLUDED.family,
+                    kind = EXCLUDED.kind,
+                    subject_type = EXCLUDED.subject_type,
+                    subject_id = EXCLUDED.subject_id,
+                    scope = EXCLUDED.scope,
+                    tenant_id = EXCLUDED.tenant_id,
+                    user_id = EXCLUDED.user_id,
+                    schema_version = EXCLUDED.schema_version,
+                    status = EXCLUDED.status,
+                    confidence = EXCLUDED.confidence,
+                    computed_at = EXCLUDED.computed_at,
+                    expires_at = EXCLUDED.expires_at,
+                    title = EXCLUDED.title,
+                    claim = EXCLUDED.claim,
+                    summary = EXCLUDED.summary,
+                    body_json = EXCLUDED.body_json,
+                    evidence_json = EXCLUDED.evidence_json,
+                    relations_json = EXCLUDED.relations_json,
+                    provenance_json = EXCLUDED.provenance_json,
+                    render_hints_json = EXCLUDED.render_hints_json,
+                    fact_snapshot_id = EXCLUDED.fact_snapshot_id,
+                    interpretation_snapshot_id = EXCLUDED.interpretation_snapshot_id,
+                    updated_at = NOW()
+                """,
+                (
+                    record["id"],
+                    record["domain"],
+                    record["family"],
+                    record["kind"],
+                    record["subject_type"],
+                    record["subject_id"],
+                    scope_ref["scope"],
+                    scope_ref.get("tenant_id"),
+                    scope_ref.get("user_id"),
+                    record["schema_version"],
+                    record["status"],
+                    record["confidence"],
+                    record["computed_at"],
+                    record["expires_at"],
+                    record.get("title"),
+                    record.get("claim"),
+                    record.get("summary"),
+                    self._json(record["body"]),
+                    self._json(record.get("evidence", [])),
+                    self._json(record.get("relations", [])),
+                    self._json(record["provenance"]),
+                    self._json(record["render_hints"]),
+                    snapshot_ref["fact_snapshot_id"],
+                    record.get("interpretation_snapshot_id"),
+                ),
+            )
+            stored_ids.append(record["id"])
+        return stored_ids
+
+    def _publish_snapshot_with_cursor(
+        self,
+        *,
+        cursor: Any,
+        layer: str,
+        domain: str,
+        snapshot_ref: SnapshotRef,
+    ) -> str:
+        snapshot_id = snapshot_ref.get("interpretation_snapshot_id") or snapshot_ref["fact_snapshot_id"]
+        cursor.execute(
+            """
+            INSERT INTO ops.snapshot_pointer (
+                layer,
+                domain,
+                current_snapshot_id,
+                fact_snapshot_id,
+                interpretation_snapshot_id,
+                profile_version
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (layer, domain) DO UPDATE SET
+                current_snapshot_id = EXCLUDED.current_snapshot_id,
+                fact_snapshot_id = EXCLUDED.fact_snapshot_id,
+                interpretation_snapshot_id = EXCLUDED.interpretation_snapshot_id,
+                profile_version = EXCLUDED.profile_version,
+                updated_at = NOW()
+            """,
+            (
+                layer,
+                domain,
+                snapshot_id,
+                snapshot_ref["fact_snapshot_id"],
+                snapshot_ref.get("interpretation_snapshot_id"),
+                snapshot_ref.get("profile_version"),
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO ops.snapshot_publication (
+                snapshot_id,
+                layer,
+                domain,
+                fact_snapshot_id,
+                interpretation_snapshot_id,
+                profile_version,
+                metadata_json
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (snapshot_id, layer, domain) DO NOTHING
+            """,
+            (
+                snapshot_id,
+                layer,
+                domain,
+                snapshot_ref["fact_snapshot_id"],
+                snapshot_ref.get("interpretation_snapshot_id"),
+                snapshot_ref.get("profile_version"),
+                self._json({}),
+            ),
+        )
+        return str(snapshot_id)
+
+    def _append_events_with_cursor(
+        self,
+        *,
+        cursor: Any,
+        events: list[OutboxEvent],
+    ) -> list[str]:
+        stored_ids: list[str] = []
+        for event in events:
+            idempotency_key = event.get("idempotency_key")
+            if idempotency_key:
+                cursor.execute(
+                    """
+                    INSERT INTO ops.outbox_event (
+                        idempotency_key,
+                        event_type,
+                        aggregate_layer,
+                        aggregate_id,
+                        payload_json,
+                        status,
+                        attempt_count,
+                        available_at
+                    ) VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, NOW())
+                    ON CONFLICT (idempotency_key) DO UPDATE SET
+                        idempotency_key = EXCLUDED.idempotency_key
+                    RETURNING id
+                    """,
+                    (
+                        idempotency_key,
+                        event["event_type"],
+                        event["aggregate_layer"],
+                        event["aggregate_id"],
+                        self._json(event["payload"]),
+                        "pending",
+                        0,
+                    ),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO ops.outbox_event (
+                        event_type,
+                        aggregate_layer,
+                        aggregate_id,
+                        payload_json,
+                        status,
+                        attempt_count,
+                        available_at
+                    ) VALUES (%s, %s, %s, %s::jsonb, %s, %s, NOW())
+                    RETURNING id
+                    """,
+                    (
+                        event["event_type"],
+                        event["aggregate_layer"],
+                        event["aggregate_id"],
+                        self._json(event["payload"]),
+                        "pending",
+                        0,
+                    ),
+                )
+            row = cursor.fetchone()
+            stored_ids.append(str(self._row_to_dict(row)["id"]))
+        return stored_ids
+
+
 class PostgresPersonalRepository(PostgresRepositoryBase):
     def get_by_ids(
         self,
@@ -781,11 +1382,66 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     body_path,
                     status,
                     schema_version,
+                    updated_at,
+                    anchors_json,
                     provenance_json
                 FROM personal.record
                 WHERE id = ANY(%s) AND {scope_sql}
                 """,
                 [ids, *scope_params],
+            )
+            return [self._row_to_personal_record(row) for row in cursor.fetchall()]
+
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        kind: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[PersonalRecord]:
+        if limit <= 0:
+            return []
+
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        where_clauses = ["domain = %s", scope_sql]
+        params: list[Any] = [domain, *scope_params]
+        if kind is not None:
+            where_clauses.append("kind = %s")
+            params.append(kind)
+        if statuses:
+            where_clauses.append("status = ANY(%s)")
+            params.append(statuses)
+        params.append(limit)
+
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id,
+                    domain,
+                    kind,
+                    title,
+                    summary,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    fact_snapshot_id,
+                    interpretation_snapshot_id,
+                    profile_version,
+                    body_path,
+                    status,
+                    schema_version,
+                    updated_at,
+                    anchors_json,
+                    provenance_json
+                FROM personal.record
+                WHERE {" AND ".join(where_clauses)}
+                ORDER BY updated_at DESC, id ASC
+                LIMIT %s
+                """,
+                params,
             )
             return [self._row_to_personal_record(row) for row in cursor.fetchall()]
 
@@ -810,7 +1466,10 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             "body_path",
         )
         vector_sql = _fts_vector_sql(search_expr=search_expr)
-        query_sql, query_params = _fts_query_sql(query_text=query_text)
+        query_sql, query_params = _fts_query_sql(
+            query_text=query_text,
+            query_tokens=query_tokens,
+        )
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -829,13 +1488,82 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     body_path,
                     status,
                     schema_version,
+                    updated_at,
+                    anchors_json,
                     provenance_json
                 FROM personal.record
                 WHERE domain = %s AND {scope_sql} AND {vector_sql} @@ {query_sql}
+                  AND status <> 'deleted'
                 ORDER BY ts_rank_cd({vector_sql}, {query_sql}) DESC, updated_at DESC, id ASC
                 LIMIT %s
                 """,
                 [domain, *scope_params, *query_params, *query_params, limit],
+            )
+            return [self._row_to_personal_record(row) for row in cursor.fetchall()]
+
+    def search_by_anchors(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef | None,
+        interpretation_ids: list[str],
+        fact_ids: list[str],
+        limit: int,
+    ) -> list[PersonalRecord]:
+        if limit <= 0 or (not interpretation_ids and not fact_ids):
+            return []
+
+        if scope_ref is None:
+            scope_sql = "TRUE"
+            scope_params = []
+        else:
+            scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        anchor_clauses: list[str] = []
+        params: list[Any] = [domain, *scope_params]
+        if interpretation_ids:
+            anchor_clauses.append(
+                "(anchor->>'layer' = 'interpretation' AND anchor->>'id' = ANY(%s))"
+            )
+            params.append(interpretation_ids)
+        if fact_ids:
+            anchor_clauses.append(
+                "(anchor->>'layer' = 'fact' AND anchor->>'id' = ANY(%s))"
+            )
+            params.append(fact_ids)
+
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id,
+                    domain,
+                    kind,
+                    title,
+                    summary,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    fact_snapshot_id,
+                    interpretation_snapshot_id,
+                    profile_version,
+                    body_path,
+                    status,
+                    schema_version,
+                    updated_at,
+                    anchors_json,
+                    provenance_json
+                FROM personal.record
+                WHERE domain = %s
+                  AND {scope_sql}
+                  AND EXISTS (
+                      SELECT 1
+                      FROM jsonb_array_elements(COALESCE(anchors_json, '[]'::jsonb)) AS anchor
+                      WHERE {" OR ".join(anchor_clauses)}
+                  )
+                ORDER BY updated_at DESC, id ASC
+                LIMIT %s
+                """,
+                [*params, limit],
             )
             return [self._row_to_personal_record(row) for row in cursor.fetchall()]
 
@@ -864,9 +1592,10 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     body_path,
                     status,
                     schema_version,
+                    anchors_json,
                     provenance_json
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     title = EXCLUDED.title,
@@ -880,6 +1609,7 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     body_path = EXCLUDED.body_path,
                     status = EXCLUDED.status,
                     schema_version = EXCLUDED.schema_version,
+                    anchors_json = EXCLUDED.anchors_json,
                     provenance_json = EXCLUDED.provenance_json,
                     updated_at = NOW()
                 """,
@@ -898,6 +1628,7 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     record["body_path"],
                     record["status"],
                     record["schema_version"],
+                    self._json(record.get("anchors", [])),
                     self._json(record["provenance"]),
                 ),
             )
@@ -905,6 +1636,13 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
 
     def _row_to_personal_record(self, row: Any) -> PersonalRecord:
         data = self._row_to_dict(row)
+        raw_anchors = data.get("anchors_json")
+        if isinstance(raw_anchors, str):
+            raw_anchors = json.loads(raw_anchors)
+        provenance = self._load_json(data["provenance_json"])
+        storage = provenance.get("_personal_document")
+        if not isinstance(storage, dict):
+            storage = {}
         return {
             "id": data["id"],
             "domain": data["domain"],
@@ -927,9 +1665,17 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             },
             "profile_version": data["profile_version"],
             "body_path": data["body_path"],
+            **(
+                {"anchors": ensure_personal_anchors(raw_anchors, label=f"PersonalRecord {data['id']}.anchors")}
+                if raw_anchors is not None
+                else {}
+            ),
             "status": data["status"],
             "schema_version": data["schema_version"],
-            "provenance": self._load_json(data["provenance_json"]),
+            **({"version": int(storage["version"])} if self._is_positive_int(storage.get("version")) else {}),
+            **({"created_at": str(storage["created_at"])} if storage.get("created_at") else {}),
+            **({"updated_at": str(data["updated_at"])} if data.get("updated_at") else {}),
+            "provenance": provenance,
         }
 
     def _validate_personal_record(self, record: PersonalRecord) -> None:
@@ -948,6 +1694,11 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             record["schema_version"],
             label="PersonalRecord.schema_version",
         )
+        if "anchors" in record:
+            ensure_personal_anchors(
+                record.get("anchors"),
+                label=f"PersonalRecord {record['id']}.anchors",
+            )
         scope_ref = ensure_scope_ref(
             record.get("scope_ref"),
             label=f"PersonalRecord {record['id']}.scope_ref",
@@ -977,6 +1728,9 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
         if value is None:
             return {}
         return json.loads(value)
+
+    def _is_positive_int(self, value: Any) -> bool:
+        return isinstance(value, int) and value > 0
 
 
 class PostgresProfileContextRepository(PostgresRepositoryBase):
@@ -1018,6 +1772,38 @@ class PostgresProfileContextRepository(PostgresRepositoryBase):
                 "attributes": self._load_dict(data["attributes_json"]),
             }
 
+    def save_profile_context(self, profile: ProfileContext) -> None:
+        self._validate_profile_context(profile)
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO personal.profile_context (
+                    domain,
+                    tenant_id,
+                    user_id,
+                    profile_version,
+                    goals_json,
+                    preferences_json,
+                    attributes_json
+                ) VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb)
+                ON CONFLICT (domain, tenant_id, user_id) DO UPDATE SET
+                    profile_version = EXCLUDED.profile_version,
+                    goals_json = EXCLUDED.goals_json,
+                    preferences_json = EXCLUDED.preferences_json,
+                    attributes_json = EXCLUDED.attributes_json,
+                    updated_at = NOW()
+                """,
+                (
+                    profile["domain"],
+                    profile["tenant_id"],
+                    profile["user_id"],
+                    profile["profile_version"],
+                    self._json(profile.get("goals", [])),
+                    self._json(profile.get("preferences", {})),
+                    self._json(profile.get("attributes", {})),
+                ),
+            )
+
     def _load_list(self, value: Any) -> list[str]:
         if isinstance(value, list):
             return value
@@ -1031,6 +1817,30 @@ class PostgresProfileContextRepository(PostgresRepositoryBase):
         if value is None:
             return {}
         return json.loads(value)
+
+    def _validate_profile_context(self, profile: ProfileContext) -> None:
+        ensure_non_empty_string(
+            profile.get("domain"),
+            label="ProfileContext.domain",
+        )
+        ensure_non_empty_string(
+            profile.get("tenant_id"),
+            label="ProfileContext.tenant_id",
+        )
+        ensure_non_empty_string(
+            profile.get("user_id"),
+            label="ProfileContext.user_id",
+        )
+        ensure_non_empty_string(
+            profile.get("profile_version"),
+            label="ProfileContext.profile_version",
+        )
+        if not isinstance(profile.get("goals"), list):
+            raise ValueError("ProfileContext.goals must be a list.")
+        if not isinstance(profile.get("preferences"), dict):
+            raise ValueError("ProfileContext.preferences must be a mapping.")
+        if not isinstance(profile.get("attributes"), dict):
+            raise ValueError("ProfileContext.attributes must be a mapping.")
 
 
 class PostgresSnapshotRepository(PostgresRepositoryBase):
@@ -1102,8 +1912,103 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
             )
         return snapshot_id
 
+    def get_snapshot_status(
+        self,
+        *,
+        layer: str | None = None,
+        domain: str,
+    ) -> dict[str, object] | None:
+        where_clause = "p.domain = %s"
+        params: list[Any] = [domain]
+        if layer is not None:
+            where_clause += " AND p.layer = %s"
+            params.append(layer)
+
+        with managed_cursor(self.connection) as cursor:
+            query = f"""
+                SELECT
+                    p.layer,
+                    p.domain,
+                    p.current_snapshot_id,
+                    p.fact_snapshot_id,
+                    p.interpretation_snapshot_id,
+                    p.profile_version,
+                    pub.published_at
+                FROM ops.snapshot_pointer p
+                LEFT JOIN ops.snapshot_publication pub
+                    ON pub.snapshot_id = p.current_snapshot_id
+                    AND pub.layer = p.layer
+                    AND pub.domain = p.domain
+                WHERE {where_clause}
+                ORDER BY p.updated_at DESC, p.layer ASC
+            """
+            cursor.execute(
+                query if layer is None else query + "\nLIMIT 1",
+                params,
+            )
+            if layer is not None:
+                row = cursor.fetchone()
+                if row is None:
+                    return None
+                return self._snapshot_status_from_row(row)
+
+            rows = cursor.fetchall()
+            if not rows:
+                return None
+            layers: dict[str, dict[str, object]] = {}
+            for row in rows:
+                status = self._snapshot_status_from_row(row)
+                layers[str(status["layer"])] = status
+            return {
+                "domain": domain,
+                "layers": layers,
+            }
+
+    def _snapshot_status_from_row(self, row: Mapping[str, Any] | Any) -> dict[str, object]:
+        data = self._row_to_dict(row)
+        return {
+            "layer": data["layer"],
+            "domain": data["domain"],
+            "current_snapshot_id": data["current_snapshot_id"],
+            "fact_snapshot_id": data["fact_snapshot_id"],
+            **(
+                {"interpretation_snapshot_id": data["interpretation_snapshot_id"]}
+                if data.get("interpretation_snapshot_id")
+                else {}
+            ),
+            **({"profile_version": data["profile_version"]} if data.get("profile_version") else {}),
+            **({"published_at": str(data["published_at"])} if data.get("published_at") else {}),
+        }
+
 
 class PostgresOutboxRepository(PostgresRepositoryBase):
+    def get_event(self, event_id: str) -> OutboxEventRecord:
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    id,
+                    idempotency_key,
+                    event_type,
+                    aggregate_layer,
+                    aggregate_id,
+                    payload_json,
+                    status,
+                    attempt_count,
+                    available_at,
+                    claimed_at,
+                    processed_at,
+                    last_error
+                FROM ops.outbox_event
+                WHERE id = %s
+                """,
+                (event_id,),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise KeyError(f"Unknown outbox event: {event_id}")
+        return self._row_to_outbox_event_record(row)
+
     def append_events(self, events: list[OutboxEvent]) -> list[str]:
         stored_ids: list[str] = []
         with managed_cursor(self.connection) as cursor:

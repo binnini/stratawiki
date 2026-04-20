@@ -14,5 +14,7 @@ class RetrievalInterpretationSummary(TypedDict):
     subject_id: str
     status: str
     confidence: float
+    fact_snapshot_id: NotRequired[str]
+    interpretation_snapshot_id: NotRequired[str]
     title: NotRequired[str]
     summary: NotRequired[str]

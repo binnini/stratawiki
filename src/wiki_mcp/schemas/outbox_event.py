@@ -34,6 +34,20 @@ class InterpretationSnapshotPublishedPayload(TypedDict):
     user_id: NotRequired[str]
 
 
+class InterpretationSnapshotBuildRequestedPayload(TypedDict):
+    """Payload emitted when one interpretation build is queued for worker execution."""
+
+    domain: str
+    partition: dict[str, str]
+    fact_ids: list[str]
+    fact_snapshot: str
+    model_profile: str
+    publish: bool
+    scope: str
+    tenant_id: NotRequired[str]
+    user_id: NotRequired[str]
+
+
 class PersonalRecordsMarkedStalePayload(TypedDict):
     """Payload emitted after Personal records are marked stale."""
 
