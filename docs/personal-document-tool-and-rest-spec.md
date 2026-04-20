@@ -119,6 +119,14 @@ Required rules:
 - Personal documents may reference upper-layer records through anchors
 - Personal documents must not directly mutate shared `Interpretation` or canonical `Fact`
 
+Authoritative identity and concurrency fields:
+
+- `document_id` is the StrataWiki-assigned stable resource id
+- `domain + tenant_id + user_id + document_id` is the full resource identity
+- there is no separate `profile_id` in this contract
+- `profile_version` is required on create and update as Personal provenance and scope freshness metadata, but it is not part of the resource key
+- `version` is the server-managed optimistic write token and must increase on every successful update or delete transition
+
 ## 3. Personal Asset
 
 This is an uploaded or externally stored binary asset associated with a Personal document, such as a PDF.
@@ -159,6 +167,17 @@ This keeps the resource contract stable without forcing the first HTTP wave to s
 ## Proposed Tool Surface
 
 These tools are proposed additions to the Personal family.
+
+For `#51`, the authoritative Personal document CRUD write tools are:
+
+- `create_personal_document`
+- `update_personal_document`
+- `delete_personal_document`
+
+The read companions for downstream consumers are:
+
+- `list_personal_documents`
+- `get_personal_document`
 
 ### `get_shared_page`
 
@@ -216,6 +235,7 @@ Input:
   "domain": "recruiting",
   "tenant_id": "tenant_a",
   "user_id": "user_42",
+  "profile_version": "profile_v7",
   "subspace": "raw",
   "kind": "note",
   "title": "Toss backend prep",
@@ -237,6 +257,8 @@ Input:
   "tenant_id": "tenant_a",
   "user_id": "user_42",
   "document_id": "pdoc_123",
+  "profile_version": "profile_v7",
+  "if_version": 3,
   "title": "Updated title",
   "body_markdown": "## Updated\n..."
 }
@@ -253,9 +275,124 @@ Input:
   "domain": "recruiting",
   "tenant_id": "tenant_a",
   "user_id": "user_42",
-  "document_id": "pdoc_123"
+  "document_id": "pdoc_123",
+  "if_version": 4
 }
 ```
+
+## Personal Document CRUD Contract
+
+This section is the concrete `#51` contract for downstream writers such as Jobs-Wiki.
+
+### Scope Rules
+
+- Personal document writes are valid only for `scope_ref.scope: "user"`.
+- `tenant_id` and `user_id` define the writable owner scope. Shared and tenant-scoped document writes are out of scope.
+- `domain`, `tenant_id`, and `user_id` must resolve to one explicit Personal namespace.
+- There is no contract-level `profile_id`. The profile dimension is expressed through the existing `profile_version`.
+- `profile_version` is required on create and update and records which stored profile context the write was based on.
+- create and update require an already provisioned stored profile context for the same `domain + tenant_id + user_id`
+- the supplied `profile_version` must match that stored profile context exactly
+- `DELETE` does not change profile scope and therefore uses only the existing record plus `if_version`.
+
+### Required Create Fields
+
+- `domain`
+- `tenant_id`
+- `user_id`
+- `profile_version`
+- `subspace`
+- `kind`
+- `title`
+- exactly one of `body_markdown` or an asset-backed document shape such as non-empty `asset_refs`
+
+Server-populated fields:
+
+- `document_id`
+- `scope_ref`
+- `snapshot_ref`
+- `status`
+- `version`
+- `created_at`
+- `updated_at`
+
+### Required Update Fields
+
+- `domain`
+- `tenant_id`
+- `user_id`
+- `document_id`
+- `profile_version`
+- `if_version`
+- at least one mutable field such as `title`, `body_markdown`, `anchors`, `asset_refs`, or `status`
+
+### Required Delete Fields
+
+- `domain`
+- `tenant_id`
+- `user_id`
+- `document_id`
+- `if_version`
+
+Delete behavior:
+
+- delete is a Personal-layer soft delete
+- the server marks `status: "deleted"` and increments `version`
+- delete does not remove shared records, published interpretations, or registered assets
+
+### Optimistic Write Contract
+
+- `create_personal_document` allocates `version: 1` for a new document
+- `update_personal_document` requires `if_version` equal to the current stored `version`
+- `delete_personal_document` requires `if_version` equal to the current stored `version`
+- stale `if_version` values fail with `409 conflict`
+- successful writes return the committed document payload including the new `version`
+
+Conflict response example:
+
+```json
+{
+  "ok": false,
+  "request_id": "req-409",
+  "error": {
+    "code": "conflict",
+    "message": "Personal document version mismatch.",
+    "details": {
+      "resource": "personal_document",
+      "document_id": "pdoc_123",
+      "expected_version": 3,
+      "current_version": 4
+    }
+  }
+}
+```
+
+### Normalized Error Contract
+
+Personal document CRUD must normalize failures into the shared response envelope with these issue-level codes:
+
+| Code | HTTP Status | Meaning | Required `details` |
+| --- | --- | --- | --- |
+| `validation_error` | `422` | payload shape or domain rule violation | invalid field names and reasons |
+| `conflict` | `409` | stale `if_version` or duplicate idempotent create collision | current resource version when known |
+| `not_found` | `404` | unknown `document_id` in the requested user scope | requested `document_id` |
+| `temporarily_unavailable` | `503` | Personal store, render root, or dependent runtime unavailable | retryability hint |
+
+Additional rules:
+
+- scope mismatches must not degrade into cross-user lookups; they should return `404 not_found`
+- missing stored profile context for create or update is `422 validation_error`
+- `profile_version` mismatch against the current stored profile context is `422 validation_error`
+- unexpected failures may still use the wider runtime `internal_error`, but downstream consumers should not rely on it for normal branching
+
+### Write-To-Read Visibility
+
+The contract makes only the direct Personal read surfaces authoritative for immediate post-write reads:
+
+- after a successful `create_personal_document`, `update_personal_document`, or `delete_personal_document`, the same runtime must return the committed result immediately through `get_personal_document`
+- `list_personal_documents` for the same `domain + tenant_id + user_id` scope must reflect the committed state in the same request path without waiting for background indexing
+- downstream consumers such as Jobs-Wiki must treat search indexes, rendered wiki projections, and any later derived views as eventually consistent unless a later contract says otherwise
+- successful Personal writes do not imply any visibility change in shared `Interpretation` reads
 
 ### `register_personal_asset`
 
@@ -347,6 +484,12 @@ This endpoint is read-only.
 - `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/generate-wiki`
 - `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/link`
 
+Authoritative write endpoints for `#51`:
+
+- `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents`
+- `PATCH /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}`
+- `DELETE /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}`
+
 ### Personal Asset Endpoints
 
 - `POST /api/v1/users/{tenant_id}/{user_id}/personal-assets`
@@ -358,6 +501,7 @@ This endpoint is read-only.
 ```json
 {
   "domain": "recruiting",
+  "profile_version": "profile_v7",
   "subspace": "raw",
   "kind": "note",
   "title": "Preparation notes",
@@ -371,6 +515,8 @@ This endpoint is read-only.
 ```json
 {
   "domain": "recruiting",
+  "profile_version": "profile_v7",
+  "if_version": 3,
   "title": "Preparation notes revised",
   "body_markdown": "## Revised notes\n- tighten backend examples\n- map shared trend note to my portfolio"
 }
@@ -419,6 +565,11 @@ Recommended document response envelope:
   "result": {
     "document": {
       "document_id": "pdoc_123",
+      "domain": "recruiting",
+      "tenant_id": "tenant_a",
+      "user_id": "user_42",
+      "profile_version": "profile_v7",
+      "version": 1,
       "subspace": "wiki",
       "title": "Preparation notes rewritten",
       "writable": true
@@ -440,6 +591,7 @@ Recommended list response envelope:
         "subspace": "raw",
         "kind": "note",
         "title": "Preparation notes",
+        "version": 3,
         "writable": true,
         "updated_at": "2026-04-20T10:00:00Z"
       },
@@ -448,6 +600,7 @@ Recommended list response envelope:
         "subspace": "wiki",
         "kind": "wiki_summary",
         "title": "Preparation notes rewritten",
+        "version": 1,
         "writable": true,
         "updated_at": "2026-04-20T10:05:00Z"
       }
@@ -524,6 +677,7 @@ Recommended delete response envelope:
   "result": {
     "document_id": "pdoc_raw_123",
     "status": "deleted",
+    "version": 5,
     "deleted_at": "2026-04-20T10:06:00Z"
   }
 }

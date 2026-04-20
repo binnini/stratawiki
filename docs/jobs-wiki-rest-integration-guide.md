@@ -150,16 +150,20 @@ Recommended condition before removing the wrapper path:
 For workspace-first document authoring:
 
 1. create or identify the user scope
-2. if the user selected a PDF or other binary file, upload it through the Jobs-Wiki-owned transport path
-3. register the uploaded file in StrataWiki through `POST /api/v1/users/{tenant_id}/{user_id}/personal-assets`
-4. create or update a Personal document through `POST/PATCH /api/v1/users/{tenant_id}/{user_id}/personal-documents`
-5. if the user requests LLM rewriting, call `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/generate-wiki`
-6. if the user requests relation or anchor enrichment, call `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/link`
+2. provision or refresh the Profile Context so a concrete `profile_version` exists for that `domain + tenant_id + user_id`
+3. if the user selected a PDF or other binary file, upload it through the Jobs-Wiki-owned transport path
+4. register the uploaded file in StrataWiki through `POST /api/v1/users/{tenant_id}/{user_id}/personal-assets`
+5. create or update a Personal document through `POST/PATCH /api/v1/users/{tenant_id}/{user_id}/personal-documents`
+6. if the user requests LLM rewriting, call `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/generate-wiki`
+7. if the user requests relation or anchor enrichment, call `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/link`
 
 Rules:
 
 - shared rendered pages stay read-only
 - Personal CRUD targets only user-scoped documents
+- Jobs-Wiki should treat `domain + tenant_id + user_id + document_id` as the document key and `profile_version` as scope freshness metadata, not as a separate profile identity
+- Jobs-Wiki must send `if_version` on Personal document update and delete
+- direct `GET` and `LIST` Personal document reads are the only immediate read-after-write confirmation path
 - generated wiki output stays in Personal and does not promote into shared layers
 
 ### Interpretation Build Sequence

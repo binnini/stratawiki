@@ -206,6 +206,14 @@ For detailed boundary rules and payload guidance for this family, see:
 
 - `docs/personal-document-tool-and-rest-spec.md`
 
+Contract notes fixed by `#51`:
+
+- authoritative Personal document write endpoints are the `POST`, `PATCH`, and `DELETE` routes above
+- Personal document identity is `domain + tenant_id + user_id + document_id`
+- there is no separate `profile_id`; profile scope is carried through `profile_version`
+- create and update require an already provisioned profile context plus matching `profile_version`; update and delete require optimistic `if_version`
+- immediate read-after-write is guaranteed only through `GET`/`LIST` Personal document endpoints in the same owner scope
+
 ## Proposed Request Shapes
 
 The HTTP layer should preserve existing tool payloads as much as possible.
@@ -357,6 +365,9 @@ The first HTTP contract should make retry behavior explicit.
 | `PUT /api/v1/profile-contexts/{tenant_id}/{user_id}` | mostly | recommended | natural key is stable, but explicit keys still help request tracing |
 | `POST /api/v1/personal-queries` | depends on `save` | recommended when `save=true` | `save=false` is easier to retry safely |
 | `POST /api/v1/interpretation-builds` | no | yes | especially important for `execution_mode: "background"` |
+| `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents` | no | yes | create is not naturally retry-safe without a client key |
+| `PATCH /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | no | recommended | also requires `if_version` |
+| `DELETE /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | no | recommended | also requires `if_version` |
 
 The exact storage and conflict semantics for HTTP idempotency are not yet implemented and belong to the HTTP contract issue.
 
@@ -376,6 +387,14 @@ Recommended initial mapping:
 | `503` | `not_ready` | bootstrap incomplete or backing runtime unavailable |
 
 Tool-specific validation failures should preserve structured details where possible.
+
+Personal document CRUD specializations fixed by `#51`:
+
+- `422 validation_error` for `profile_version` mismatch or invalid Personal document fields
+- `422 validation_error` also covers missing profile context for create or update
+- `409 conflict` for stale `if_version`
+- `404 not_found` for unknown `document_id` within the requested `tenant_id + user_id` scope
+- `503 temporarily_unavailable` may be surfaced inside the shared envelope when the Personal write store is unavailable
 
 ## Jobs-Wiki Migration Expectations
 

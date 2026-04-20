@@ -959,6 +959,15 @@ That document defines the planned next Personal tool family:
 - `generate_personal_wiki_document`
 - `link_personal_document`
 
+Contract notes fixed by `#51` for the Personal document tools:
+
+- authoritative write tools are `create_personal_document`, `update_personal_document`, and `delete_personal_document`
+- Personal document identity is `domain + tenant_id + user_id + document_id`
+- there is no separate `profile_id`; the existing profile scope marker is `profile_version`
+- `create_personal_document` and `update_personal_document` require an already provisioned profile context plus matching `profile_version`
+- `update_personal_document` and `delete_personal_document` require optimistic `if_version`
+- immediate post-write visibility is guaranteed only through `get_personal_document` and `list_personal_documents`
+
 ## Retrieval and Exploration Tools
 
 These tools support bounded exploratory retrieval for LLM-driven workflows.
