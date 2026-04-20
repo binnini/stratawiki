@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -393,7 +394,11 @@ class PersonalDocumentService:
             scope_ref=scope_ref,
         )
         parsed_metadata, body_markdown = self._parse_document_body(rendered_body)
-        subspace = str(parsed_metadata.get("subspace") or storage_metadata["subspace"])
+        subspace = str(
+            record.get("subspace")
+            or parsed_metadata.get("subspace")
+            or storage_metadata["subspace"]
+        )
         asset_refs = parsed_metadata.get("asset_refs")
         if not isinstance(asset_refs, list):
             asset_refs = list(storage_metadata.get("asset_refs", []))
@@ -558,17 +563,21 @@ class PersonalDocumentService:
     ) -> tuple[dict[str, object], str]:
         if not isinstance(raw_body, str) or not raw_body.strip():
             return {}, ""
-        first_line, _, remainder = raw_body.partition("\n")
-        if not first_line.startswith(f"<!-- {_PERSONAL_DOCUMENT_MARKER} ") or not first_line.endswith(" -->"):
+        pattern = re.compile(
+            rf"<!--\s*{re.escape(_PERSONAL_DOCUMENT_MARKER)}\s*(\{{.*?\}})\s*-->",
+            re.DOTALL,
+        )
+        match = pattern.search(raw_body)
+        if match is None:
             return {}, raw_body.strip()
-        metadata_text = first_line.removeprefix(f"<!-- {_PERSONAL_DOCUMENT_MARKER} ").removesuffix(" -->")
+        metadata_text = match.group(1)
         try:
             metadata = json.loads(metadata_text)
         except json.JSONDecodeError:
             return {}, raw_body.strip()
         if not isinstance(metadata, dict):
             metadata = {}
-        return metadata, remainder.lstrip("\n").rstrip()
+        return metadata, raw_body[match.end():].lstrip("\n").rstrip()
 
     def _summary(self, *, title: str, body_markdown: str | None) -> str:
         body = (body_markdown or "").strip()
