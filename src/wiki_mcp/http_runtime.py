@@ -173,6 +173,114 @@ def dispatch_http_request(
             tool_name="query_personal_knowledge",
         )
 
+    if normalized_path.startswith("/api/v1/users/"):
+        try:
+            parts = [unquote(part).strip() for part in normalized_path.removeprefix("/api/v1/users/").split("/") if part.strip()]
+            if len(parts) < 3:
+                raise ValueError("users path must include tenant_id, user_id, and resource path.")
+            tenant_id = parts[0]
+            user_id = parts[1]
+            resource_path = "/".join(parts[2:])
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
+        if resource_path == "personal-documents":
+            if normalized_method == "GET":
+                try:
+                    arguments: dict[str, object] = {
+                        "domain": _required_query_value(query, "domain"),
+                        "tenant_id": tenant_id,
+                        "user_id": user_id,
+                    }
+                    subspace = _single_query_value(query, "subspace")
+                    kind = _single_query_value(query, "kind")
+                    status = _single_query_value(query, "status")
+                    limit = _single_query_value(query, "limit")
+                    if subspace is not None:
+                        arguments["subspace"] = subspace
+                    if kind is not None:
+                        arguments["kind"] = kind
+                    if status is not None:
+                        arguments["status"] = status
+                    if limit is not None:
+                        arguments["limit"] = int(limit)
+                    return _call_tool(
+                        server,
+                        request_id=request_id,
+                        tool_name="list_personal_documents",
+                        arguments=arguments,
+                    )
+                except Exception as exc:
+                    return _tool_error_response(request_id, exc)
+            if normalized_method == "POST":
+                try:
+                    payload = _parse_json_object(body)
+                    _coerce_path_field(payload, "tenant_id", tenant_id)
+                    _coerce_path_field(payload, "user_id", user_id)
+                    return _call_tool(
+                        server,
+                        request_id=request_id,
+                        tool_name="create_personal_document",
+                        arguments=payload,
+                    )
+                except Exception as exc:
+                    return _tool_error_response(request_id, exc)
+            return _method_not_allowed(request_id, allowed="GET, POST")
+
+        if resource_path.startswith("personal-documents/"):
+            document_id = resource_path.removeprefix("personal-documents/").strip()
+            if not document_id:
+                return _error_response(
+                    request_id,
+                    status_code=HTTPStatus.BAD_REQUEST,
+                    code="invalid_request",
+                    message="document_id must be present in the path.",
+                )
+            if normalized_method == "GET":
+                try:
+                    return _call_tool(
+                        server,
+                        request_id=request_id,
+                        tool_name="get_personal_document",
+                        arguments={
+                            "domain": _required_query_value(query, "domain"),
+                            "tenant_id": tenant_id,
+                            "user_id": user_id,
+                            "document_id": unquote(document_id),
+                        },
+                    )
+                except Exception as exc:
+                    return _tool_error_response(request_id, exc)
+            if normalized_method == "PATCH":
+                try:
+                    payload = _parse_json_object(body)
+                    _coerce_path_field(payload, "tenant_id", tenant_id)
+                    _coerce_path_field(payload, "user_id", user_id)
+                    _coerce_path_field(payload, "document_id", unquote(document_id))
+                    return _call_tool(
+                        server,
+                        request_id=request_id,
+                        tool_name="update_personal_document",
+                        arguments=payload,
+                    )
+                except Exception as exc:
+                    return _tool_error_response(request_id, exc)
+            if normalized_method == "DELETE":
+                try:
+                    payload = _parse_json_object(body)
+                    _coerce_path_field(payload, "tenant_id", tenant_id)
+                    _coerce_path_field(payload, "user_id", user_id)
+                    _coerce_path_field(payload, "document_id", unquote(document_id))
+                    return _call_tool(
+                        server,
+                        request_id=request_id,
+                        tool_name="delete_personal_document",
+                        arguments=payload,
+                    )
+                except Exception as exc:
+                    return _tool_error_response(request_id, exc)
+            return _method_not_allowed(request_id, allowed="GET, PATCH, DELETE")
+
     if normalized_path == "/api/v1/interpretation-builds":
         if normalized_method != "POST":
             return _method_not_allowed(request_id, allowed="POST")
@@ -394,6 +502,18 @@ def _call_tool(
 
 
 def _tool_error_response(request_id: str, exc: Exception) -> HttpRuntimeResponse:
+    if hasattr(exc, "status_code") and hasattr(exc, "code"):
+        status_code = getattr(exc, "status_code")
+        code = getattr(exc, "code")
+        details = getattr(exc, "details", None)
+        if isinstance(status_code, int) and isinstance(code, str):
+            return _error_response(
+                request_id,
+                status_code=HTTPStatus(status_code),
+                code=code,
+                message=str(exc),
+                details=details if isinstance(details, dict) else None,
+            )
     if isinstance(exc, KeyError):
         return _error_response(
             request_id,

@@ -19,6 +19,7 @@ from wiki_mcp.services import (
     InterpretationPublicationService,
     InterpretationQueryService,
     InterpretationRenderingService,
+    PersonalDocumentService,
     PersonalKnowledgeQueryService,
     PersonalQueryOrchestrator,
 )
@@ -173,6 +174,29 @@ class FakePersonalRepository:
 
     def get_by_ids(self, ids: list[str], scope_ref: dict[str, Any]) -> list[dict[str, Any]]:
         return [dict(self.records[record_id]) for record_id in ids if record_id in self.records]
+
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any],
+        kind: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        matches: list[dict[str, Any]] = []
+        for record in self.records.values():
+            if record["domain"] != domain:
+                continue
+            if record.get("scope_ref") != scope_ref:
+                continue
+            if kind is not None and record.get("kind") != kind:
+                continue
+            if statuses and record.get("status") not in statuses:
+                continue
+            matches.append(dict(record))
+        matches.sort(key=lambda item: (str(item.get("updated_at") or ""), str(item["id"])), reverse=True)
+        return matches[:limit]
 
     def search_for_retrieval(self, **_: Any) -> list[dict[str, Any]]:
         return [dict(self.records["personal:1"])]
@@ -383,6 +407,7 @@ class FakeBootstrap:
     retrieval_service: Any
     personal_query_orchestrator: Any
     personal_query_service: Any
+    personal_document_service: Any
     interpretation_family_registry: Any
     interpretation_proposal_service: Any
     interpretation_publication_service: Any
@@ -610,6 +635,12 @@ def build_fake_server(tmp_path: Path, *, profile_seeded: bool = True) -> StrataW
         personal_repository=personal_repository,
         rendering_repository=rendering_repository,
     )
+    personal_document_service = PersonalDocumentService(
+        personal_repository=personal_repository,
+        profile_context_repository=profile_context_repository,
+        snapshot_repository=snapshot_repository,
+        rendering_repository=rendering_repository,
+    )
     family_registry = InterpretationFamilyRegistry(
         [MarketTrendInterpretationBuilder(llm_gateway=llm_gateway)]
     )
@@ -651,6 +682,7 @@ def build_fake_server(tmp_path: Path, *, profile_seeded: bool = True) -> StrataW
         retrieval_service=retrieval_service,
         personal_query_orchestrator=orchestrator,
         personal_query_service=personal_query_service,
+        personal_document_service=personal_document_service,
         interpretation_family_registry=family_registry,
         interpretation_proposal_service=proposal_service,
         interpretation_publication_service=publication_service,
@@ -677,6 +709,11 @@ def test_server_lists_mvp_tools(tmp_path: Path) -> None:
         "get_interpretation_proposal_status",
         "upsert_profile_context",
         "query_personal_knowledge",
+        "list_personal_documents",
+        "get_personal_document",
+        "create_personal_document",
+        "update_personal_document",
+        "delete_personal_document",
         "get_snapshot_status",
         "get_cache_status",
         "get_graph_neighbors",
@@ -834,6 +871,147 @@ def test_server_personal_query_rejects_profile_version_mismatch_after_write(tmp_
         assert str(exc) == "Requested profile_version does not match the current stored profile context."
     else:
         raise AssertionError("Expected query_personal_knowledge to reject a mismatched profile_version.")
+
+
+def test_server_personal_document_crud_reflects_committed_state_immediately(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+
+    created = server.call_tool(
+        "create_personal_document",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "profile_version": "profile:v1",
+            "subspace": "raw",
+            "kind": "note",
+            "title": "Interview prep",
+            "body_markdown": "## Prep\n\nFocus on API design.",
+            "anchors": [{"layer": "fact", "id": "fact:job:1"}],
+        },
+    )
+    document_id = created["document"]["document_id"]
+
+    fetched = server.call_tool(
+        "get_personal_document",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "document_id": document_id,
+        },
+    )
+    listed = server.call_tool(
+        "list_personal_documents",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "subspace": "raw",
+        },
+    )
+
+    assert created["status"] == "ok"
+    assert created["document"]["version"] == 1
+    assert created["document"]["body_markdown"] == "## Prep\n\nFocus on API design."
+    assert fetched["document"]["document_id"] == document_id
+    assert listed["items"][0]["document_id"] == document_id
+
+    updated = server.call_tool(
+        "update_personal_document",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "document_id": document_id,
+            "profile_version": "profile:v1",
+            "if_version": 1,
+            "body_markdown": "## Prep\n\nFocus on API design and production AI systems.",
+            "asset_refs": ["asset:resume"],
+        },
+    )
+    after_update = server.call_tool(
+        "get_personal_document",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "document_id": document_id,
+        },
+    )
+
+    assert updated["document"]["version"] == 2
+    assert updated["document"]["asset_refs"] == ["asset:resume"]
+    assert "production AI systems" in after_update["document"]["body_markdown"]
+
+    deleted = server.call_tool(
+        "delete_personal_document",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "document_id": document_id,
+            "if_version": 2,
+        },
+    )
+    active_list = server.call_tool(
+        "list_personal_documents",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+        },
+    )
+    deleted_list = server.call_tool(
+        "list_personal_documents",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "status": "deleted",
+        },
+    )
+
+    assert deleted["document"]["status"] == "deleted"
+    assert deleted["document"]["version"] == 3
+    assert all(item["document_id"] != document_id for item in active_list["items"])
+    assert deleted_list["items"][0]["document_id"] == document_id
+
+
+def test_server_personal_document_update_rejects_stale_version(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+    created = server.call_tool(
+        "create_personal_document",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "profile_version": "profile:v1",
+            "subspace": "raw",
+            "kind": "note",
+            "title": "Versioned note",
+            "body_markdown": "first",
+        },
+    )
+
+    try:
+        server.call_tool(
+            "update_personal_document",
+            {
+                "domain": "recruiting",
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+                "document_id": created["document"]["document_id"],
+                "profile_version": "profile:v1",
+                "if_version": 99,
+                "title": "stale",
+            },
+        )
+    except Exception as exc:
+        assert getattr(exc, "code", None) == "conflict"
+        assert getattr(exc, "details", {}).get("current_version") == 1
+    else:
+        raise AssertionError("Expected stale Personal document update to fail with a conflict.")
 
 
 def test_server_profile_context_write_rejects_invalid_shapes(tmp_path: Path) -> None:

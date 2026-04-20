@@ -16,6 +16,7 @@ from wiki_mcp.schemas import (
     INTERPRETATION_STATUS_VALIDATED,
 )
 from wiki_mcp.services.interpretation_families import InterpretationProposalContext
+from wiki_mcp.services.personal_documents import PersonalDocumentService
 from wiki_mcp.tools import ToolDefinition
 
 
@@ -253,6 +254,123 @@ def _tool_definitions() -> list[ToolDefinition]:
             },
         ),
         ToolDefinition(
+            name="list_personal_documents",
+            group="personal",
+            status="mvp",
+            description="List Personal documents for one user scope.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["domain", "tenant_id", "user_id"],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "subspace": {"type": "string"},
+                    "kind": {"type": "string"},
+                    "status": {"type": "string"},
+                    "limit": {"type": "integer"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="get_personal_document",
+            group="personal",
+            status="mvp",
+            description="Return one Personal document by user-scoped id.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["domain", "tenant_id", "user_id", "document_id"],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "document_id": {"type": "string"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="create_personal_document",
+            group="personal",
+            status="mvp",
+            description="Create one user-scoped Personal document.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": [
+                    "domain",
+                    "tenant_id",
+                    "user_id",
+                    "profile_version",
+                    "subspace",
+                    "kind",
+                    "title",
+                ],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "profile_version": {"type": "string"},
+                    "subspace": {"type": "string"},
+                    "kind": {"type": "string"},
+                    "title": {"type": "string"},
+                    "body_markdown": {"type": "string"},
+                    "asset_refs": {"type": "array"},
+                    "anchors": {"type": "array"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="update_personal_document",
+            group="personal",
+            status="mvp",
+            description="Patch one user-scoped Personal document with optimistic concurrency.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": [
+                    "domain",
+                    "tenant_id",
+                    "user_id",
+                    "document_id",
+                    "profile_version",
+                    "if_version",
+                ],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "document_id": {"type": "string"},
+                    "profile_version": {"type": "string"},
+                    "if_version": {"type": "integer"},
+                    "title": {"type": "string"},
+                    "body_markdown": {"type": "string"},
+                    "asset_refs": {"type": "array"},
+                    "anchors": {"type": "array"},
+                    "status": {"type": "string"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="delete_personal_document",
+            group="personal",
+            status="mvp",
+            description="Soft-delete one user-scoped Personal document with optimistic concurrency.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": ["domain", "tenant_id", "user_id", "document_id", "if_version"],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "document_id": {"type": "string"},
+                    "if_version": {"type": "integer"},
+                },
+            },
+        ),
+        ToolDefinition(
             name="get_snapshot_status",
             group="snapshot",
             status="mvp",
@@ -395,6 +513,16 @@ class StrataWikiServer:
             return self._upsert_profile_context(args)
         if name == "query_personal_knowledge":
             return self._query_personal_knowledge(args)
+        if name == "list_personal_documents":
+            return self._list_personal_documents(args)
+        if name == "get_personal_document":
+            return self._get_personal_document(args)
+        if name == "create_personal_document":
+            return self._create_personal_document(args)
+        if name == "update_personal_document":
+            return self._update_personal_document(args)
+        if name == "delete_personal_document":
+            return self._delete_personal_document(args)
         if name == "get_snapshot_status":
             return self._get_snapshot_status(args)
         if name == "get_cache_status":
@@ -801,6 +929,68 @@ class StrataWikiServer:
             "fact_records_used": answer["fact_records_used"],
             "provenance": answer["provenance"],
         }
+
+    def _list_personal_documents(self, arguments: dict[str, object]) -> dict[str, object]:
+        service = self._personal_document_service()
+        return service.list_documents(
+            domain=self._required_string(arguments, "domain"),
+            tenant_id=self._required_string(arguments, "tenant_id"),
+            user_id=self._required_string(arguments, "user_id"),
+            subspace=self._optional_string(arguments, "subspace"),
+            kind=self._optional_string(arguments, "kind"),
+            status=self._optional_string(arguments, "status"),
+            limit=self._optional_limit(arguments, default=20),
+        )
+
+    def _get_personal_document(self, arguments: dict[str, object]) -> dict[str, object]:
+        service = self._personal_document_service()
+        return service.get_document(
+            domain=self._required_string(arguments, "domain"),
+            tenant_id=self._required_string(arguments, "tenant_id"),
+            user_id=self._required_string(arguments, "user_id"),
+            document_id=self._required_string(arguments, "document_id"),
+        )
+
+    def _create_personal_document(self, arguments: dict[str, object]) -> dict[str, object]:
+        service = self._personal_document_service()
+        return service.create_document(
+            domain=self._required_string(arguments, "domain"),
+            tenant_id=self._required_string(arguments, "tenant_id"),
+            user_id=self._required_string(arguments, "user_id"),
+            profile_version=self._required_string(arguments, "profile_version"),
+            subspace=self._required_string(arguments, "subspace"),
+            kind=self._required_string(arguments, "kind"),
+            title=self._required_string(arguments, "title"),
+            body_markdown=self._optional_string(arguments, "body_markdown"),
+            asset_refs=self._optional_string_list(arguments, "asset_refs"),
+            anchors=self._optional_anchor_list(arguments, "anchors"),
+        )
+
+    def _update_personal_document(self, arguments: dict[str, object]) -> dict[str, object]:
+        service = self._personal_document_service()
+        return service.update_document(
+            domain=self._required_string(arguments, "domain"),
+            tenant_id=self._required_string(arguments, "tenant_id"),
+            user_id=self._required_string(arguments, "user_id"),
+            document_id=self._required_string(arguments, "document_id"),
+            profile_version=self._required_string(arguments, "profile_version"),
+            if_version=self._required_positive_int(arguments, "if_version"),
+            title=self._optional_string(arguments, "title"),
+            body_markdown=self._optional_string(arguments, "body_markdown"),
+            anchors=self._optional_anchor_list(arguments, "anchors"),
+            asset_refs=self._optional_string_list(arguments, "asset_refs"),
+            status=self._optional_string(arguments, "status"),
+        )
+
+    def _delete_personal_document(self, arguments: dict[str, object]) -> dict[str, object]:
+        service = self._personal_document_service()
+        return service.delete_document(
+            domain=self._required_string(arguments, "domain"),
+            tenant_id=self._required_string(arguments, "tenant_id"),
+            user_id=self._required_string(arguments, "user_id"),
+            document_id=self._required_string(arguments, "document_id"),
+            if_version=self._required_positive_int(arguments, "if_version"),
+        )
 
     def _personal_query_snapshot_override(
         self,
@@ -1817,6 +2007,39 @@ class StrataWikiServer:
             seen.add(value)
         return ordered
 
+    def _optional_string_list(self, arguments: dict[str, object], key: str) -> list[str] | None:
+        value = arguments.get(key)
+        if value is None:
+            return None
+        if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
+            raise ValueError(f"{key} must be a list of non-empty strings when provided.")
+        return [item.strip() for item in value]
+
+    def _optional_anchor_list(self, arguments: dict[str, object], key: str) -> list[dict[str, str]] | None:
+        value = arguments.get(key)
+        if value is None:
+            return None
+        if not isinstance(value, list):
+            raise ValueError(f"{key} must be a list when provided.")
+        anchors: list[dict[str, str]] = []
+        for index, item in enumerate(value):
+            if not isinstance(item, dict):
+                raise ValueError(f"{key}[{index}] must be an object.")
+            layer = item.get("layer")
+            item_id = item.get("id")
+            if not isinstance(layer, str) or not layer.strip():
+                raise ValueError(f"{key}[{index}].layer must be a non-empty string.")
+            if not isinstance(item_id, str) or not item_id.strip():
+                raise ValueError(f"{key}[{index}].id must be a non-empty string.")
+            anchors.append({"layer": layer.strip(), "id": item_id.strip()})
+        return anchors
+
+    def _required_positive_int(self, arguments: dict[str, object], key: str) -> int:
+        value = arguments.get(key)
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{key} must be a positive integer.")
+        return value
+
     def _scope_ref(self, arguments: dict[str, object], *, default_scope: str) -> dict[str, str]:
         scope = str(arguments.get("scope") or default_scope)
         scope_ref: dict[str, str] = {"scope": scope}
@@ -1853,6 +2076,12 @@ class StrataWikiServer:
             "preferences": dict(preferences),
             "attributes": dict(attributes),
         }
+
+    def _personal_document_service(self) -> PersonalDocumentService:
+        service = self.bootstrap.personal_document_service
+        if service is None:
+            raise ValueError("Personal document service is not configured.")
+        return service
 
 
 def build_server(

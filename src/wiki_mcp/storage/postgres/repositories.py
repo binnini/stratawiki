@@ -1246,12 +1246,66 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     body_path,
                     status,
                     schema_version,
+                    updated_at,
                     anchors_json,
                     provenance_json
                 FROM personal.record
                 WHERE id = ANY(%s) AND {scope_sql}
                 """,
                 [ids, *scope_params],
+            )
+            return [self._row_to_personal_record(row) for row in cursor.fetchall()]
+
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        kind: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[PersonalRecord]:
+        if limit <= 0:
+            return []
+
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        where_clauses = ["domain = %s", scope_sql]
+        params: list[Any] = [domain, *scope_params]
+        if kind is not None:
+            where_clauses.append("kind = %s")
+            params.append(kind)
+        if statuses:
+            where_clauses.append("status = ANY(%s)")
+            params.append(statuses)
+        params.append(limit)
+
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id,
+                    domain,
+                    kind,
+                    title,
+                    summary,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    fact_snapshot_id,
+                    interpretation_snapshot_id,
+                    profile_version,
+                    body_path,
+                    status,
+                    schema_version,
+                    updated_at,
+                    anchors_json,
+                    provenance_json
+                FROM personal.record
+                WHERE {" AND ".join(where_clauses)}
+                ORDER BY updated_at DESC, id ASC
+                LIMIT %s
+                """,
+                params,
             )
             return [self._row_to_personal_record(row) for row in cursor.fetchall()]
 
@@ -1298,10 +1352,12 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     body_path,
                     status,
                     schema_version,
+                    updated_at,
                     anchors_json,
                     provenance_json
                 FROM personal.record
                 WHERE domain = %s AND {scope_sql} AND {vector_sql} @@ {query_sql}
+                  AND status <> 'deleted'
                 ORDER BY ts_rank_cd({vector_sql}, {query_sql}) DESC, updated_at DESC, id ASC
                 LIMIT %s
                 """,
@@ -1357,6 +1413,7 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     body_path,
                     status,
                     schema_version,
+                    updated_at,
                     anchors_json,
                     provenance_json
                 FROM personal.record
@@ -1446,6 +1503,10 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
         raw_anchors = data.get("anchors_json")
         if isinstance(raw_anchors, str):
             raw_anchors = json.loads(raw_anchors)
+        provenance = self._load_json(data["provenance_json"])
+        storage = provenance.get("_personal_document")
+        if not isinstance(storage, dict):
+            storage = {}
         return {
             "id": data["id"],
             "domain": data["domain"],
@@ -1475,7 +1536,10 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             ),
             "status": data["status"],
             "schema_version": data["schema_version"],
-            "provenance": self._load_json(data["provenance_json"]),
+            **({"version": int(storage["version"])} if self._is_positive_int(storage.get("version")) else {}),
+            **({"created_at": str(storage["created_at"])} if storage.get("created_at") else {}),
+            **({"updated_at": str(data["updated_at"])} if data.get("updated_at") else {}),
+            "provenance": provenance,
         }
 
     def _validate_personal_record(self, record: PersonalRecord) -> None:
@@ -1528,6 +1592,9 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
         if value is None:
             return {}
         return json.loads(value)
+
+    def _is_positive_int(self, value: Any) -> bool:
+        return isinstance(value, int) and value > 0
 
 
 class PostgresProfileContextRepository(PostgresRepositoryBase):

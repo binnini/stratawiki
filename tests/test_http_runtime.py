@@ -10,6 +10,7 @@ class FakeHttpServer:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.profile_contexts: dict[tuple[str, str, str], dict[str, object]] = {}
+        self.personal_documents: dict[tuple[str, str, str, str], dict[str, object]] = {}
         self._tools = [
             ToolDefinition(
                 name="validate_domain_proposal_batch",
@@ -71,6 +72,66 @@ class FakeHttpServer:
                         "profile_version",
                         "model_profile",
                     ],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="list_personal_documents",
+                group="personal",
+                status="mvp",
+                description="List Personal documents.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "tenant_id", "user_id"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="get_personal_document",
+                group="personal",
+                status="mvp",
+                description="Get one Personal document.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "tenant_id", "user_id", "document_id"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="create_personal_document",
+                group="personal",
+                status="mvp",
+                description="Create one Personal document.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "tenant_id", "user_id", "profile_version", "subspace", "kind", "title"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="update_personal_document",
+                group="personal",
+                status="mvp",
+                description="Update one Personal document.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "tenant_id", "user_id", "document_id", "profile_version", "if_version"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="delete_personal_document",
+                group="personal",
+                status="mvp",
+                description="Delete one Personal document.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "tenant_id", "user_id", "document_id", "if_version"],
                     "properties": {"domain": {"type": "string"}},
                 },
             ),
@@ -227,6 +288,130 @@ class FakeHttpServer:
                     "profile_version": profile_version,
                 },
             }
+        if name == "create_personal_document":
+            domain = payload.get("domain")
+            tenant_id = payload.get("tenant_id")
+            user_id = payload.get("user_id")
+            profile_version = payload.get("profile_version")
+            title = payload.get("title")
+            if not all(isinstance(value, str) and value.strip() for value in (domain, tenant_id, user_id, profile_version, title)):
+                raise ValueError("domain, tenant_id, user_id, profile_version, and title are required")
+            profile = self.profile_contexts.get((domain, tenant_id, user_id))
+            if profile is None:
+                error = Exception("Personal document writes require an existing stored profile context.")
+                error.code = "validation_error"  # type: ignore[attr-defined]
+                error.status_code = 422  # type: ignore[attr-defined]
+                error.details = {"domain": domain, "tenant_id": tenant_id, "user_id": user_id}  # type: ignore[attr-defined]
+                raise error
+            document_id = f"pdoc_{len(self.personal_documents) + 1}"
+            document = {
+                "document_id": document_id,
+                "domain": domain,
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "subspace": payload.get("subspace") or "raw",
+                "kind": payload.get("kind") or "note",
+                "title": title,
+                "body_markdown": payload.get("body_markdown") or "",
+                "asset_refs": list(payload.get("asset_refs") or []),
+                "anchors": list(payload.get("anchors") or []),
+                "based_on": {
+                    "fact_snapshot_id": "fact_snap:seed",
+                    "interpretation_snapshot_id": "interp_snap:seed",
+                    "profile_version": profile_version,
+                },
+                "provenance": {"generated_by": {"kind": "user"}},
+                "status": "active",
+                "version": 1,
+                "created_at": "2026-04-20T00:00:00Z",
+                "updated_at": "2026-04-20T00:00:00Z",
+            }
+            self.personal_documents[(domain, tenant_id, user_id, document_id)] = document
+            return {"status": "ok", "document": dict(document)}
+        if name == "get_personal_document":
+            key = (
+                payload.get("domain"),
+                payload.get("tenant_id"),
+                payload.get("user_id"),
+                payload.get("document_id"),
+            )
+            document = self.personal_documents.get(key)
+            if document is None:
+                raise KeyError("Unknown Personal document.")
+            return {"status": "ok", "document": dict(document)}
+        if name == "list_personal_documents":
+            domain = payload.get("domain")
+            tenant_id = payload.get("tenant_id")
+            user_id = payload.get("user_id")
+            items = [
+                dict(document)
+                for (doc_domain, doc_tenant_id, doc_user_id, _), document in self.personal_documents.items()
+                if doc_domain == domain and doc_tenant_id == tenant_id and doc_user_id == user_id
+            ]
+            status = payload.get("status") or "active"
+            subspace = payload.get("subspace")
+            if isinstance(status, str):
+                items = [item for item in items if item.get("status") == status]
+            if isinstance(subspace, str):
+                items = [item for item in items if item.get("subspace") == subspace]
+            items.sort(key=lambda item: (str(item.get("updated_at")), str(item["document_id"])), reverse=True)
+            return {"status": "ok", "items": items}
+        if name == "update_personal_document":
+            key = (
+                payload.get("domain"),
+                payload.get("tenant_id"),
+                payload.get("user_id"),
+                payload.get("document_id"),
+            )
+            document = self.personal_documents.get(key)
+            if document is None:
+                raise KeyError("Unknown Personal document.")
+            if payload.get("if_version") != document["version"]:
+                error = Exception("Personal document version mismatch.")
+                error.code = "conflict"  # type: ignore[attr-defined]
+                error.status_code = 409  # type: ignore[attr-defined]
+                error.details = {  # type: ignore[attr-defined]
+                    "resource": "personal_document",
+                    "document_id": document["document_id"],
+                    "expected_version": payload.get("if_version"),
+                    "current_version": document["version"],
+                }
+                raise error
+            for field in ("title", "body_markdown", "status"):
+                if field in payload:
+                    document[field] = payload[field]
+            if "asset_refs" in payload:
+                document["asset_refs"] = list(payload["asset_refs"])
+            if "anchors" in payload:
+                document["anchors"] = list(payload["anchors"])
+            document["version"] += 1
+            document["updated_at"] = "2026-04-20T00:05:00Z"
+            return {"status": "ok", "document": dict(document)}
+        if name == "delete_personal_document":
+            key = (
+                payload.get("domain"),
+                payload.get("tenant_id"),
+                payload.get("user_id"),
+                payload.get("document_id"),
+            )
+            document = self.personal_documents.get(key)
+            if document is None:
+                raise KeyError("Unknown Personal document.")
+            if payload.get("if_version") != document["version"]:
+                error = Exception("Personal document version mismatch.")
+                error.code = "conflict"  # type: ignore[attr-defined]
+                error.status_code = 409  # type: ignore[attr-defined]
+                error.details = {  # type: ignore[attr-defined]
+                    "resource": "personal_document",
+                    "document_id": document["document_id"],
+                    "expected_version": payload.get("if_version"),
+                    "current_version": document["version"],
+                }
+                raise error
+            document["status"] = "deleted"
+            document["version"] += 1
+            document["updated_at"] = "2026-04-20T00:10:00Z"
+            return {"status": "ok", "document": dict(document)}
         if name == "build_interpretation_snapshot":
             execution_mode = payload.get("execution_mode") or "inline"
             if execution_mode == "background":
@@ -556,6 +741,113 @@ def test_http_runtime_personal_query_maps_missing_profile_and_profile_mismatch()
     assert mismatched_profile.status_code == 422
     assert mismatched_profile.payload["ok"] is False
     assert mismatched_profile.payload["error"]["code"] == "validation_error"
+
+
+def test_http_runtime_exposes_personal_document_crud_endpoints() -> None:
+    fake_server = FakeHttpServer()
+    fake_server.profile_contexts[("recruiting", "tenant-1", "user-1")] = {
+        "domain": "recruiting",
+        "tenant_id": "tenant-1",
+        "user_id": "user-1",
+        "profile_version": "profile:v1",
+        "goals": [],
+        "preferences": {},
+        "attributes": {},
+    }
+
+    created = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-1/user-1/personal-documents",
+        headers={},
+        body=(
+            b'{"domain":"recruiting","profile_version":"profile:v1","subspace":"raw","kind":"note",'
+            b'"title":"Interview prep","body_markdown":"## Prep"}'
+        ),
+    )
+    document_id = created.payload["result"]["document"]["document_id"]
+    fetched = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path=f"/api/v1/users/tenant-1/user-1/personal-documents/{document_id}?domain=recruiting",
+        headers={},
+        body=b"",
+    )
+    listed = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/users/tenant-1/user-1/personal-documents?domain=recruiting",
+        headers={},
+        body=b"",
+    )
+    updated = dispatch_http_request(
+        fake_server,
+        method="PATCH",
+        path=f"/api/v1/users/tenant-1/user-1/personal-documents/{document_id}",
+        headers={},
+        body=b'{"domain":"recruiting","profile_version":"profile:v1","if_version":1,"asset_refs":["asset:1"]}',
+    )
+    deleted = dispatch_http_request(
+        fake_server,
+        method="DELETE",
+        path=f"/api/v1/users/tenant-1/user-1/personal-documents/{document_id}",
+        headers={},
+        body=b'{"domain":"recruiting","if_version":2}',
+    )
+    deleted_list = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/users/tenant-1/user-1/personal-documents?domain=recruiting&status=deleted",
+        headers={},
+        body=b"",
+    )
+
+    assert created.status_code == 200
+    assert created.payload["result"]["document"]["version"] == 1
+    assert fetched.payload["result"]["document"]["document_id"] == document_id
+    assert listed.payload["result"]["items"][0]["document_id"] == document_id
+    assert updated.payload["result"]["document"]["version"] == 2
+    assert updated.payload["result"]["document"]["asset_refs"] == ["asset:1"]
+    assert deleted.payload["result"]["document"]["status"] == "deleted"
+    assert deleted.payload["result"]["document"]["version"] == 3
+    assert deleted_list.payload["result"]["items"][0]["document_id"] == document_id
+
+
+def test_http_runtime_maps_personal_document_conflicts_to_409() -> None:
+    fake_server = FakeHttpServer()
+    fake_server.profile_contexts[("recruiting", "tenant-1", "user-1")] = {
+        "domain": "recruiting",
+        "tenant_id": "tenant-1",
+        "user_id": "user-1",
+        "profile_version": "profile:v1",
+        "goals": [],
+        "preferences": {},
+        "attributes": {},
+    }
+    created = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-1/user-1/personal-documents",
+        headers={},
+        body=(
+            b'{"domain":"recruiting","profile_version":"profile:v1","subspace":"raw","kind":"note",'
+            b'"title":"Interview prep","body_markdown":"## Prep"}'
+        ),
+    )
+    document_id = created.payload["result"]["document"]["document_id"]
+
+    conflict = dispatch_http_request(
+        fake_server,
+        method="PATCH",
+        path=f"/api/v1/users/tenant-1/user-1/personal-documents/{document_id}",
+        headers={},
+        body=b'{"domain":"recruiting","profile_version":"profile:v1","if_version":999,"title":"stale"}',
+    )
+
+    assert conflict.status_code == 409
+    assert conflict.payload["ok"] is False
+    assert conflict.payload["error"]["code"] == "conflict"
+    assert conflict.payload["error"]["details"]["current_version"] == 1
 
 
 def test_http_runtime_exposes_interpretation_build_and_operator_status_endpoints() -> None:

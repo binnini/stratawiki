@@ -18,6 +18,13 @@ from wiki_mcp.services.personal_query import (
     PersonalKnowledgeQueryService,
     PersonalQueryOrchestrator,
 )
+from wiki_mcp.services.personal_documents import (
+    PersonalDocumentService,
+    PersonalDocumentConflictError,
+    PersonalDocumentNotFoundError,
+    PersonalDocumentValidationError,
+    RuntimeContractError,
+)
 from wiki_mcp.services.interpretation_proposals import InterpretationProposalService
 from wiki_mcp.services.interpretation_publication import InterpretationPublicationService
 from wiki_mcp.services.interpretation_queries import InterpretationQueryService
@@ -37,7 +44,12 @@ __all__ = [
     "InterpretationPublicationService",
     "InterpretationQueryService",
     "InterpretationRenderingService",
+    "PersonalDocumentConflictError",
+    "PersonalDocumentNotFoundError",
+    "PersonalDocumentService",
+    "PersonalDocumentValidationError",
     "PersonalKnowledgeQueryService",
     "PersonalQueryOrchestrator",
+    "RuntimeContractError",
     "UnsupportedDomainPackVersionError",
 ]

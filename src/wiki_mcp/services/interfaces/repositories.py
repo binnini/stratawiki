@@ -134,6 +134,17 @@ class PersonalRepository(Protocol):
     def save_record(self, record: PersonalRecord) -> str:
         """Persist one Personal metadata record and return its id."""
 
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        kind: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[PersonalRecord]:
+        """List Personal records for one user scope in recency order."""
+
 
 class ProfileContextRepository(Protocol):
     """Persistence boundary for profile and user context state."""

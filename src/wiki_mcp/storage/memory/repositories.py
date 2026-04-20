@@ -240,6 +240,31 @@ class InMemoryPersonalRepository:
     def get_by_ids(self, ids: list[str], scope_ref: dict[str, Any]) -> list[dict[str, Any]]:
         return [dict(self.records[record_id]) for record_id in ids if record_id in self.records]
 
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any],
+        kind: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        matches: list[dict[str, Any]] = []
+        for record in self.records.values():
+            if record["domain"] != domain:
+                continue
+            if record["scope_ref"].get("tenant_id") != scope_ref.get("tenant_id"):
+                continue
+            if record["scope_ref"].get("user_id") != scope_ref.get("user_id"):
+                continue
+            if kind is not None and record.get("kind") != kind:
+                continue
+            if statuses and record.get("status") not in statuses:
+                continue
+            matches.append(dict(record))
+        matches.sort(key=lambda item: (str(item.get("updated_at") or ""), str(item["id"])), reverse=True)
+        return matches[:limit]
+
     def search_for_retrieval(
         self,
         *,
@@ -255,6 +280,7 @@ class InMemoryPersonalRepository:
             if record["domain"] == domain
             and record["scope_ref"].get("tenant_id") == scope_ref.get("tenant_id")
             and record["scope_ref"].get("user_id") == scope_ref.get("user_id")
+            and record.get("status") != "deleted"
             and _matches_text(
                 query_text,
                 query_tokens,

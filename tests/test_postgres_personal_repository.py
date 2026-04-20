@@ -196,3 +196,57 @@ def test_search_by_anchors_queries_anchor_metadata_column() -> None:
     assert "anchors_json" in query
     assert isinstance(params, list)
     assert params[-1] == 5
+
+
+def test_list_records_maps_document_version_metadata_from_provenance() -> None:
+    cursor = FakeCursor(
+        [
+            {
+                "fetchall": [
+                    {
+                        "id": "pdoc_1",
+                        "domain": "recruiting",
+                        "kind": "note",
+                        "title": "Prep",
+                        "summary": "Prep summary",
+                        "scope": "user",
+                        "tenant_id": "tenant-1",
+                        "user_id": "user-1",
+                        "fact_snapshot_id": "fact_snap:1",
+                        "interpretation_snapshot_id": "interp_snap:1",
+                        "profile_version": "profile:v1",
+                        "body_path": "wiki/users/user-1/personal-documents/pdoc_1.md",
+                        "status": "active",
+                        "schema_version": "personal.document.v1",
+                        "updated_at": "2026-04-20T00:00:00Z",
+                        "anchors_json": [],
+                        "provenance_json": {
+                            "generated_by": {"kind": "user"},
+                            "_personal_document": {
+                                "subspace": "raw",
+                                "asset_refs": [],
+                                "version": 3,
+                                "created_at": "2026-04-19T23:59:00Z",
+                            },
+                        },
+                    }
+                ]
+            }
+        ]
+    )
+    repository = PostgresPersonalRepository(FakeConnection(cursor))
+
+    records = repository.list_records(
+        domain="recruiting",
+        scope_ref={"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+        statuses=["active"],
+        limit=10,
+    )
+
+    assert records[0]["version"] == 3
+    assert records[0]["created_at"] == "2026-04-19T23:59:00Z"
+    assert records[0]["updated_at"] == "2026-04-20T00:00:00Z"
+    query, params = cursor.executed[0]
+    assert "updated_at" in query
+    assert isinstance(params, list)
+    assert params[-1] == 10
