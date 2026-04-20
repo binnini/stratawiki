@@ -67,6 +67,7 @@ StrataWiki owns:
 - rendered shared and Personal artifact side effects
 - worker coordination and outbox processing
 - model-provider credentials
+- scope enforcement for user-scoped Personal writes
 
 External clients own:
 
@@ -80,6 +81,8 @@ External clients must not:
 - connect to the StrataWiki database directly
 - write rendered artifacts directly
 - bypass Domain Pack validation for canonical writes
+- treat shared rendered views as writable resources
+- rely on Personal writes to mutate or promote shared upper-layer state
 
 ## Proposed Base Path and Versioning
 

@@ -10,6 +10,12 @@ StrataWiki is being rebuilt around three semantic layers:
 - `Interpretation`: shared derived meaning
 - `Personal`: user-scoped plans, notes, and cached outputs
 
+Current boundary assumptions:
+
+- user-facing `shared` documents are rendered views of the `Interpretation` layer
+- `Personal` may contain both user-authored raw documents and LLM-reworked personal wiki artifacts
+- Personal writes stay user-scoped and must not auto-promote into `Fact` or published `Interpretation`
+
 The system is intended for domains such as recruiting and job strategy first, while staying extensible to other domains through a domain-neutral core plus registered `Domain Pack` artifacts for canonical schema semantics.
 
 ## Architecture Summary
@@ -17,6 +23,8 @@ The system is intended for domains such as recruiting and job strategy first, wh
 - Fact is stored in a structured canonical store
 - Interpretation is stored as canonical derived records plus rendered shared wiki views
 - Personal is stored as user-scoped wiki-style output with anchors into upper layers
+- shared rendered pages are read-only views rather than direct authoring surfaces
+- personal authoring may include both raw user documents and LLM-reworked personal wiki artifacts
 - Graph is treated as a cross-layer index and dependency system
 - Caches and snapshots are explicit, versioned, and inspectable
 
@@ -610,6 +618,18 @@ docs/
 dev-wiki/
 tests/
 ```
+
+Conceptual render split:
+
+- `wiki/shared/`
+  - rendered read-only shared views from `Interpretation`
+- `wiki/users/<user_id>/raw/`
+  - user-authored raw markdown or uploaded-document references
+- `wiki/users/<user_id>/wiki/`
+  - LLM-reworked personal wiki artifacts
+
+This split is an authority boundary.
+User-scoped raw or wiki artifacts must not directly mutate upper-layer shared state.
 
 ## License
 

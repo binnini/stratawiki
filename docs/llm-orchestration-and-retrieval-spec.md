@@ -109,6 +109,16 @@ LLM may:
 - compose personalized plans, notes, and answer pages
 - update existing personal pages
 - file useful query results back into the personal workspace
+- summarize or rewrite user-authored raw documents into personal wiki artifacts
+- propose links between personal pages and upper-layer context
+
+Personal subspace guidance:
+
+- `personal/raw` contains user-authored or user-uploaded source material
+- `personal/wiki` contains LLM-reworked or user-curated personal wiki artifacts
+- both remain user-scoped
+- both may reference `Interpretation` and `Fact`
+- neither may directly mutate or publish shared upper-layer state
 
 Program responsibilities:
 
@@ -117,6 +127,7 @@ Program responsibilities:
 - upstream snapshot binding
 - stale and invalid status tracking
 - persistence and access control
+- ensuring that personal writes do not auto-promote into shared state
 
 ### Graph and Dependency State
 
@@ -163,6 +174,7 @@ Use cases:
 - ordinary personal Q&A
 - standard plan generation
 - shared interpretation rendering
+- personal raw-to-wiki rewriting
 - low-latency user interactions
 
 Advantages:
@@ -307,6 +319,9 @@ Markdown search use:
 - especially useful for personal wiki pages
 - a strong candidate for `qmd` if personal content is markdown-heavy
 
+When the request starts from a shared rendered page, that page should be treated as read-only context.
+Any saved output should land in Personal, not in the shared rendered page itself.
+
 ## Recommended Initial Retrieval Split
 
 An initial pragmatic split may be:
@@ -433,6 +448,7 @@ The program should remain responsible for:
 - dependency graph authority
 - snapshot and cache state
 - validation and promotion into durable shared records
+- preventing Personal authoring flows from mutating shared rendered views
 
 Graph and markdown search should coexist as complementary retrieval backends.
 The correct balance between them should be measured rather than assumed.

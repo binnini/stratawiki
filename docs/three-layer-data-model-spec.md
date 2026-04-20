@@ -298,6 +298,8 @@ Interpretation should support:
 Personal records represent user-scoped strategy, notes, plans, and cached derived views.
 
 Personal records are allowed to be opinionated and user-specific.
+They may include both user-authored raw artifacts and LLM-reworked personal wiki artifacts.
+They must remain user-scoped and must not silently promote into shared `Interpretation` or canonical `Fact`.
 
 ### Personal Record Interface
 
@@ -338,16 +340,58 @@ Personal records are allowed to be opinionated and user-specific.
 - `strategy`
 - `plan`
 - `note`
+- `raw_note`
+- `raw_document`
+- `wiki_note`
+- `wiki_summary`
 - `answer_cache`
 - `reading_list`
 - `priority_tree`
 - `weekly_actions`
 - `profile_gap_analysis`
 
+### Personal Subspaces
+
+The Personal layer should distinguish at least two authoring subspaces.
+
+#### `personal/raw`
+
+This subspace is for user-authored or user-uploaded source material.
+
+Examples:
+
+- markdown drafts
+- imported PDF references
+- handwritten research notes
+- job-specific preparation notes
+
+#### `personal/wiki`
+
+This subspace is for LLM-reworked or user-curated wiki artifacts built from raw material plus upper-layer context.
+
+Examples:
+
+- summarized notes
+- rewritten strategy pages
+- linked topic notes
+- job-specific wiki summaries
+
+Rules:
+
+- `personal/raw` and `personal/wiki` remain user-scoped
+- both may anchor into `Interpretation` and `Fact`
+- neither may directly mutate shared `Interpretation` or canonical `Fact`
+- promotion from Personal into shared state, if ever desired, must be an explicit separate proposal flow
+
 ### Recommended Storage
 
 - primary: user-scoped markdown or wiki pages plus metadata store
 - optional secondary: object store or document DB for large cached bodies
+
+Recommended conceptual path split:
+
+- `wiki/users/<user_id>/raw/`
+- `wiki/users/<user_id>/wiki/`
 
 ### Personal Anchoring
 
@@ -371,6 +415,9 @@ These anchors support:
 - stale detection
 - explainability
 - selective regeneration
+
+Anchoring is not promotion.
+An anchored Personal page remains user-scoped even when it references shared `Interpretation` or canonical `Fact`.
 
 ### Personal Indexing
 
@@ -460,6 +507,9 @@ Scope values:
 - `user`
 
 Rendered pages should also retain the snapshot tuple used to produce them.
+
+Interpretation-backed rendered pages with `scope: "shared"` should be treated as read-only views.
+User-authorable pages belong in the Personal layer with `scope: "user"`.
 
 ## Graph Model
 
