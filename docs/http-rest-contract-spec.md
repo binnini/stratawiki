@@ -197,14 +197,18 @@ These endpoints remain the target migration surface for external clients such as
 | `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | `GET` | `get_personal_document` | fetch one user-scoped Personal document | planned |
 | `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | `PATCH` | `update_personal_document` | update one user-scoped Personal document | planned |
 | `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | `DELETE` | `delete_personal_document` | delete one user-scoped Personal document | planned |
-| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/generate-wiki` | `POST` | `generate_personal_wiki_document` | generate one Personal wiki artifact from Personal or shared context | planned |
-| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/link` | `POST` | `link_personal_document` | attach or refresh anchors and related refs | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/summarize-wiki` | `POST` | `summarize_personal_document_to_wiki` | generate one summary artifact in `personal/wiki` from one raw Personal source document | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/rewrite-wiki` | `POST` | `rewrite_personal_document_to_wiki` | rewrite one raw Personal source document into one `personal/wiki` artifact | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/structure-wiki` | `POST` | `structure_personal_document_to_wiki` | structure one raw Personal source document into one `personal/wiki` artifact | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/suggest-links` | `POST` | `suggest_personal_wiki_links` | return non-mutating link suggestions for one `personal/wiki` document | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/attach-links` | `POST` | `attach_personal_wiki_links` | attach selected anchors to one `personal/wiki` document | planned |
 | `/api/v1/users/{tenant_id}/{user_id}/personal-assets` | `POST` | `register_personal_asset` | register a user-scoped binary asset such as a PDF | planned |
 | deployment and migration documentation for the completed HTTP surface | n/a | n/a | final external migration baseline | planned in `#45` |
 
 For detailed boundary rules and payload guidance for this family, see:
 
 - `docs/personal-document-tool-and-rest-spec.md`
+- `docs/personal-raw-to-wiki-generation-contract.md`
 
 Contract notes fixed by `#51`:
 
@@ -378,6 +382,11 @@ The first HTTP contract should make retry behavior explicit.
 | `PATCH /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | no | recommended | also requires `if_version` |
 | `DELETE /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | no | recommended | also requires `if_version` |
 | `POST /api/v1/users/{tenant_id}/{user_id}/personal-assets` | no | yes | registration is not retry-safe without a client key |
+| `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/summarize-wiki` | no | yes | create-or-update write into `personal/wiki` only |
+| `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/rewrite-wiki` | no | yes | create-or-update write into `personal/wiki` only |
+| `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/structure-wiki` | no | yes | create-or-update write into `personal/wiki` only |
+| `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/suggest-links` | yes | optional | non-mutating when document version is unchanged |
+| `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/attach-links` | no | yes | mutates only Personal wiki metadata |
 
 The exact storage and conflict semantics for HTTP idempotency are not yet implemented and belong to the HTTP contract issue.
 

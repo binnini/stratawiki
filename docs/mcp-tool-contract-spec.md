@@ -956,8 +956,15 @@ That document defines the planned next Personal tool family:
 - `update_personal_document`
 - `delete_personal_document`
 - `register_personal_asset`
-- `generate_personal_wiki_document`
-- `link_personal_document`
+- `summarize_personal_document_to_wiki`
+- `rewrite_personal_document_to_wiki`
+- `structure_personal_document_to_wiki`
+- `suggest_personal_wiki_links`
+- `attach_personal_wiki_links`
+
+The concrete raw-to-wiki generation contract is defined in:
+
+- `docs/personal-raw-to-wiki-generation-contract.md`
 
 Contract notes fixed by `#51` for the Personal document tools:
 

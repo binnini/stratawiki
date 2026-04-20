@@ -154,8 +154,13 @@ For workspace-first document authoring:
 3. if the user selected a PDF or other binary file, upload it through the Jobs-Wiki-owned transport path
 4. register the uploaded file in StrataWiki through `POST /api/v1/users/{tenant_id}/{user_id}/personal-assets`
 5. create or update a Personal document through `POST/PATCH /api/v1/users/{tenant_id}/{user_id}/personal-documents`
-6. if the user requests LLM rewriting, call `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/generate-wiki`
-7. if the user requests relation or anchor enrichment, call `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/link`
+6. if the user requests summarize, rewrite, or structure generation, call the explicit raw-to-wiki endpoint on the raw source document:
+   `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/summarize-wiki`,
+   `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/rewrite-wiki`,
+   or `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/structure-wiki`
+7. if the user requests relation or anchor enrichment on a generated wiki artifact, call
+   `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/suggest-links`
+   followed by `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/attach-links`
 
 Rules:
 

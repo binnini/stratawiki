@@ -498,58 +498,29 @@ Additional rules:
 - downstream consumers must not infer that extracted text, thumbnails, or previews are available immediately after registration
 - shared `Interpretation` and canonical `Fact` reads are unaffected by Personal asset registration
 
-### `generate_personal_wiki_document`
+### Raw-to-Wiki Generation and Linking
 
-Generate or refresh a Personal wiki artifact from a source document plus bounded upper-layer context.
+The raw-to-wiki contract should use explicit tools rather than a generic generation tool with a `mode` switch.
 
-Input:
+Planned tool names:
 
-```json
-{
-  "domain": "recruiting",
-  "tenant_id": "tenant_a",
-  "user_id": "user_42",
-  "source_document_id": "pdoc_raw_123",
-  "mode": "rewrite",
-  "profile_version": "profile_v7",
-  "model_profile": "balanced_default",
-  "save_target": "wiki"
-}
-```
+- `summarize_personal_document_to_wiki`
+- `rewrite_personal_document_to_wiki`
+- `structure_personal_document_to_wiki`
+- `suggest_personal_wiki_links`
+- `attach_personal_wiki_links`
 
-Allowed `mode` values:
+Shared rules:
 
-- `summarize`
-- `rewrite`
-- `wiki`
+- summarize, rewrite, and structure require a `source_document_ref` whose `subspace` is `raw`
+- summarize, rewrite, and structure may create or update only a target Personal document in `subspace: "wiki"`
+- suggest-links is read-only and does not persist mutations
+- attach-links may update only the target Personal wiki document metadata
+- shared rendered pages, Interpretation, and Fact may be used as context only and must never be mutated by these calls
 
-Rules:
+For the concrete request and response shapes, provenance requirements, failure model, and retry guidance, see:
 
-- output target is always `subspace: "wiki"`
-- shared rendered pages may be used as context only
-- generated output remains Personal
-
-### `link_personal_document`
-
-Attach or refresh anchors and related refs for one Personal document.
-
-Input:
-
-```json
-{
-  "domain": "recruiting",
-  "tenant_id": "tenant_a",
-  "user_id": "user_42",
-  "document_id": "pdoc_wiki_123",
-  "mode": "suggest",
-  "model_profile": "balanced_default"
-}
-```
-
-Allowed `mode` values:
-
-- `suggest`
-- `apply`
+- `docs/personal-raw-to-wiki-generation-contract.md`
 
 ## Proposed REST Surface
 
@@ -568,8 +539,11 @@ This endpoint is read-only.
 - `GET /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}`
 - `PATCH /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}`
 - `DELETE /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}`
-- `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/generate-wiki`
-- `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/link`
+- `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/summarize-wiki`
+- `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/rewrite-wiki`
+- `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/structure-wiki`
+- `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/suggest-links`
+- `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/attach-links`
 
 Authoritative write endpoints for `#51`:
 
@@ -627,26 +601,11 @@ Authoritative write endpoint for `#50`:
 }
 ```
 
-### Generate Wiki
+### Raw-to-Wiki and Link Requests
 
-```json
-{
-  "domain": "recruiting",
-  "mode": "rewrite",
-  "profile_version": "profile_v7",
-  "model_profile": "balanced_default"
-}
-```
+The concrete summarize, rewrite, structure, suggest-links, and attach-links payloads are defined in:
 
-### Link Personal Document
-
-```json
-{
-  "domain": "recruiting",
-  "mode": "suggest",
-  "model_profile": "balanced_default"
-}
-```
+- `docs/personal-raw-to-wiki-generation-contract.md`
 
 ## Response Notes
 
@@ -739,7 +698,7 @@ Recommended asset registration response envelope:
 }
 ```
 
-Recommended generate-wiki response envelope:
+Recommended raw-to-wiki response envelope:
 
 ```json
 {
@@ -822,15 +781,24 @@ Expected outcome:
 
 ### Example 3. Rewrite a raw note into a personal wiki page
 
-1. `POST /api/v1/users/tenant_a/user_42/personal-documents/pdoc_raw_123/generate-wiki`
+1. `POST /api/v1/users/tenant_a/user_42/personal-documents/pdoc_raw_123/rewrite-wiki`
 2. body:
 
 ```json
 {
   "domain": "recruiting",
-  "mode": "rewrite",
+  "source_document_ref": {
+    "document_id": "pdoc_raw_123",
+    "subspace": "raw",
+    "version": 4,
+    "kind": "note",
+    "asset_refs": []
+  },
   "profile_version": "profile_v7",
-  "model_profile": "balanced_default"
+  "model_profile": "balanced_default",
+  "save_target": {
+    "subspace": "wiki"
+  }
 }
 ```
 
@@ -840,16 +808,26 @@ Expected outcome:
 - shared rendered pages may have been used as context only
 - saved output remains user-scoped
 
-### Example 4. Link a personal wiki page to shared context
+### Example 4. Attach links to a personal wiki page
 
-1. `POST /api/v1/users/tenant_a/user_42/personal-documents/pdoc_wiki_456/link`
+1. `POST /api/v1/users/tenant_a/user_42/personal-documents/pdoc_wiki_456/attach-links`
 2. body:
 
 ```json
 {
   "domain": "recruiting",
-  "mode": "apply",
-  "model_profile": "balanced_default"
+  "wiki_document_id": "pdoc_wiki_456",
+  "wiki_document_version": 3,
+  "attachments": [
+    {
+      "layer": "interpretation",
+      "id": "interp_123"
+    },
+    {
+      "layer": "fact",
+      "id": "fact_job_posting_999"
+    }
+  ]
 }
 ```
 
@@ -867,8 +845,9 @@ Expected outcome:
 | `PATCH` personal document | mostly | recommended |
 | `DELETE` personal document | mostly | recommended |
 | `POST` register personal asset | no | yes |
-| `POST` generate wiki | no | yes |
-| `POST` link | depends on mode | recommended |
+| `POST` summarize/rewrite/structure wiki | no | yes |
+| `POST` suggest links | yes | optional |
+| `POST` attach links | no | yes |
 
 ## Relationship to Existing Contracts
 
@@ -886,5 +865,6 @@ Recommended reading order:
 1. `docs/three-layer-data-model-spec.md`
 2. `docs/llm-orchestration-and-retrieval-spec.md`
 3. this document
-4. `docs/http-rest-contract-spec.md`
-5. `docs/mcp-tool-contract-spec.md`
+4. `docs/personal-raw-to-wiki-generation-contract.md`
+5. `docs/http-rest-contract-spec.md`
+6. `docs/mcp-tool-contract-spec.md`
