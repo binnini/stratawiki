@@ -16,3 +16,5 @@ data/graph/*
 !data/graph/.gitkeep
 data/state/*
 !data/state/.gitkeep
+data-dev/
+data-http-dev/
