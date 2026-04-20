@@ -191,7 +191,20 @@ These endpoints remain the target migration surface for external clients such as
 
 | Endpoint | Method | Source Tool | Purpose | Status |
 | --- | --- | --- | --- | --- |
+| `/api/v1/shared-pages/{page_id}` | `GET` | `get_shared_page` | fetch one rendered shared interpretation page | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents` | `GET` | `list_personal_documents` | list user-scoped Personal documents | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents` | `POST` | `create_personal_document` | create one user-scoped Personal document | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | `GET` | `get_personal_document` | fetch one user-scoped Personal document | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | `PATCH` | `update_personal_document` | update one user-scoped Personal document | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | `DELETE` | `delete_personal_document` | delete one user-scoped Personal document | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/generate-wiki` | `POST` | `generate_personal_wiki_document` | generate one Personal wiki artifact from Personal or shared context | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/link` | `POST` | `link_personal_document` | attach or refresh anchors and related refs | planned |
+| `/api/v1/users/{tenant_id}/{user_id}/personal-assets` | `POST` | `register_personal_asset` | register a user-scoped binary asset such as a PDF | planned |
 | deployment and migration documentation for the completed HTTP surface | n/a | n/a | final external migration baseline | planned in `#45` |
+
+For detailed boundary rules and payload guidance for this family, see:
+
+- `docs/personal-document-tool-and-rest-spec.md`
 
 ## Proposed Request Shapes
 

@@ -938,6 +938,27 @@ Input:
 }
 ```
 
+### Personal Authoring Follow-up
+
+The current implemented surface still centers on Personal query and plan generation.
+
+For workspace-first Personal document CRUD, raw-to-wiki generation, and asset registration,
+see:
+
+- `docs/personal-document-tool-and-rest-spec.md`
+
+That document defines the planned next Personal tool family:
+
+- `get_shared_page`
+- `list_personal_documents`
+- `get_personal_document`
+- `create_personal_document`
+- `update_personal_document`
+- `delete_personal_document`
+- `register_personal_asset`
+- `generate_personal_wiki_document`
+- `link_personal_document`
+
 ## Retrieval and Exploration Tools
 
 These tools support bounded exploratory retrieval for LLM-driven workflows.
