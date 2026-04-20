@@ -968,6 +968,15 @@ Contract notes fixed by `#51` for the Personal document tools:
 - `update_personal_document` and `delete_personal_document` require optimistic `if_version`
 - immediate post-write visibility is guaranteed only through `get_personal_document` and `list_personal_documents`
 
+Contract notes fixed by `#50` for the Personal asset tool:
+
+- authoritative asset registration write tool is `register_personal_asset`
+- blob upload transport remains external-client-owned; the tool only registers an already uploaded blob
+- Personal asset identity is `domain + tenant_id + user_id + asset_id`
+- the original uploaded blob remains the Personal/raw authority boundary
+- extracted metadata must remain a separate derived Personal record that references `asset_id`
+- successful registration does not imply extraction or shared publication
+
 ## Retrieval and Exploration Tools
 
 These tools support bounded exploratory retrieval for LLM-driven workflows.

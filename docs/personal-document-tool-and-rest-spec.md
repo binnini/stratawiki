@@ -139,9 +139,13 @@ Minimum shape:
   "domain": "recruiting",
   "tenant_id": "tenant_a",
   "user_id": "user_42",
+  "asset_kind": "file",
   "media_type": "application/pdf",
   "filename": "resume.pdf",
+  "blob_sha256": "sha256:7d4c...",
+  "size_bytes": 248192,
   "storage_ref": "s3://bucket/path/resume.pdf",
+  "extraction_status": "not_requested",
   "status": "active",
   "created_at": "2026-04-20T10:00:00Z"
 }
@@ -154,6 +158,14 @@ First-wave recommendation:
 - StrataWiki should remain the owner of Personal asset registration and Personal document references
 
 This keeps the resource contract stable without forcing the first HTTP wave to solve binary transport and storage in the same change.
+
+Authoritative identity and reference fields:
+
+- `asset_id` is the StrataWiki-assigned stable Personal asset id
+- `domain + tenant_id + user_id + asset_id` is the full Personal asset identity
+- `storage_ref` is an opaque external blob locator and is not itself the StrataWiki resource id
+- `blob_sha256` is the stable content identity when the uploader can provide it
+- `asset_kind`, `media_type`, `filename`, and `size_bytes` describe the registered original blob and do not imply extraction or interpretation
 
 ## Authority Rules
 
@@ -178,6 +190,10 @@ The read companions for downstream consumers are:
 
 - `list_personal_documents`
 - `get_personal_document`
+
+For `#50`, the authoritative Personal asset registration write tool is:
+
+- `register_personal_asset`
 
 ### `get_shared_page`
 
@@ -405,11 +421,82 @@ Input:
   "domain": "recruiting",
   "tenant_id": "tenant_a",
   "user_id": "user_42",
+  "asset_kind": "file",
   "media_type": "application/pdf",
   "filename": "resume.pdf",
+  "blob_sha256": "sha256:7d4c...",
+  "size_bytes": 248192,
   "storage_ref": "s3://bucket/path/resume.pdf"
 }
 ```
+
+## Personal Asset Registration Contract
+
+This section is the concrete `#50` contract for downstream writers such as Jobs-Wiki.
+
+### Blob Upload vs Registration Boundary
+
+- Jobs-Wiki or another external client owns raw blob transport in the first wave, including multipart upload, presigned upload, and temporary file handling.
+- StrataWiki does not own browser upload sessions or binary ingress in this contract.
+- StrataWiki owns only the Personal-layer registration of an already uploaded blob through `register_personal_asset`.
+- `register_personal_asset` records metadata about the original blob and returns a StrataWiki `asset_id`.
+- successful registration does not imply preview generation, OCR, text extraction, parsing, or publication to shared layers.
+
+### Required Registration Fields
+
+- `domain`
+- `tenant_id`
+- `user_id`
+- `asset_kind`
+- `media_type`
+- `filename`
+- `storage_ref`
+
+Recommended when available:
+
+- `blob_sha256`
+- `size_bytes`
+
+Server-populated fields:
+
+- `asset_id`
+- `status`
+- `extraction_status`
+- `created_at`
+- `updated_at`
+
+### Relationship Between Original Asset and Extracted Metadata
+
+- the registered Personal asset record is the authoritative Personal/raw record for the uploaded original blob
+- any extracted text, parsed fields, thumbnails, or summaries are derived outputs and must not overwrite the original asset registration record
+- derived metadata must reference the original `asset_id`
+- in the current architecture, downstream consumers should treat extracted text or metadata as a separate Personal document or later Personal derived record that references the original `asset_id`
+- upload or registration success does not imply that extracted metadata exists
+- extracted metadata remains Personal-layer only until some later explicit shared publication flow says otherwise
+
+### Normalized Error Contract
+
+Personal asset registration must normalize failures into the shared response envelope with these issue-level codes:
+
+| Code | HTTP Status | Meaning | Required `details` |
+| --- | --- | --- | --- |
+| `validation_error` | `422` | invalid registration payload such as missing `storage_ref` or unsupported `media_type` | invalid field names and reasons |
+| `conflict` | `409` | duplicate registration collision for the same user scope and idempotency key or blob identity policy | existing `asset_id` when known |
+| `not_found` | `404` | referenced owner scope does not exist in the requested user namespace | requested scope fields |
+| `temporarily_unavailable` | `503` | Personal asset registry or dependent storage metadata service unavailable | retryability hint |
+
+Additional rules:
+
+- scope mismatches must not degrade into cross-user asset lookup; they should return `404 not_found`
+- `storage_ref` validation failures are `422 validation_error`
+- unexpected failures may still use the wider runtime `internal_error`, but downstream consumers should not rely on it for normal branching
+
+### Visibility Expectations
+
+- after a successful `register_personal_asset`, the response payload containing `asset_id` is the authoritative immediate confirmation for downstream clients
+- the returned `asset_id` may be used immediately in `create_personal_document` or `update_personal_document` through `asset_refs`
+- downstream consumers must not infer that extracted text, thumbnails, or previews are available immediately after registration
+- shared `Interpretation` and canonical `Fact` reads are unaffected by Personal asset registration
 
 ### `generate_personal_wiki_document`
 
@@ -494,6 +581,10 @@ Authoritative write endpoints for `#51`:
 
 - `POST /api/v1/users/{tenant_id}/{user_id}/personal-assets`
 
+Authoritative write endpoint for `#50`:
+
+- `POST /api/v1/users/{tenant_id}/{user_id}/personal-assets`
+
 ## Request Notes
 
 ### Create Personal Document
@@ -527,8 +618,11 @@ Authoritative write endpoints for `#51`:
 ```json
 {
   "domain": "recruiting",
+  "asset_kind": "file",
   "media_type": "application/pdf",
   "filename": "backend-resume.pdf",
+  "blob_sha256": "sha256:7d4c...",
+  "size_bytes": 248192,
   "storage_ref": "s3://jobs-wiki-user-assets/user-42/backend-resume.pdf"
 }
 ```
@@ -635,8 +729,11 @@ Recommended asset registration response envelope:
   "result": {
     "asset": {
       "asset_id": "passet_123",
+      "asset_kind": "file",
       "filename": "backend-resume.pdf",
-      "media_type": "application/pdf"
+      "media_type": "application/pdf",
+      "storage_ref": "s3://jobs-wiki-user-assets/user-42/backend-resume.pdf",
+      "extraction_status": "not_requested"
     }
   }
 }

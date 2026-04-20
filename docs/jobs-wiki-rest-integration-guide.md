@@ -164,6 +164,9 @@ Rules:
 - Jobs-Wiki should treat `domain + tenant_id + user_id + document_id` as the document key and `profile_version` as scope freshness metadata, not as a separate profile identity
 - Jobs-Wiki must send `if_version` on Personal document update and delete
 - direct `GET` and `LIST` Personal document reads are the only immediate read-after-write confirmation path
+- raw blob upload stays Jobs-Wiki-owned; StrataWiki starts at `register_personal_asset`
+- Jobs-Wiki should treat the returned `asset_id` as the StrataWiki reference and should not treat `storage_ref` as the resource id
+- asset registration success preserves the original uploaded blob as Personal/raw only and does not imply extracted metadata or shared publication
 - generated wiki output stays in Personal and does not promote into shared layers
 
 ### Interpretation Build Sequence

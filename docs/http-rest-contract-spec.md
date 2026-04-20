@@ -214,6 +214,15 @@ Contract notes fixed by `#51`:
 - create and update require an already provisioned profile context plus matching `profile_version`; update and delete require optimistic `if_version`
 - immediate read-after-write is guaranteed only through `GET`/`LIST` Personal document endpoints in the same owner scope
 
+Contract notes fixed by `#50`:
+
+- authoritative Personal asset registration endpoint is `POST /api/v1/users/{tenant_id}/{user_id}/personal-assets`
+- authoritative MCP tool is `register_personal_asset`
+- blob upload transport remains external-client-owned; StrataWiki owns only metadata registration and returned `asset_id`
+- Personal asset identity is `domain + tenant_id + user_id + asset_id`
+- the original uploaded blob remains the Personal/raw source of truth; extracted metadata must be a separate derived Personal record
+- registration success does not imply extraction, preview generation, or shared publication
+
 ## Proposed Request Shapes
 
 The HTTP layer should preserve existing tool payloads as much as possible.
@@ -368,6 +377,7 @@ The first HTTP contract should make retry behavior explicit.
 | `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents` | no | yes | create is not naturally retry-safe without a client key |
 | `PATCH /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | no | recommended | also requires `if_version` |
 | `DELETE /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}` | no | recommended | also requires `if_version` |
+| `POST /api/v1/users/{tenant_id}/{user_id}/personal-assets` | no | yes | registration is not retry-safe without a client key |
 
 The exact storage and conflict semantics for HTTP idempotency are not yet implemented and belong to the HTTP contract issue.
 
@@ -395,6 +405,13 @@ Personal document CRUD specializations fixed by `#51`:
 - `409 conflict` for stale `if_version`
 - `404 not_found` for unknown `document_id` within the requested `tenant_id + user_id` scope
 - `503 temporarily_unavailable` may be surfaced inside the shared envelope when the Personal write store is unavailable
+
+Personal asset registration specializations fixed by `#50`:
+
+- `422 validation_error` for malformed asset metadata such as missing `storage_ref`
+- `409 conflict` for duplicate registration collisions under the chosen idempotency or blob identity policy
+- `404 not_found` for unknown owner scope
+- `503 temporarily_unavailable` when the Personal asset registry is unavailable
 
 ## Jobs-Wiki Migration Expectations
 
