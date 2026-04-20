@@ -194,6 +194,35 @@ def dispatch_http_request(
 
     if normalized_path.startswith("/api/v1/users/"):
         try:
+            route = _parse_personal_document_action_path(normalized_path)
+        except ValueError:
+            route = None
+        if route is not None:
+            if normalized_method != "POST":
+                return _method_not_allowed(request_id, allowed="POST")
+            try:
+                payload = _parse_json_object(body)
+                _coerce_path_field(payload, "tenant_id", route["tenant_id"])
+                _coerce_path_field(payload, "user_id", route["user_id"])
+                if route["action"] in {"summarize-wiki", "rewrite-wiki", "structure-wiki"}:
+                    source_document_ref = payload.get("source_document_ref")
+                    if source_document_ref is None:
+                        source_document_ref = {}
+                        payload["source_document_ref"] = source_document_ref
+                    if not isinstance(source_document_ref, dict):
+                        raise ValueError("Field 'source_document_ref' must be an object.")
+                    _coerce_path_field(source_document_ref, "document_id", route["document_id"])
+                else:
+                    _coerce_path_field(payload, "wiki_document_id", route["document_id"])
+                return _call_tool(
+                    server,
+                    request_id=request_id,
+                    tool_name=_personal_document_action_tool_name(route["action"]),
+                    arguments=payload,
+                )
+            except Exception as exc:
+                return _tool_error_response(request_id, exc)
+        try:
             parts = [unquote(part).strip() for part in normalized_path.removeprefix("/api/v1/users/").split("/") if part.strip()]
             if len(parts) < 3:
                 raise ValueError("users path must include tenant_id, user_id, and resource path.")
@@ -662,6 +691,35 @@ def _required_query_value(query: Mapping[str, list[str]], key: str) -> str:
     if value is None:
         raise ValueError(f"Query parameter {key!r} is required.")
     return value
+
+
+def _parse_personal_document_action_path(path: str) -> dict[str, str]:
+    parts = [unquote(part).strip() for part in path.split("/") if part.strip()]
+    if len(parts) != 8:
+        raise ValueError("personal document action path must include exactly eight non-empty path parts.")
+    if parts[:3] != ["api", "v1", "users"]:
+        raise ValueError("personal document action path must start with /api/v1/users.")
+    if parts[5] != "personal-documents":
+        raise ValueError("personal document action path must include personal-documents.")
+    return {
+        "tenant_id": parts[3],
+        "user_id": parts[4],
+        "document_id": parts[6],
+        "action": parts[7],
+    }
+
+
+def _personal_document_action_tool_name(action: str) -> str:
+    mapping = {
+        "summarize-wiki": "summarize_personal_document_to_wiki",
+        "rewrite-wiki": "rewrite_personal_document_to_wiki",
+        "structure-wiki": "structure_personal_document_to_wiki",
+        "suggest-links": "suggest_personal_wiki_links",
+        "attach-links": "attach_personal_wiki_links",
+    }
+    if action not in mapping:
+        raise ValueError(f"Unsupported personal document action: {action}")
+    return mapping[action]
 
 
 def _split_two_path_parts(raw: str, *, label: str) -> tuple[str, str]:

@@ -162,6 +162,66 @@ class FakeHttpServer:
                 },
             ),
             ToolDefinition(
+                name="summarize_personal_document_to_wiki",
+                group="personal",
+                status="mvp",
+                description="Summarize one Personal raw document into a Personal wiki document.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "tenant_id", "user_id", "source_document_ref", "profile_version", "model_profile", "save_target"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="rewrite_personal_document_to_wiki",
+                group="personal",
+                status="mvp",
+                description="Rewrite one Personal raw document into a Personal wiki document.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "tenant_id", "user_id", "source_document_ref", "profile_version", "model_profile", "save_target"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="structure_personal_document_to_wiki",
+                group="personal",
+                status="mvp",
+                description="Structure one Personal raw document into a Personal wiki document.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "tenant_id", "user_id", "source_document_ref", "profile_version", "model_profile", "save_target"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="suggest_personal_wiki_links",
+                group="personal",
+                status="mvp",
+                description="Suggest links for one Personal wiki document.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "tenant_id", "user_id", "wiki_document_id", "wiki_document_version", "profile_version", "model_profile"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="attach_personal_wiki_links",
+                group="personal",
+                status="mvp",
+                description="Attach links to one Personal wiki document.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": ["domain", "tenant_id", "user_id", "wiki_document_id", "wiki_document_version", "attachments"],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
                 name="build_interpretation_snapshot",
                 group="interpretation",
                 status="mvp",
@@ -438,6 +498,37 @@ class FakeHttpServer:
             document["version"] += 1
             document["updated_at"] = "2026-04-20T00:10:00Z"
             return {"status": "ok", "document": dict(document)}
+        if name in {
+            "summarize_personal_document_to_wiki",
+            "rewrite_personal_document_to_wiki",
+            "structure_personal_document_to_wiki",
+        }:
+            source_document_ref = payload.get("source_document_ref")
+            if not isinstance(source_document_ref, dict):
+                raise ValueError("source_document_ref is required")
+            return {
+                "status": "ok",
+                "document": {
+                    "document_id": "personal:wiki:1",
+                    "subspace": "wiki",
+                    "version": 1,
+                    "source_document_ref": dict(source_document_ref),
+                },
+            }
+        if name == "suggest_personal_wiki_links":
+            return {
+                "status": "ok",
+                "wiki_document_id": payload.get("wiki_document_id"),
+                "wiki_document_version": payload.get("wiki_document_version"),
+                "suggestions": [{"layer": "fact", "id": "fact:job:1"}],
+            }
+        if name == "attach_personal_wiki_links":
+            return {
+                "status": "ok",
+                "wiki_document_id": payload.get("wiki_document_id"),
+                "wiki_document_version": int(payload.get("wiki_document_version") or 0) + 1,
+                "attachments": list(payload.get("attachments") or []),
+            }
         if name == "register_personal_asset":
             domain = payload.get("domain")
             tenant_id = payload.get("tenant_id")
@@ -809,6 +900,98 @@ def test_http_runtime_personal_query_maps_missing_profile_and_profile_mismatch()
     assert mismatched_profile.status_code == 422
     assert mismatched_profile.payload["ok"] is False
     assert mismatched_profile.payload["error"]["code"] == "validation_error"
+
+
+def test_http_runtime_exposes_personal_raw_to_wiki_action_endpoints() -> None:
+    fake_server = FakeHttpServer()
+
+    summarize_response = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-1/user-1/personal-documents/personal%3Araw%3A1/summarize-wiki",
+        headers={"X-Request-Id": "req-summarize"},
+        body=(
+            b'{"domain":"recruiting","profile_version":"profile:v1","model_profile":"balanced_default",'
+            b'"source_document_ref":{"subspace":"raw","version":4,"kind":"raw_document","asset_refs":["asset:1"]},'
+            b'"save_target":{"subspace":"wiki"},"summary_style":"concise"}'
+        ),
+    )
+    suggest_response = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-1/user-1/personal-documents/personal%3Awiki%3A1/suggest-links",
+        headers={"X-Request-Id": "req-suggest"},
+        body=(
+            b'{"domain":"recruiting","profile_version":"profile:v1","model_profile":"balanced_default",'
+            b'"wiki_document_version":3,"max_suggestions":5}'
+        ),
+    )
+    attach_response = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-1/user-1/personal-documents/personal%3Awiki%3A1/attach-links",
+        headers={"X-Request-Id": "req-attach"},
+        body=(
+            b'{"domain":"recruiting","wiki_document_version":3,'
+            b'"attachments":[{"layer":"fact","id":"fact:job:1"}]}'
+        ),
+    )
+
+    assert summarize_response.status_code == 200
+    assert summarize_response.payload["result"]["document"]["source_document_ref"]["document_id"] == "personal:raw:1"
+
+    assert suggest_response.status_code == 200
+    assert suggest_response.payload["result"]["wiki_document_id"] == "personal:wiki:1"
+    assert suggest_response.payload["result"]["wiki_document_version"] == 3
+
+    assert attach_response.status_code == 200
+    assert attach_response.payload["result"]["wiki_document_version"] == 4
+
+    assert fake_server.calls[-3:] == [
+        (
+            "summarize_personal_document_to_wiki",
+            {
+                "domain": "recruiting",
+                "profile_version": "profile:v1",
+                "model_profile": "balanced_default",
+                "source_document_ref": {
+                    "document_id": "personal:raw:1",
+                    "subspace": "raw",
+                    "version": 4,
+                    "kind": "raw_document",
+                    "asset_refs": ["asset:1"],
+                },
+                "save_target": {"subspace": "wiki"},
+                "summary_style": "concise",
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+            },
+        ),
+        (
+            "suggest_personal_wiki_links",
+            {
+                "domain": "recruiting",
+                "profile_version": "profile:v1",
+                "model_profile": "balanced_default",
+                "wiki_document_version": 3,
+                "max_suggestions": 5,
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+                "wiki_document_id": "personal:wiki:1",
+            },
+        ),
+        (
+            "attach_personal_wiki_links",
+            {
+                "domain": "recruiting",
+                "wiki_document_version": 3,
+                "attachments": [{"layer": "fact", "id": "fact:job:1"}],
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+                "wiki_document_id": "personal:wiki:1",
+            },
+        ),
+    ]
 
 
 def test_http_runtime_exposes_personal_document_crud_endpoints() -> None:

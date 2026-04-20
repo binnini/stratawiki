@@ -401,6 +401,148 @@ def _tool_definitions() -> list[ToolDefinition]:
             },
         ),
         ToolDefinition(
+            name="summarize_personal_document_to_wiki",
+            group="personal",
+            status="mvp",
+            description="Summarize one Personal raw document into a persisted Personal wiki document.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": [
+                    "domain",
+                    "tenant_id",
+                    "user_id",
+                    "source_document_ref",
+                    "profile_version",
+                    "model_profile",
+                    "save_target",
+                ],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "source_document_ref": {"type": "object"},
+                    "profile_version": {"type": "string"},
+                    "model_profile": {"type": "string"},
+                    "save_target": {"type": "object"},
+                    "summary_style": {"type": "string"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="rewrite_personal_document_to_wiki",
+            group="personal",
+            status="mvp",
+            description="Rewrite one Personal raw document into a persisted Personal wiki document.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": [
+                    "domain",
+                    "tenant_id",
+                    "user_id",
+                    "source_document_ref",
+                    "profile_version",
+                    "model_profile",
+                    "save_target",
+                ],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "source_document_ref": {"type": "object"},
+                    "profile_version": {"type": "string"},
+                    "model_profile": {"type": "string"},
+                    "save_target": {"type": "object"},
+                    "rewrite_goal": {"type": "string"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="structure_personal_document_to_wiki",
+            group="personal",
+            status="mvp",
+            description="Structure one Personal raw document into a persisted Personal wiki document.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": [
+                    "domain",
+                    "tenant_id",
+                    "user_id",
+                    "source_document_ref",
+                    "profile_version",
+                    "model_profile",
+                    "save_target",
+                ],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "source_document_ref": {"type": "object"},
+                    "profile_version": {"type": "string"},
+                    "model_profile": {"type": "string"},
+                    "save_target": {"type": "object"},
+                    "structure_template": {"type": "string"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="suggest_personal_wiki_links",
+            group="personal",
+            status="mvp",
+            description="Suggest non-persisted shared links for one Personal wiki document.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": [
+                    "domain",
+                    "tenant_id",
+                    "user_id",
+                    "wiki_document_id",
+                    "wiki_document_version",
+                    "profile_version",
+                    "model_profile",
+                ],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "wiki_document_id": {"type": "string"},
+                    "wiki_document_version": {"type": "integer"},
+                    "profile_version": {"type": "string"},
+                    "model_profile": {"type": "string"},
+                    "max_suggestions": {"type": "integer"},
+                },
+            },
+        ),
+        ToolDefinition(
+            name="attach_personal_wiki_links",
+            group="personal",
+            status="mvp",
+            description="Persist selected shared links onto one Personal wiki document.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": [
+                    "domain",
+                    "tenant_id",
+                    "user_id",
+                    "wiki_document_id",
+                    "wiki_document_version",
+                    "attachments",
+                ],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "wiki_document_id": {"type": "string"},
+                    "wiki_document_version": {"type": "integer"},
+                    "attachments": {"type": "array"},
+                },
+            },
+        ),
+        ToolDefinition(
             name="get_snapshot_status",
             group="snapshot",
             status="mvp",
@@ -555,6 +697,16 @@ class StrataWikiServer:
             return self._update_personal_document(args)
         if name == "delete_personal_document":
             return self._delete_personal_document(args)
+        if name == "summarize_personal_document_to_wiki":
+            return self._summarize_personal_document_to_wiki(args)
+        if name == "rewrite_personal_document_to_wiki":
+            return self._rewrite_personal_document_to_wiki(args)
+        if name == "structure_personal_document_to_wiki":
+            return self._structure_personal_document_to_wiki(args)
+        if name == "suggest_personal_wiki_links":
+            return self._suggest_personal_wiki_links(args)
+        if name == "attach_personal_wiki_links":
+            return self._attach_personal_wiki_links(args)
         if name == "get_snapshot_status":
             return self._get_snapshot_status(args)
         if name == "get_cache_status":
@@ -1029,6 +1181,80 @@ class StrataWikiServer:
             document_id=self._required_string(arguments, "document_id"),
             if_version=self._required_positive_int(arguments, "if_version"),
         )
+
+    def _summarize_personal_document_to_wiki(self, arguments: dict[str, object]) -> dict[str, object]:
+        service = self._personal_document_generation_service()
+        return service.summarize_personal_document_to_wiki(
+            domain=self._required_string(arguments, "domain"),
+            scope_ref=self._user_scope_ref(arguments),
+            source_document_ref=self._required_object(arguments, "source_document_ref"),
+            profile_version=self._required_string(arguments, "profile_version"),
+            model_profile=self._required_string(arguments, "model_profile"),
+            save_target=self._required_object(arguments, "save_target"),
+            summary_style=self._optional_string(arguments, "summary_style") or "concise",
+        )
+
+    def _rewrite_personal_document_to_wiki(self, arguments: dict[str, object]) -> dict[str, object]:
+        service = self._personal_document_generation_service()
+        return service.rewrite_personal_document_to_wiki(
+            domain=self._required_string(arguments, "domain"),
+            scope_ref=self._user_scope_ref(arguments),
+            source_document_ref=self._required_object(arguments, "source_document_ref"),
+            profile_version=self._required_string(arguments, "profile_version"),
+            model_profile=self._required_string(arguments, "model_profile"),
+            save_target=self._required_object(arguments, "save_target"),
+            rewrite_goal=self._optional_string(arguments, "rewrite_goal") or "general",
+        )
+
+    def _structure_personal_document_to_wiki(self, arguments: dict[str, object]) -> dict[str, object]:
+        service = self._personal_document_generation_service()
+        return service.structure_personal_document_to_wiki(
+            domain=self._required_string(arguments, "domain"),
+            scope_ref=self._user_scope_ref(arguments),
+            source_document_ref=self._required_object(arguments, "source_document_ref"),
+            profile_version=self._required_string(arguments, "profile_version"),
+            model_profile=self._required_string(arguments, "model_profile"),
+            save_target=self._required_object(arguments, "save_target"),
+            structure_template=self._optional_string(arguments, "structure_template") or "default",
+        )
+
+    def _suggest_personal_wiki_links(self, arguments: dict[str, object]) -> dict[str, object]:
+        service = self._personal_document_generation_service()
+        return service.suggest_personal_wiki_links(
+            domain=self._required_string(arguments, "domain"),
+            scope_ref=self._user_scope_ref(arguments),
+            wiki_document_id=self._required_string(arguments, "wiki_document_id"),
+            wiki_document_version=self._required_int(arguments, "wiki_document_version"),
+            profile_version=self._required_string(arguments, "profile_version"),
+            model_profile=self._required_string(arguments, "model_profile"),
+            max_suggestions=self._optional_limit(arguments, default=10, field="max_suggestions"),
+        )
+
+    def _attach_personal_wiki_links(self, arguments: dict[str, object]) -> dict[str, object]:
+        service = self._personal_document_generation_service()
+        attachments = arguments.get("attachments")
+        if not isinstance(attachments, list):
+            raise ValueError("attachments must be a list.")
+        return service.attach_personal_wiki_links(
+            domain=self._required_string(arguments, "domain"),
+            scope_ref=self._user_scope_ref(arguments),
+            wiki_document_id=self._required_string(arguments, "wiki_document_id"),
+            wiki_document_version=self._required_int(arguments, "wiki_document_version"),
+            attachments=attachments,
+        )
+
+    def _personal_document_generation_service(self) -> Any:
+        service = self.bootstrap.personal_document_generation_service
+        if service is None:
+            raise ValueError("Personal document generation service is not configured.")
+        return service
+
+    def _user_scope_ref(self, arguments: dict[str, object]) -> dict[str, str]:
+        return {
+            "scope": "user",
+            "tenant_id": self._required_string(arguments, "tenant_id"),
+            "user_id": self._required_string(arguments, "user_id"),
+        }
 
     def _personal_query_snapshot_override(
         self,
@@ -2002,12 +2228,18 @@ class StrataWikiServer:
             )
         return normalized
 
-    def _optional_limit(self, arguments: dict[str, object], *, default: int) -> int:
-        value = arguments.get("limit")
+    def _optional_limit(
+        self,
+        arguments: dict[str, object],
+        *,
+        default: int,
+        field: str = "limit",
+    ) -> int:
+        value = arguments.get(field)
         if value is None:
             return default
         if not isinstance(value, int) or value <= 0:
-            raise ValueError("limit must be a positive integer when provided.")
+            raise ValueError(f"{field} must be a positive integer when provided.")
         return value
 
     def _required_string(
@@ -2026,6 +2258,18 @@ class StrataWikiServer:
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Missing required string argument: {key}")
         return value.strip()
+
+    def _required_object(self, arguments: dict[str, object], key: str) -> dict[str, object]:
+        value = arguments.get(key)
+        if not isinstance(value, dict):
+            raise ValueError(f"{key} must be an object.")
+        return value
+
+    def _required_int(self, arguments: dict[str, object], key: str) -> int:
+        value = arguments.get(key)
+        if not isinstance(value, int):
+            raise ValueError(f"{key} must be an integer.")
+        return value
 
     def _optional_string(self, arguments: dict[str, object], key: str) -> str | None:
         value = arguments.get(key)

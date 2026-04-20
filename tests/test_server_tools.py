@@ -20,6 +20,7 @@ from wiki_mcp.services import (
     InterpretationQueryService,
     InterpretationRenderingService,
     PersonalDocumentService,
+    PersonalDocumentGenerationService,
     PersonalKnowledgeQueryService,
     PersonalQueryOrchestrator,
 )
@@ -408,6 +409,7 @@ class FakeBootstrap:
     personal_query_orchestrator: Any
     personal_query_service: Any
     personal_document_service: Any
+    personal_document_generation_service: Any
     interpretation_family_registry: Any
     interpretation_proposal_service: Any
     interpretation_publication_service: Any
@@ -641,6 +643,15 @@ def build_fake_server(tmp_path: Path, *, profile_seeded: bool = True) -> StrataW
         snapshot_repository=snapshot_repository,
         rendering_repository=rendering_repository,
     )
+    personal_document_generation_service = PersonalDocumentGenerationService(
+        llm_gateway=llm_gateway,
+        personal_repository=personal_repository,
+        rendering_repository=rendering_repository,
+        fact_repository=fact_repository,
+        interpretation_repository=interpretation_repository,
+        snapshot_repository=snapshot_repository,
+        profile_context_repository=profile_context_repository,
+    )
     family_registry = InterpretationFamilyRegistry(
         [MarketTrendInterpretationBuilder(llm_gateway=llm_gateway)]
     )
@@ -683,12 +694,87 @@ def build_fake_server(tmp_path: Path, *, profile_seeded: bool = True) -> StrataW
         personal_query_orchestrator=orchestrator,
         personal_query_service=personal_query_service,
         personal_document_service=personal_document_service,
+        personal_document_generation_service=personal_document_generation_service,
         interpretation_family_registry=family_registry,
         interpretation_proposal_service=proposal_service,
         interpretation_publication_service=publication_service,
         interpretation_query_service=query_service,
     )
     return StrataWikiServer(bootstrap=bootstrap)  # type: ignore[arg-type]
+
+
+def seed_personal_document(
+    server: StrataWikiServer,
+    tmp_path: Path,
+    *,
+    document_id: str,
+    subspace: str,
+    title: str,
+    body_markdown: str,
+    version: int,
+    kind: str,
+    anchors: list[dict[str, str]] | None = None,
+    asset_refs: list[str] | None = None,
+) -> None:
+    metadata = {
+        "document_id": document_id,
+        "domain": "recruiting",
+        "subspace": subspace,
+        "kind": kind,
+        "version": version,
+        "title": title,
+        "summary": title,
+        "profile_version": "profile:v1",
+        "asset_refs": list(asset_refs or []),
+        "anchors": list(anchors or []),
+    }
+    path = f"wiki/users/user-1/documents/{subspace}/{document_id}.md"
+    rendered_body = (
+        "<!-- stratawiki:personal_document\n"
+        + json.dumps(metadata, ensure_ascii=True, indent=2, sort_keys=True)
+        + "\n-->\n\n"
+        + body_markdown.rstrip()
+        + "\n"
+    )
+    rendering_repository = server.bootstrap.rendering_repository
+    rendering_repository.write_artifact(
+        {
+            "domain": "recruiting",
+            "layer": "personal",
+            "record_id": document_id,
+            "path": path,
+            "title": title,
+            "body_markdown": rendered_body,
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "snapshot_ref": {
+                "fact_snapshot_id": "fact_snap:seed",
+                "interpretation_snapshot_id": "interp_snap:seed",
+                "profile_version": "profile:v1",
+            },
+        }
+    )
+    server.bootstrap.personal_repository.save_record(
+        {
+            "id": document_id,
+            "layer": "personal",
+            "domain": "recruiting",
+            "kind": kind,
+            "title": title,
+            "summary": title,
+            "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+            "snapshot_ref": {
+                "fact_snapshot_id": "fact_snap:seed",
+                "interpretation_snapshot_id": "interp_snap:seed",
+                "profile_version": "profile:v1",
+            },
+            "profile_version": "profile:v1",
+            "body_path": path,
+            "anchors": list(anchors or []),
+            "status": "active",
+            "schema_version": "personal_document.v1",
+            "provenance": {"generated_by": {"kind": "user"}},
+        }
+    )
 
 
 def test_server_lists_mvp_tools(tmp_path: Path) -> None:
@@ -708,12 +794,18 @@ def test_server_lists_mvp_tools(tmp_path: Path) -> None:
         "publish_interpretation_partition",
         "get_interpretation_proposal_status",
         "upsert_profile_context",
+        "register_personal_asset",
         "query_personal_knowledge",
         "list_personal_documents",
         "get_personal_document",
         "create_personal_document",
         "update_personal_document",
         "delete_personal_document",
+        "summarize_personal_document_to_wiki",
+        "rewrite_personal_document_to_wiki",
+        "structure_personal_document_to_wiki",
+        "suggest_personal_wiki_links",
+        "attach_personal_wiki_links",
         "get_snapshot_status",
         "get_cache_status",
         "get_graph_neighbors",
@@ -762,6 +854,159 @@ def test_server_fact_and_personal_tools_work_on_happy_path(tmp_path: Path) -> No
     assert answer["interpretation_records_used"] == ["interp:published:1"]
     assert answer["fact_records_used"] == ["fact:job:1"]
     assert answer["provenance"]["profile_version"] == "profile:v1"
+
+
+def test_server_personal_raw_to_wiki_generation_and_link_actions(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+    seed_personal_document(
+        server,
+        tmp_path,
+        document_id="personal:raw:1",
+        subspace="raw",
+        title="Backend prep notes",
+        body_markdown="# Backend prep notes\n\nTarget role is backend engineer in Japan.",
+        version=4,
+        kind="raw_document",
+        anchors=[
+            {"layer": "interpretation", "id": "interp:published:1"},
+            {"layer": "fact", "id": "fact:job:1"},
+        ],
+        asset_refs=["asset:resume:1"],
+    )
+
+    generated = server.call_tool(
+        "summarize_personal_document_to_wiki",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "source_document_ref": {
+                "document_id": "personal:raw:1",
+                "subspace": "raw",
+                "version": 4,
+                "kind": "raw_document",
+                "asset_refs": ["asset:resume:1"],
+            },
+            "profile_version": "profile:v1",
+            "model_profile": "balanced_default",
+            "summary_style": "concise",
+            "save_target": {"subspace": "wiki"},
+        },
+    )
+
+    document = generated["document"]
+    wiki_document_id = document["document_id"]
+    assert generated["status"] == "ok"
+    assert document["subspace"] == "wiki"
+    assert document["kind"] == "wiki_summary"
+    assert document["version"] == 1
+    assert document["source_document_ref"]["document_id"] == "personal:raw:1"
+    assert document["provenance"]["source_ids"] == [
+        "personal_document:personal:raw:1",
+        "personal_asset:asset:resume:1",
+    ]
+    assert document["anchors"] == [
+        {"layer": "interpretation", "id": "interp:published:1"},
+        {"layer": "fact", "id": "fact:job:1"},
+    ]
+
+    suggestions = server.call_tool(
+        "suggest_personal_wiki_links",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "wiki_document_id": wiki_document_id,
+            "wiki_document_version": 1,
+            "profile_version": "profile:v1",
+            "model_profile": "balanced_default",
+            "max_suggestions": 5,
+        },
+    )
+    assert suggestions["status"] == "ok"
+    assert suggestions["wiki_document_version"] == 1
+    stored_after_suggest = server.bootstrap.personal_repository.records[wiki_document_id]
+    assert stored_after_suggest["anchors"] == document["anchors"]
+
+    attached = server.call_tool(
+        "attach_personal_wiki_links",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "wiki_document_id": wiki_document_id,
+            "wiki_document_version": 1,
+            "attachments": [
+                {"layer": "interpretation", "id": "interp:published:1"},
+                {"layer": "fact", "id": "fact:job:1"},
+            ],
+        },
+    )
+    assert attached == {
+        "status": "ok",
+        "wiki_document_id": wiki_document_id,
+        "wiki_document_version": 2,
+        "attached": [
+            {"layer": "interpretation", "id": "interp:published:1"},
+            {"layer": "fact", "id": "fact:job:1"},
+        ],
+    }
+    stored_after_attach = server.bootstrap.personal_repository.records[wiki_document_id]
+    assert stored_after_attach["anchors"] == document["anchors"]
+
+
+def test_server_personal_raw_to_wiki_updates_existing_wiki_target(tmp_path: Path) -> None:
+    server = build_fake_server(tmp_path)
+    seed_personal_document(
+        server,
+        tmp_path,
+        document_id="personal:raw:2",
+        subspace="raw",
+        title="Company research",
+        body_markdown="# Company research\n\nToss backend product and hiring notes.",
+        version=2,
+        kind="raw_document",
+    )
+    seed_personal_document(
+        server,
+        tmp_path,
+        document_id="personal:wiki:existing",
+        subspace="wiki",
+        title="Existing wiki note",
+        body_markdown="# Existing wiki note\n\nOld content.",
+        version=3,
+        kind="wiki_note",
+        anchors=[{"layer": "fact", "id": "fact:job:1"}],
+    )
+
+    updated = server.call_tool(
+        "rewrite_personal_document_to_wiki",
+        {
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "source_document_ref": {
+                "document_id": "personal:raw:2",
+                "subspace": "raw",
+                "version": 2,
+                "kind": "raw_document",
+                "asset_refs": [],
+            },
+            "profile_version": "profile:v1",
+            "model_profile": "balanced_default",
+            "rewrite_goal": "job-prep",
+            "save_target": {
+                "subspace": "wiki",
+                "document_id": "personal:wiki:existing",
+                "version": 3,
+            },
+        },
+    )
+
+    assert updated["status"] == "ok"
+    assert updated["document"]["document_id"] == "personal:wiki:existing"
+    assert updated["document"]["version"] == 4
+    assert updated["document"]["kind"] == "wiki_note"
 
 
 def test_server_personal_query_accepts_explicit_snapshot_override(tmp_path: Path) -> None:

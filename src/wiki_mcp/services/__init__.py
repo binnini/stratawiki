@@ -33,6 +33,7 @@ from wiki_mcp.services.personal_assets import (
     PersonalAssetTemporarilyUnavailableError,
     PersonalAssetValidationError,
 )
+from wiki_mcp.services.personal_generation import PersonalDocumentGenerationService
 from wiki_mcp.services.interpretation_proposals import InterpretationProposalService
 from wiki_mcp.services.interpretation_publication import InterpretationPublicationService
 from wiki_mcp.services.interpretation_queries import InterpretationQueryService
@@ -62,6 +63,7 @@ __all__ = [
     "PersonalAssetRegistrationService",
     "PersonalAssetTemporarilyUnavailableError",
     "PersonalAssetValidationError",
+    "PersonalDocumentGenerationService",
     "PersonalKnowledgeQueryService",
     "PersonalQueryOrchestrator",
     "RuntimeContractError",

@@ -21,6 +21,7 @@ from wiki_mcp.services import (
     InterpretationQueryService,
     InterpretationRenderingService,
     PersonalDocumentService,
+    PersonalDocumentGenerationService,
     PersonalKnowledgeQueryService,
     PersonalAssetRegistrationService,
     PersonalQueryOrchestrator,
@@ -80,6 +81,7 @@ class BootstrapContext:
     personal_query_service: Any | None = None
     personal_document_service: Any | None = None
     personal_asset_registration_service: Any | None = None
+    personal_document_generation_service: Any | None = None
     interpretation_family_registry: Any | None = None
     interpretation_proposal_service: Any | None = None
     interpretation_publication_service: Any | None = None
@@ -157,6 +159,7 @@ def bootstrap_application(
                 asset_repository=runtime["personal_asset_repository"],
                 profile_context_repository=runtime["profile_context_repository"],
             ),
+            personal_document_generation_service=runtime.get("personal_document_generation_service"),
             interpretation_family_registry=runtime["interpretation_family_registry"],
             interpretation_proposal_service=runtime["interpretation_proposal_service"],
             interpretation_publication_service=runtime["interpretation_publication_service"],
@@ -227,6 +230,15 @@ def bootstrap_application(
         asset_repository=personal_asset_repository,
         profile_context_repository=profile_context_repository,
     )
+    personal_document_generation_service = PersonalDocumentGenerationService(
+        llm_gateway=llm_gateway,
+        personal_repository=personal_repository,
+        rendering_repository=rendering_repository,
+        fact_repository=fact_repository,
+        interpretation_repository=interpretation_repository,
+        snapshot_repository=snapshot_repository,
+        profile_context_repository=profile_context_repository,
+    )
     interpretation_family_registry = InterpretationFamilyRegistry(
         [MarketTrendInterpretationBuilder(llm_gateway=llm_gateway)]
     )
@@ -277,6 +289,7 @@ def bootstrap_application(
         personal_query_service=personal_query_service,
         personal_document_service=personal_document_service,
         personal_asset_registration_service=personal_asset_registration_service,
+        personal_document_generation_service=personal_document_generation_service,
         interpretation_family_registry=interpretation_family_registry,
         interpretation_proposal_service=interpretation_proposal_service,
         interpretation_publication_service=interpretation_publication_service,
