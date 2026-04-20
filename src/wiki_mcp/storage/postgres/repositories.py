@@ -20,11 +20,13 @@ from wiki_mcp.schemas.metadata_validation import (
     ensure_snapshot_ref,
 )
 from wiki_mcp.schemas.outbox_event import OutboxEvent, OutboxEventRecord
+from wiki_mcp.schemas.personal_asset import PersonalAssetRecord
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
 from wiki_mcp.storage.postgres.base import PostgresRepositoryBase, managed_cursor
+from wiki_mcp.services.personal_assets import PersonalAssetConflictError
 
 
 def _normalized_text_sql(*parts: str) -> str:
@@ -538,6 +540,140 @@ class PostgresFactRepository(PostgresRepositoryBase):
         if value is None:
             return {}
         return json.loads(value)
+
+
+class PostgresPersonalAssetRepository(PostgresRepositoryBase):
+    def create_record(self, record: PersonalAssetRecord) -> PersonalAssetRecord:
+        self._validate_personal_asset_record(record)
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                """
+                SELECT asset_id
+                FROM personal.asset
+                WHERE domain = %s
+                  AND tenant_id = %s
+                  AND user_id = %s
+                  AND identity_key = %s
+                LIMIT 1
+                """,
+                (
+                    record["domain"],
+                    record["tenant_id"],
+                    record["user_id"],
+                    record["identity_key"],
+                ),
+            )
+            existing = cursor.fetchone()
+            if existing is not None:
+                existing_row = self._row_to_dict(existing)
+                raise PersonalAssetConflictError(
+                    "Personal asset is already registered for this user scope.",
+                    details={"asset_id": existing_row["asset_id"]},
+                )
+
+            cursor.execute(
+                """
+                INSERT INTO personal.asset (
+                    asset_id,
+                    domain,
+                    tenant_id,
+                    user_id,
+                    asset_kind,
+                    media_type,
+                    filename,
+                    blob_sha256,
+                    size_bytes,
+                    storage_ref,
+                    identity_key,
+                    status,
+                    extraction_status,
+                    schema_version
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                RETURNING
+                    asset_id,
+                    domain,
+                    tenant_id,
+                    user_id,
+                    asset_kind,
+                    media_type,
+                    filename,
+                    blob_sha256,
+                    size_bytes,
+                    storage_ref,
+                    identity_key,
+                    status,
+                    extraction_status,
+                    schema_version,
+                    created_at,
+                    updated_at
+                """,
+                (
+                    record["asset_id"],
+                    record["domain"],
+                    record["tenant_id"],
+                    record["user_id"],
+                    record["asset_kind"],
+                    record["media_type"],
+                    record["filename"],
+                    record.get("blob_sha256"),
+                    record.get("size_bytes"),
+                    record["storage_ref"],
+                    record["identity_key"],
+                    record["status"],
+                    record["extraction_status"],
+                    record["schema_version"],
+                ),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            raise RuntimeError("Failed to persist personal asset registration.")
+        return self._row_to_personal_asset_record(row)
+
+    def _row_to_personal_asset_record(self, row: Any) -> PersonalAssetRecord:
+        data = self._row_to_dict(row)
+        return {
+            "asset_id": data["asset_id"],
+            "domain": data["domain"],
+            "tenant_id": data["tenant_id"],
+            "user_id": data["user_id"],
+            "asset_kind": data["asset_kind"],
+            "media_type": data["media_type"],
+            "filename": data["filename"],
+            "storage_ref": data["storage_ref"],
+            "identity_key": data["identity_key"],
+            "status": data["status"],
+            "extraction_status": data["extraction_status"],
+            "schema_version": data["schema_version"],
+            **({"blob_sha256": data["blob_sha256"]} if data.get("blob_sha256") else {}),
+            **({"size_bytes": int(data["size_bytes"])} if data.get("size_bytes") is not None else {}),
+            **({"created_at": str(data["created_at"])} if data.get("created_at") else {}),
+            **({"updated_at": str(data["updated_at"])} if data.get("updated_at") else {}),
+        }
+
+    def _validate_personal_asset_record(self, record: PersonalAssetRecord) -> None:
+        for field in (
+            "asset_id",
+            "domain",
+            "tenant_id",
+            "user_id",
+            "asset_kind",
+            "media_type",
+            "filename",
+            "storage_ref",
+            "identity_key",
+            "status",
+            "extraction_status",
+            "schema_version",
+        ):
+            ensure_non_empty_string(record.get(field), label=f"PersonalAssetRecord.{field}")
+        if "blob_sha256" in record:
+            ensure_non_empty_string(record.get("blob_sha256"), label="PersonalAssetRecord.blob_sha256")
+        if "size_bytes" in record:
+            size_bytes = record["size_bytes"]
+            if not isinstance(size_bytes, int) or size_bytes < 0:
+                raise ValueError("PersonalAssetRecord.size_bytes must be a non-negative integer.")
 
 
 class PostgresInterpretationRepository(PostgresRepositoryBase):

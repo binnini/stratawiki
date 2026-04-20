@@ -25,6 +25,14 @@ from wiki_mcp.services.personal_documents import (
     PersonalDocumentValidationError,
     RuntimeContractError,
 )
+from wiki_mcp.services.personal_assets import (
+    PersonalAssetConflictError,
+    PersonalAssetNotFoundError,
+    PersonalAssetRegistrationError,
+    PersonalAssetRegistrationService,
+    PersonalAssetTemporarilyUnavailableError,
+    PersonalAssetValidationError,
+)
 from wiki_mcp.services.interpretation_proposals import InterpretationProposalService
 from wiki_mcp.services.interpretation_publication import InterpretationPublicationService
 from wiki_mcp.services.interpretation_queries import InterpretationQueryService
@@ -48,6 +56,12 @@ __all__ = [
     "PersonalDocumentNotFoundError",
     "PersonalDocumentService",
     "PersonalDocumentValidationError",
+    "PersonalAssetConflictError",
+    "PersonalAssetNotFoundError",
+    "PersonalAssetRegistrationError",
+    "PersonalAssetRegistrationService",
+    "PersonalAssetTemporarilyUnavailableError",
+    "PersonalAssetValidationError",
     "PersonalKnowledgeQueryService",
     "PersonalQueryOrchestrator",
     "RuntimeContractError",

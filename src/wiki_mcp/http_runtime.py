@@ -15,6 +15,7 @@ from wiki_mcp.runtime_protocol import (
     show_tool_payload,
 )
 from wiki_mcp.server import StrataWikiServer
+from wiki_mcp.services import PersonalAssetRegistrationError
 
 
 API_VERSION = "v1"
@@ -158,6 +159,24 @@ def dispatch_http_request(
                 server,
                 request_id=request_id,
                 tool_name="upsert_profile_context",
+                arguments=payload,
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
+    if normalized_path.startswith("/api/v1/users/") and normalized_path.endswith("/personal-assets"):
+        if normalized_method != "POST":
+            return _method_not_allowed(request_id, allowed="POST")
+        suffix = normalized_path.removeprefix("/api/v1/users/").removesuffix("/personal-assets")
+        try:
+            tenant_id, user_id = _split_two_path_parts(suffix, label="personal asset path")
+            payload = _parse_json_object(body)
+            _coerce_path_field(payload, "tenant_id", tenant_id)
+            _coerce_path_field(payload, "user_id", user_id)
+            return _call_tool(
+                server,
+                request_id=request_id,
+                tool_name="register_personal_asset",
                 arguments=payload,
             )
         except Exception as exc:

@@ -34,6 +34,7 @@ from wiki_mcp.storage.memory import (
     InMemoryInterpretationRepository,
     InMemoryInterpretationPublicationRepository,
     InMemoryOutboxRepository,
+    InMemoryPersonalAssetRepository,
     InMemoryPersonalRepository,
     InMemoryProfileContextRepository,
     InMemorySnapshotRepository,
@@ -113,6 +114,7 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
     fact_repository = InMemoryFactRepository()
     interpretation_repository = InMemoryInterpretationRepository()
     personal_repository = InMemoryPersonalRepository()
+    personal_asset_repository = InMemoryPersonalAssetRepository()
     profile_context_repository = InMemoryProfileContextRepository(
         {
             (profile["domain"], profile["tenant_id"], profile["user_id"]): dict(profile)
@@ -193,6 +195,7 @@ def build_demo_runtime(*, render_root: str | Path, seed_path: str | Path | None 
         "interpretation_repository": interpretation_repository,
         "interpretation_publication_repository": interpretation_publication_repository,
         "personal_repository": personal_repository,
+        "personal_asset_repository": personal_asset_repository,
         "profile_context_repository": profile_context_repository,
         "snapshot_repository": snapshot_repository,
         "outbox_repository": outbox_repository,

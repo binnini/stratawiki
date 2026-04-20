@@ -9,6 +9,7 @@ from wiki_mcp.schemas.fact_relation import FactRelation
 from wiki_mcp.schemas.fact_write_result import FactWriteResult
 from wiki_mcp.schemas.interpretation_record import InterpretationRecord
 from wiki_mcp.schemas.outbox_event import OutboxEvent, OutboxEventRecord
+from wiki_mcp.schemas.personal_asset import PersonalAssetRecord
 from wiki_mcp.schemas.personal_record import PersonalRecord
 from wiki_mcp.schemas.profile_context import ProfileContext
 from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
@@ -144,6 +145,13 @@ class PersonalRepository(Protocol):
         limit: int = 20,
     ) -> list[PersonalRecord]:
         """List Personal records for one user scope in recency order."""
+
+
+class PersonalAssetRepository(Protocol):
+    """Persistence boundary for user-scoped Personal asset registrations."""
+
+    def create_record(self, record: PersonalAssetRecord) -> PersonalAssetRecord:
+        """Persist one Personal asset registration and return the stored record."""
 
 
 class ProfileContextRepository(Protocol):

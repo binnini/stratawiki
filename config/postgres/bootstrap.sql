@@ -134,6 +134,31 @@ CREATE TABLE IF NOT EXISTS personal.record (
 CREATE INDEX IF NOT EXISTS personal_record_scope_updated_idx
     ON personal.record (domain, tenant_id, user_id, updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS personal.asset (
+    asset_id TEXT PRIMARY KEY,
+    domain TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    asset_kind TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    blob_sha256 TEXT,
+    size_bytes BIGINT,
+    storage_ref TEXT NOT NULL,
+    identity_key TEXT NOT NULL,
+    status TEXT NOT NULL,
+    extraction_status TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS personal_asset_scope_identity_idx
+    ON personal.asset (domain, tenant_id, user_id, identity_key);
+
+CREATE INDEX IF NOT EXISTS personal_asset_scope_created_idx
+    ON personal.asset (domain, tenant_id, user_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS personal.profile_context (
     domain TEXT NOT NULL,
     tenant_id TEXT NOT NULL,

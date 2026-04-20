@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from wiki_mcp.storage.postgres.repositories import PostgresPersonalRepository
+import pytest
+
+from wiki_mcp.services.personal_assets import PersonalAssetConflictError
+from wiki_mcp.storage.postgres.repositories import (
+    PostgresPersonalAssetRepository,
+    PostgresPersonalRepository,
+)
 
 
 class FakeCursor:
@@ -250,3 +256,83 @@ def test_list_records_maps_document_version_metadata_from_provenance() -> None:
     assert "updated_at" in query
     assert isinstance(params, list)
     assert params[-1] == 10
+
+def test_create_personal_asset_record_persists_metadata() -> None:
+    cursor = FakeCursor(
+        [
+            {"fetchone": None},
+            {
+                "fetchone": {
+                    "asset_id": "passet_abc123",
+                    "domain": "recruiting",
+                    "tenant_id": "tenant-1",
+                    "user_id": "user-1",
+                    "asset_kind": "file",
+                    "media_type": "application/pdf",
+                    "filename": "resume.pdf",
+                    "blob_sha256": "sha256:abc123",
+                    "size_bytes": 248192,
+                    "storage_ref": "s3://bucket/resume.pdf",
+                    "identity_key": "recruiting:tenant-1:user-1:sha256:abc123",
+                    "status": "active",
+                    "extraction_status": "not_requested",
+                    "schema_version": "personal_asset.v1",
+                    "created_at": "2026-04-20T00:00:00Z",
+                    "updated_at": "2026-04-20T00:00:00Z",
+                }
+            },
+        ]
+    )
+    repository = PostgresPersonalAssetRepository(FakeConnection(cursor))
+
+    record = repository.create_record(
+        {
+            "asset_id": "passet_abc123",
+            "domain": "recruiting",
+            "tenant_id": "tenant-1",
+            "user_id": "user-1",
+            "asset_kind": "file",
+            "media_type": "application/pdf",
+            "filename": "resume.pdf",
+            "blob_sha256": "sha256:abc123",
+            "size_bytes": 248192,
+            "storage_ref": "s3://bucket/resume.pdf",
+            "identity_key": "recruiting:tenant-1:user-1:sha256:abc123",
+            "status": "active",
+            "extraction_status": "not_requested",
+            "schema_version": "personal_asset.v1",
+        }
+    )
+
+    assert record["asset_id"] == "passet_abc123"
+    assert record["storage_ref"] == "s3://bucket/resume.pdf"
+    assert "personal.asset" in cursor.executed[1][0]
+
+
+def test_create_personal_asset_record_reports_conflict_with_existing_asset_id() -> None:
+    cursor = FakeCursor(
+        [
+            {"fetchone": {"asset_id": "passet_existing"}},
+        ]
+    )
+    repository = PostgresPersonalAssetRepository(FakeConnection(cursor))
+
+    with pytest.raises(PersonalAssetConflictError) as exc_info:
+        repository.create_record(
+            {
+                "asset_id": "passet_new",
+                "domain": "recruiting",
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+                "asset_kind": "file",
+                "media_type": "application/pdf",
+                "filename": "resume.pdf",
+                "storage_ref": "s3://bucket/resume.pdf",
+                "identity_key": "recruiting:tenant-1:user-1:s3://bucket/resume.pdf",
+                "status": "active",
+                "extraction_status": "not_requested",
+                "schema_version": "personal_asset.v1",
+            }
+        )
+
+    assert exc_info.value.details["asset_id"] == "passet_existing"

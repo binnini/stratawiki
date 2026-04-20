@@ -3,6 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from wiki_mcp.http_runtime import dispatch_http_request
+from wiki_mcp.services import (
+    PersonalAssetConflictError,
+    PersonalAssetNotFoundError,
+    PersonalAssetValidationError,
+)
 from wiki_mcp.tools import ToolDefinition
 
 
@@ -11,6 +16,7 @@ class FakeHttpServer:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.profile_contexts: dict[tuple[str, str, str], dict[str, object]] = {}
         self.personal_documents: dict[tuple[str, str, str, str], dict[str, object]] = {}
+        self.personal_assets: dict[tuple[str, str, str, str], dict[str, object]] = {}
         self._tools = [
             ToolDefinition(
                 name="validate_domain_proposal_batch",
@@ -52,6 +58,26 @@ class FakeHttpServer:
                         "goals",
                         "preferences",
                         "attributes",
+                    ],
+                    "properties": {"domain": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="register_personal_asset",
+                group="personal",
+                status="mvp",
+                description="Register one personal asset.",
+                entrypoint="server.call_tool",
+                input_schema={
+                    "type": "object",
+                    "required": [
+                        "domain",
+                        "tenant_id",
+                        "user_id",
+                        "asset_kind",
+                        "media_type",
+                        "filename",
+                        "storage_ref",
                     ],
                     "properties": {"domain": {"type": "string"}},
                 },
@@ -412,6 +438,48 @@ class FakeHttpServer:
             document["version"] += 1
             document["updated_at"] = "2026-04-20T00:10:00Z"
             return {"status": "ok", "document": dict(document)}
+        if name == "register_personal_asset":
+            domain = payload.get("domain")
+            tenant_id = payload.get("tenant_id")
+            user_id = payload.get("user_id")
+            storage_ref = payload.get("storage_ref")
+            if not isinstance(domain, str) or not domain.strip():
+                raise PersonalAssetValidationError("domain is required")
+            if not isinstance(tenant_id, str) or not tenant_id.strip():
+                raise PersonalAssetValidationError("tenant_id is required")
+            if not isinstance(user_id, str) or not user_id.strip():
+                raise PersonalAssetValidationError("user_id is required")
+            if (domain, tenant_id, user_id) not in self.profile_contexts:
+                raise PersonalAssetNotFoundError(
+                    "Referenced user scope does not exist.",
+                    details={"domain": domain, "tenant_id": tenant_id, "user_id": user_id},
+                )
+            if not isinstance(storage_ref, str) or "://" not in storage_ref:
+                raise PersonalAssetValidationError(
+                    "storage_ref must be an absolute opaque locator.",
+                    details={"fields": [{"field": "storage_ref", "reason": "invalid_storage_ref"}]},
+                )
+            asset_key = (domain, tenant_id, user_id, storage_ref)
+            if asset_key in self.personal_assets:
+                existing = self.personal_assets[asset_key]
+                raise PersonalAssetConflictError(
+                    "Personal asset is already registered for this user scope.",
+                    details={"asset_id": existing["asset_id"]},
+                )
+            record = {
+                "asset_id": "passet_http_123",
+                "domain": domain,
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "asset_kind": payload.get("asset_kind"),
+                "media_type": payload.get("media_type"),
+                "filename": payload.get("filename"),
+                "storage_ref": storage_ref,
+                "status": "active",
+                "extraction_status": "not_requested",
+            }
+            self.personal_assets[asset_key] = record
+            return {"status": "ok", "asset_id": record["asset_id"], "asset": record}
         if name == "build_interpretation_snapshot":
             execution_mode = payload.get("execution_mode") or "inline"
             if execution_mode == "background":
@@ -980,6 +1048,72 @@ def test_http_runtime_maps_validation_and_lookup_errors() -> None:
     assert missing.status_code == 404
     assert missing.payload["ok"] is False
     assert missing.payload["error"]["code"] == "not_found"
+
+
+def test_http_runtime_registers_personal_asset_and_normalizes_errors() -> None:
+    fake_server = FakeHttpServer()
+    fake_server.profile_contexts[("recruiting", "tenant-a", "user-42")] = {
+        "domain": "recruiting",
+        "tenant_id": "tenant-a",
+        "user_id": "user-42",
+        "profile_version": "profile:v1",
+    }
+
+    success = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-a/user-42/personal-assets",
+        headers={},
+        body=(
+            b'{"domain":"recruiting","asset_kind":"file","media_type":"application/pdf",'
+            b'"filename":"resume.pdf","storage_ref":"s3://bucket/resume.pdf"}'
+        ),
+    )
+    conflict = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-a/user-42/personal-assets",
+        headers={},
+        body=(
+            b'{"domain":"recruiting","asset_kind":"file","media_type":"application/pdf",'
+            b'"filename":"resume.pdf","storage_ref":"s3://bucket/resume.pdf"}'
+        ),
+    )
+    invalid = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-a/user-42/personal-assets",
+        headers={},
+        body=(
+            b'{"domain":"recruiting","asset_kind":"file","media_type":"application/pdf",'
+            b'"filename":"resume.pdf","storage_ref":"relative/path.pdf"}'
+        ),
+    )
+    missing_scope = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-a/user-404/personal-assets",
+        headers={},
+        body=(
+            b'{"domain":"recruiting","asset_kind":"file","media_type":"application/pdf",'
+            b'"filename":"resume.pdf","storage_ref":"s3://bucket/missing.pdf"}'
+        ),
+    )
+
+    assert success.status_code == 200
+    assert success.payload["result"]["asset_id"] == "passet_http_123"
+    assert fake_server.calls[0][1]["tenant_id"] == "tenant-a"
+    assert fake_server.calls[0][1]["user_id"] == "user-42"
+
+    assert conflict.status_code == 409
+    assert conflict.payload["error"]["code"] == "conflict"
+    assert conflict.payload["error"]["details"]["asset_id"] == "passet_http_123"
+
+    assert invalid.status_code == 422
+    assert invalid.payload["error"]["code"] == "validation_error"
+
+    assert missing_scope.status_code == 404
+    assert missing_scope.payload["error"]["code"] == "not_found"
 
 
 def test_http_runtime_maps_internal_errors_and_method_mismatch() -> None:

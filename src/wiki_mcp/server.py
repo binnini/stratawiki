@@ -225,6 +225,36 @@ def _tool_definitions() -> list[ToolDefinition]:
             },
         ),
         ToolDefinition(
+            name="register_personal_asset",
+            group="personal",
+            status="mvp",
+            description="Register one Personal-layer binary asset and return a stable asset_id.",
+            entrypoint="server.call_tool",
+            input_schema={
+                "type": "object",
+                "required": [
+                    "domain",
+                    "tenant_id",
+                    "user_id",
+                    "asset_kind",
+                    "media_type",
+                    "filename",
+                    "storage_ref",
+                ],
+                "properties": {
+                    "domain": {"type": "string"},
+                    "tenant_id": {"type": "string"},
+                    "user_id": {"type": "string"},
+                    "asset_kind": {"type": "string"},
+                    "media_type": {"type": "string"},
+                    "filename": {"type": "string"},
+                    "blob_sha256": {"type": "string"},
+                    "size_bytes": {"type": "integer"},
+                    "storage_ref": {"type": "string"},
+                },
+            },
+        ),
+        ToolDefinition(
             name="query_personal_knowledge",
             group="personal",
             status="mvp",
@@ -511,6 +541,8 @@ class StrataWikiServer:
             return self._get_interpretation_proposal_status(args)
         if name == "upsert_profile_context":
             return self._upsert_profile_context(args)
+        if name == "register_personal_asset":
+            return self._register_personal_asset(args)
         if name == "query_personal_knowledge":
             return self._query_personal_knowledge(args)
         if name == "list_personal_documents":
@@ -900,6 +932,12 @@ class StrataWikiServer:
             "status": "ok",
             "profile_context": profile_context,
         }
+
+    def _register_personal_asset(self, arguments: dict[str, object]) -> dict[str, object]:
+        service = self.bootstrap.personal_asset_registration_service
+        if service is None:
+            raise ValueError("Personal asset registration service is not configured.")
+        return service.register_personal_asset(arguments)
 
     def _query_personal_knowledge(self, arguments: dict[str, object]) -> dict[str, object]:
         domain = self._required_string(arguments, "domain")

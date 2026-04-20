@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from wiki_mcp.schemas.domain_pack_review import DomainPackApprovalAuditRecord
+from wiki_mcp.services.personal_assets import PersonalAssetConflictError
 
 
 def _matches_text(query_text: str, query_tokens: list[str], *parts: object) -> bool:
@@ -332,6 +333,29 @@ class InMemoryPersonalRepository:
     def save_record(self, record: dict[str, Any]) -> str:
         self.records[record["id"]] = dict(record)
         return str(record["id"])
+
+
+@dataclass
+class InMemoryPersonalAssetRepository:
+    records: dict[str, dict[str, Any]] = field(default_factory=dict)
+    identity_to_asset_id: dict[str, str] = field(default_factory=dict)
+
+    def create_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        asset_id = str(record["asset_id"])
+        identity_key = str(record["identity_key"])
+        existing_id = self.identity_to_asset_id.get(identity_key)
+        if existing_id is not None:
+            raise PersonalAssetConflictError(
+                "Personal asset is already registered for this user scope.",
+                details={"asset_id": existing_id},
+            )
+        stored = dict(record)
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        stored["created_at"] = stored.get("created_at") or now
+        stored["updated_at"] = stored.get("updated_at") or stored["created_at"]
+        self.records[asset_id] = stored
+        self.identity_to_asset_id[identity_key] = asset_id
+        return dict(stored)
 
 
 @dataclass

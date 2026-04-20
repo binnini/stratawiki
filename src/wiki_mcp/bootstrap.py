@@ -22,6 +22,7 @@ from wiki_mcp.services import (
     InterpretationRenderingService,
     PersonalDocumentService,
     PersonalKnowledgeQueryService,
+    PersonalAssetRegistrationService,
     PersonalQueryOrchestrator,
 )
 from wiki_mcp.services.core_ingestion import DefaultCoreIngestionService
@@ -40,6 +41,7 @@ from wiki_mcp.storage.postgres.repositories import (
     PostgresInterpretationPublicationRepository,
     PostgresInterpretationRepository,
     PostgresOutboxRepository,
+    PostgresPersonalAssetRepository,
     PostgresPersonalRepository,
     PostgresProfileContextRepository,
     PostgresSnapshotRepository,
@@ -59,6 +61,7 @@ class BootstrapContext:
     interpretation_repository: Any | None = None
     interpretation_publication_repository: Any | None = None
     personal_repository: Any | None = None
+    personal_asset_repository: Any | None = None
     profile_context_repository: Any | None = None
     snapshot_repository: Any | None = None
     outbox_repository: Any | None = None
@@ -76,6 +79,7 @@ class BootstrapContext:
     personal_query_orchestrator: Any | None = None
     personal_query_service: Any | None = None
     personal_document_service: Any | None = None
+    personal_asset_registration_service: Any | None = None
     interpretation_family_registry: Any | None = None
     interpretation_proposal_service: Any | None = None
     interpretation_publication_service: Any | None = None
@@ -131,6 +135,7 @@ def bootstrap_application(
             interpretation_repository=runtime["interpretation_repository"],
             interpretation_publication_repository=runtime["interpretation_publication_repository"],
             personal_repository=runtime["personal_repository"],
+            personal_asset_repository=runtime["personal_asset_repository"],
             profile_context_repository=runtime["profile_context_repository"],
             snapshot_repository=runtime["snapshot_repository"],
             outbox_repository=runtime["outbox_repository"],
@@ -148,6 +153,10 @@ def bootstrap_application(
             personal_query_orchestrator=runtime["personal_query_orchestrator"],
             personal_query_service=runtime["personal_query_service"],
             personal_document_service=runtime["personal_document_service"],
+            personal_asset_registration_service=PersonalAssetRegistrationService(
+                asset_repository=runtime["personal_asset_repository"],
+                profile_context_repository=runtime["profile_context_repository"],
+            ),
             interpretation_family_registry=runtime["interpretation_family_registry"],
             interpretation_proposal_service=runtime["interpretation_proposal_service"],
             interpretation_publication_service=runtime["interpretation_publication_service"],
@@ -160,6 +169,7 @@ def bootstrap_application(
     interpretation_repository = PostgresInterpretationRepository(resolved_connection)
     interpretation_publication_repository = PostgresInterpretationPublicationRepository(resolved_connection)
     personal_repository = PostgresPersonalRepository(resolved_connection)
+    personal_asset_repository = PostgresPersonalAssetRepository(resolved_connection)
     profile_context_repository = PostgresProfileContextRepository(resolved_connection)
     snapshot_repository = PostgresSnapshotRepository(resolved_connection)
     outbox_repository = PostgresOutboxRepository(resolved_connection)
@@ -213,6 +223,10 @@ def bootstrap_application(
         snapshot_repository=snapshot_repository,
         rendering_repository=rendering_repository,
     )
+    personal_asset_registration_service = PersonalAssetRegistrationService(
+        asset_repository=personal_asset_repository,
+        profile_context_repository=profile_context_repository,
+    )
     interpretation_family_registry = InterpretationFamilyRegistry(
         [MarketTrendInterpretationBuilder(llm_gateway=llm_gateway)]
     )
@@ -244,6 +258,7 @@ def bootstrap_application(
         interpretation_repository=interpretation_repository,
         interpretation_publication_repository=interpretation_publication_repository,
         personal_repository=personal_repository,
+        personal_asset_repository=personal_asset_repository,
         profile_context_repository=profile_context_repository,
         snapshot_repository=snapshot_repository,
         outbox_repository=outbox_repository,
@@ -261,6 +276,7 @@ def bootstrap_application(
         personal_query_orchestrator=personal_query_orchestrator,
         personal_query_service=personal_query_service,
         personal_document_service=personal_document_service,
+        personal_asset_registration_service=personal_asset_registration_service,
         interpretation_family_registry=interpretation_family_registry,
         interpretation_proposal_service=interpretation_proposal_service,
         interpretation_publication_service=interpretation_publication_service,
