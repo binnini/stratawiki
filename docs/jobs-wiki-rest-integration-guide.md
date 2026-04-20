@@ -145,6 +145,23 @@ Recommended condition before removing the wrapper path:
 2. `POST /api/v1/personal-queries` with the same `profile_version`
 3. prefer `save=false` in the first migration stage unless persistence is explicitly required
 
+### Personal Document Authoring Sequence
+
+For workspace-first document authoring:
+
+1. create or identify the user scope
+2. if the user selected a PDF or other binary file, upload it through the Jobs-Wiki-owned transport path
+3. register the uploaded file in StrataWiki through `POST /api/v1/users/{tenant_id}/{user_id}/personal-assets`
+4. create or update a Personal document through `POST/PATCH /api/v1/users/{tenant_id}/{user_id}/personal-documents`
+5. if the user requests LLM rewriting, call `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/generate-wiki`
+6. if the user requests relation or anchor enrichment, call `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/link`
+
+Rules:
+
+- shared rendered pages stay read-only
+- Personal CRUD targets only user-scoped documents
+- generated wiki output stays in Personal and does not promote into shared layers
+
 ### Interpretation Build Sequence
 
 1. `POST /api/v1/interpretation-builds`
@@ -172,3 +189,5 @@ Jobs-Wiki should not do these things yet:
 - use the new HTTP profile and Personal endpoints rather than the generic `/api/v1/tool-calls` bridge for these flows
 - keep profile sync before Personal query
 - use the dedicated HTTP interpretation and status endpoints rather than the generic `/api/v1/tool-calls` bridge for these flows
+- use the Personal document and Personal asset endpoints for workspace authoring once implemented
+- keep binary upload transport separate from StrataWiki resource authority in the first wave

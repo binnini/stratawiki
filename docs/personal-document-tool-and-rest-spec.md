@@ -366,6 +366,27 @@ This endpoint is read-only.
 }
 ```
 
+### Update Personal Document
+
+```json
+{
+  "domain": "recruiting",
+  "title": "Preparation notes revised",
+  "body_markdown": "## Revised notes\n- tighten backend examples\n- map shared trend note to my portfolio"
+}
+```
+
+### Register Personal Asset
+
+```json
+{
+  "domain": "recruiting",
+  "media_type": "application/pdf",
+  "filename": "backend-resume.pdf",
+  "storage_ref": "s3://jobs-wiki-user-assets/user-42/backend-resume.pdf"
+}
+```
+
 ### Generate Wiki
 
 ```json
@@ -373,6 +394,16 @@ This endpoint is read-only.
   "domain": "recruiting",
   "mode": "rewrite",
   "profile_version": "profile_v7",
+  "model_profile": "balanced_default"
+}
+```
+
+### Link Personal Document
+
+```json
+{
+  "domain": "recruiting",
+  "mode": "suggest",
   "model_profile": "balanced_default"
 }
 ```
@@ -396,6 +427,35 @@ Recommended document response envelope:
 }
 ```
 
+Recommended list response envelope:
+
+```json
+{
+  "ok": true,
+  "request_id": "req-456",
+  "result": {
+    "items": [
+      {
+        "document_id": "pdoc_raw_123",
+        "subspace": "raw",
+        "kind": "note",
+        "title": "Preparation notes",
+        "writable": true,
+        "updated_at": "2026-04-20T10:00:00Z"
+      },
+      {
+        "document_id": "pdoc_wiki_456",
+        "subspace": "wiki",
+        "kind": "wiki_summary",
+        "title": "Preparation notes rewritten",
+        "writable": true,
+        "updated_at": "2026-04-20T10:05:00Z"
+      }
+    ]
+  }
+}
+```
+
 Recommended shared page response envelope:
 
 ```json
@@ -412,6 +472,140 @@ Recommended shared page response envelope:
   }
 }
 ```
+
+Recommended asset registration response envelope:
+
+```json
+{
+  "ok": true,
+  "request_id": "req-789",
+  "result": {
+    "asset": {
+      "asset_id": "passet_123",
+      "filename": "backend-resume.pdf",
+      "media_type": "application/pdf"
+    }
+  }
+}
+```
+
+Recommended generate-wiki response envelope:
+
+```json
+{
+  "ok": true,
+  "request_id": "req-790",
+  "result": {
+    "document": {
+      "document_id": "pdoc_wiki_456",
+      "subspace": "wiki",
+      "title": "Preparation notes rewritten",
+      "writable": true,
+      "anchors": [
+        "interp_123",
+        "fact_job_posting_999"
+      ],
+      "based_on": {
+        "fact_snapshot": "fact_snap_2026_04_15",
+        "interpretation_snapshot": "interp_snap_2026_04_15",
+        "profile_version": "profile_v7"
+      }
+    }
+  }
+}
+```
+
+Recommended delete response envelope:
+
+```json
+{
+  "ok": true,
+  "request_id": "req-791",
+  "result": {
+    "document_id": "pdoc_raw_123",
+    "status": "deleted",
+    "deleted_at": "2026-04-20T10:06:00Z"
+  }
+}
+```
+
+## End-to-End Examples
+
+### Example 1. Create a raw markdown note
+
+1. `POST /api/v1/users/tenant_a/user_42/personal-documents`
+2. body:
+
+```json
+{
+  "domain": "recruiting",
+  "subspace": "raw",
+  "kind": "note",
+  "title": "Toss backend prep",
+  "body_markdown": "## Notes\n- review JD\n- compare with shared trend page"
+}
+```
+
+Expected outcome:
+
+- one writable Personal document in `subspace: "raw"`
+- no mutation to shared rendered pages
+- no mutation to canonical `Fact` or published `Interpretation`
+
+### Example 2. Register a PDF and attach it to a raw document
+
+1. `POST /api/v1/users/tenant_a/user_42/personal-assets`
+2. receive `asset_id`
+3. `POST /api/v1/users/tenant_a/user_42/personal-documents`
+4. body:
+
+```json
+{
+  "domain": "recruiting",
+  "subspace": "raw",
+  "kind": "raw_document",
+  "title": "Backend resume package",
+  "asset_refs": ["passet_123"]
+}
+```
+
+### Example 3. Rewrite a raw note into a personal wiki page
+
+1. `POST /api/v1/users/tenant_a/user_42/personal-documents/pdoc_raw_123/generate-wiki`
+2. body:
+
+```json
+{
+  "domain": "recruiting",
+  "mode": "rewrite",
+  "profile_version": "profile_v7",
+  "model_profile": "balanced_default"
+}
+```
+
+Expected outcome:
+
+- one new or refreshed Personal document in `subspace: "wiki"`
+- shared rendered pages may have been used as context only
+- saved output remains user-scoped
+
+### Example 4. Link a personal wiki page to shared context
+
+1. `POST /api/v1/users/tenant_a/user_42/personal-documents/pdoc_wiki_456/link`
+2. body:
+
+```json
+{
+  "domain": "recruiting",
+  "mode": "apply",
+  "model_profile": "balanced_default"
+}
+```
+
+Expected outcome:
+
+- anchors or related refs are attached to the Personal document
+- no promotion into shared `Interpretation`
 
 ## Idempotency Guidance
 
