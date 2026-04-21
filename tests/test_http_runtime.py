@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 from wiki_mcp.http_runtime import dispatch_http_request
@@ -7,8 +8,193 @@ from wiki_mcp.services import (
     PersonalAssetConflictError,
     PersonalAssetNotFoundError,
     PersonalAssetValidationError,
+    PersonalDocumentConflictError,
+    PersonalDocumentNotFoundError,
+    PersonalDocumentValidationError,
 )
 from wiki_mcp.tools import ToolDefinition
+
+
+class FakePersonalDocumentService:
+    def __init__(self, server: "FakeHttpServer") -> None:
+        self._server = server
+
+    def list_documents(
+        self,
+        *,
+        domain: str,
+        tenant_id: str,
+        user_id: str,
+        subspace: str | None = None,
+        kind: str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, object]:
+        items = [
+            dict(document)
+            for (doc_domain, doc_tenant_id, doc_user_id, _), document in self._server.personal_documents.items()
+            if doc_domain == domain and doc_tenant_id == tenant_id and doc_user_id == user_id
+        ]
+        if status is None:
+            status = "active"
+        items = [item for item in items if item.get("status") == status]
+        if subspace is not None:
+            items = [item for item in items if item.get("subspace") == subspace]
+        if kind is not None:
+            items = [item for item in items if item.get("kind") == kind]
+        items.sort(key=lambda item: (str(item.get("updated_at")), str(item["document_id"])), reverse=True)
+        return {"status": "ok", "items": items[:limit]}
+
+    def get_document(
+        self,
+        *,
+        domain: str,
+        tenant_id: str,
+        user_id: str,
+        document_id: str,
+    ) -> dict[str, object]:
+        document = self._server.personal_documents.get((domain, tenant_id, user_id, document_id))
+        if document is None:
+            raise PersonalDocumentNotFoundError(
+                f"Unknown Personal document: {document_id}",
+                details={"resource": "personal_document", "document_id": document_id},
+            )
+        return {"status": "ok", "document": dict(document)}
+
+    def create_document(
+        self,
+        *,
+        domain: str,
+        tenant_id: str,
+        user_id: str,
+        profile_version: str,
+        subspace: str,
+        kind: str,
+        title: str,
+        body_markdown: str | None,
+        asset_refs: list[str] | None,
+        anchors: list[dict[str, str]] | None,
+    ) -> dict[str, object]:
+        if (domain, tenant_id, user_id) not in self._server.profile_contexts:
+            raise PersonalDocumentValidationError(
+                "Personal document writes require an existing stored profile context.",
+                details={"domain": domain, "tenant_id": tenant_id, "user_id": user_id},
+            )
+        if not body_markdown and not asset_refs:
+            raise PersonalDocumentValidationError(
+                "Personal documents require body_markdown or non-empty asset_refs.",
+                details={"invalid_fields": ["body_markdown", "asset_refs"]},
+            )
+        document_id = f"pdoc_{len(self._server.personal_documents) + 1}"
+        document = {
+            "document_id": document_id,
+            "domain": domain,
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "subspace": subspace,
+            "kind": kind,
+            "title": title,
+            "body_markdown": body_markdown or "",
+            "asset_refs": list(asset_refs or []),
+            "anchors": list(anchors or []),
+            "based_on": {
+                "fact_snapshot_id": "fact_snap:seed",
+                "interpretation_snapshot_id": "interp_snap:seed",
+                "profile_version": profile_version,
+            },
+            "provenance": {"generated_by": {"kind": "user"}},
+            "status": "active",
+            "version": 1,
+            "created_at": "2026-04-20T00:00:00Z",
+            "updated_at": "2026-04-20T00:00:00Z",
+        }
+        self._server.personal_documents[(domain, tenant_id, user_id, document_id)] = document
+        return {"status": "ok", "document": dict(document)}
+
+    def update_document(
+        self,
+        *,
+        domain: str,
+        tenant_id: str,
+        user_id: str,
+        document_id: str,
+        profile_version: str,
+        if_version: int,
+        title: str | None = None,
+        body_markdown: str | None = None,
+        anchors: list[dict[str, str]] | None = None,
+        asset_refs: list[str] | None = None,
+        status: str | None = None,
+    ) -> dict[str, object]:
+        document = self._server.personal_documents.get((domain, tenant_id, user_id, document_id))
+        if document is None:
+            raise PersonalDocumentNotFoundError(
+                f"Unknown Personal document: {document_id}",
+                details={"resource": "personal_document", "document_id": document_id},
+            )
+        if document["status"] == "deleted":
+            raise PersonalDocumentValidationError(
+                "Deleted Personal documents cannot be updated.",
+                details={"resource": "personal_document", "document_id": document_id},
+            )
+        if if_version != document["version"]:
+            raise PersonalDocumentConflictError(
+                "Personal document version mismatch.",
+                details={
+                    "resource": "personal_document",
+                    "document_id": document_id,
+                    "expected_version": if_version,
+                    "current_version": document["version"],
+                },
+            )
+        if title is None and body_markdown is None and anchors is None and asset_refs is None and status is None:
+            raise PersonalDocumentValidationError(
+                "update_personal_document requires at least one mutable field.",
+                details={"invalid_fields": ["title", "body_markdown", "anchors", "asset_refs", "status"]},
+            )
+        if title is not None:
+            document["title"] = title
+        if body_markdown is not None:
+            document["body_markdown"] = body_markdown
+        if anchors is not None:
+            document["anchors"] = list(anchors)
+        if asset_refs is not None:
+            document["asset_refs"] = list(asset_refs)
+        if status is not None:
+            document["status"] = status
+        document["version"] += 1
+        document["updated_at"] = "2026-04-20T00:05:00Z"
+        return {"status": "ok", "document": dict(document)}
+
+    def delete_document(
+        self,
+        *,
+        domain: str,
+        tenant_id: str,
+        user_id: str,
+        document_id: str,
+        if_version: int,
+    ) -> dict[str, object]:
+        document = self._server.personal_documents.get((domain, tenant_id, user_id, document_id))
+        if document is None:
+            raise PersonalDocumentNotFoundError(
+                f"Unknown Personal document: {document_id}",
+                details={"resource": "personal_document", "document_id": document_id},
+            )
+        if if_version != document["version"]:
+            raise PersonalDocumentConflictError(
+                "Personal document version mismatch.",
+                details={
+                    "resource": "personal_document",
+                    "document_id": document_id,
+                    "expected_version": if_version,
+                    "current_version": document["version"],
+                },
+            )
+        document["status"] = "deleted"
+        document["version"] += 1
+        document["updated_at"] = "2026-04-20T00:10:00Z"
+        return {"status": "ok", "document": dict(document)}
 
 
 class FakeHttpServer:
@@ -17,6 +203,7 @@ class FakeHttpServer:
         self.profile_contexts: dict[tuple[str, str, str], dict[str, object]] = {}
         self.personal_documents: dict[tuple[str, str, str, str], dict[str, object]] = {}
         self.personal_assets: dict[tuple[str, str, str, str], dict[str, object]] = {}
+        self.bootstrap = SimpleNamespace(personal_document_service=FakePersonalDocumentService(self))
         self._tools = [
             ToolDefinition(
                 name="validate_domain_proposal_batch",
@@ -1062,6 +1249,7 @@ def test_http_runtime_exposes_personal_document_crud_endpoints() -> None:
     assert deleted.payload["result"]["document"]["status"] == "deleted"
     assert deleted.payload["result"]["document"]["version"] == 3
     assert deleted_list.payload["result"]["items"][0]["document_id"] == document_id
+    assert fake_server.calls == []
 
 
 def test_http_runtime_maps_personal_document_conflicts_to_409() -> None:
@@ -1099,6 +1287,32 @@ def test_http_runtime_maps_personal_document_conflicts_to_409() -> None:
     assert conflict.payload["ok"] is False
     assert conflict.payload["error"]["code"] == "conflict"
     assert conflict.payload["error"]["details"]["current_version"] == 1
+
+
+def test_http_runtime_maps_missing_personal_documents_to_404() -> None:
+    fake_server = FakeHttpServer()
+
+    missing_get = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/users/tenant-1/user-1/personal-documents/pdoc_missing?domain=recruiting",
+        headers={},
+        body=b"",
+    )
+    missing_delete = dispatch_http_request(
+        fake_server,
+        method="DELETE",
+        path="/api/v1/users/tenant-1/user-1/personal-documents/pdoc_missing",
+        headers={},
+        body=b'{"domain":"recruiting","if_version":1}',
+    )
+
+    assert missing_get.status_code == 404
+    assert missing_get.payload["ok"] is False
+    assert missing_get.payload["error"]["code"] == "not_found"
+    assert missing_delete.status_code == 404
+    assert missing_delete.payload["ok"] is False
+    assert missing_delete.payload["error"]["code"] == "not_found"
 
 
 def test_http_runtime_exposes_interpretation_build_and_operator_status_endpoints() -> None:

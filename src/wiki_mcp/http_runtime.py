@@ -233,101 +233,28 @@ def dispatch_http_request(
             return _tool_error_response(request_id, exc)
 
         if resource_path == "personal-documents":
-            if normalized_method == "GET":
-                try:
-                    arguments: dict[str, object] = {
-                        "domain": _required_query_value(query, "domain"),
-                        "tenant_id": tenant_id,
-                        "user_id": user_id,
-                    }
-                    subspace = _single_query_value(query, "subspace")
-                    kind = _single_query_value(query, "kind")
-                    status = _single_query_value(query, "status")
-                    limit = _single_query_value(query, "limit")
-                    if subspace is not None:
-                        arguments["subspace"] = subspace
-                    if kind is not None:
-                        arguments["kind"] = kind
-                    if status is not None:
-                        arguments["status"] = status
-                    if limit is not None:
-                        arguments["limit"] = int(limit)
-                    return _call_tool(
-                        server,
-                        request_id=request_id,
-                        tool_name="list_personal_documents",
-                        arguments=arguments,
-                    )
-                except Exception as exc:
-                    return _tool_error_response(request_id, exc)
-            if normalized_method == "POST":
-                try:
-                    payload = _parse_json_object(body)
-                    _coerce_path_field(payload, "tenant_id", tenant_id)
-                    _coerce_path_field(payload, "user_id", user_id)
-                    return _call_tool(
-                        server,
-                        request_id=request_id,
-                        tool_name="create_personal_document",
-                        arguments=payload,
-                    )
-                except Exception as exc:
-                    return _tool_error_response(request_id, exc)
-            return _method_not_allowed(request_id, allowed="GET, POST")
+            return _dispatch_personal_document_request(
+                server,
+                request_id=request_id,
+                method=normalized_method,
+                resource_path=resource_path,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                query=query,
+                body=body,
+            )
 
         if resource_path.startswith("personal-documents/"):
-            document_id = resource_path.removeprefix("personal-documents/").strip()
-            if not document_id:
-                return _error_response(
-                    request_id,
-                    status_code=HTTPStatus.BAD_REQUEST,
-                    code="invalid_request",
-                    message="document_id must be present in the path.",
-                )
-            if normalized_method == "GET":
-                try:
-                    return _call_tool(
-                        server,
-                        request_id=request_id,
-                        tool_name="get_personal_document",
-                        arguments={
-                            "domain": _required_query_value(query, "domain"),
-                            "tenant_id": tenant_id,
-                            "user_id": user_id,
-                            "document_id": unquote(document_id),
-                        },
-                    )
-                except Exception as exc:
-                    return _tool_error_response(request_id, exc)
-            if normalized_method == "PATCH":
-                try:
-                    payload = _parse_json_object(body)
-                    _coerce_path_field(payload, "tenant_id", tenant_id)
-                    _coerce_path_field(payload, "user_id", user_id)
-                    _coerce_path_field(payload, "document_id", unquote(document_id))
-                    return _call_tool(
-                        server,
-                        request_id=request_id,
-                        tool_name="update_personal_document",
-                        arguments=payload,
-                    )
-                except Exception as exc:
-                    return _tool_error_response(request_id, exc)
-            if normalized_method == "DELETE":
-                try:
-                    payload = _parse_json_object(body)
-                    _coerce_path_field(payload, "tenant_id", tenant_id)
-                    _coerce_path_field(payload, "user_id", user_id)
-                    _coerce_path_field(payload, "document_id", unquote(document_id))
-                    return _call_tool(
-                        server,
-                        request_id=request_id,
-                        tool_name="delete_personal_document",
-                        arguments=payload,
-                    )
-                except Exception as exc:
-                    return _tool_error_response(request_id, exc)
-            return _method_not_allowed(request_id, allowed="GET, PATCH, DELETE")
+            return _dispatch_personal_document_request(
+                server,
+                request_id=request_id,
+                method=normalized_method,
+                resource_path=resource_path,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                query=query,
+                body=body,
+            )
 
     if normalized_path == "/api/v1/interpretation-builds":
         if normalized_method != "POST":
@@ -538,6 +465,144 @@ def _dispatch_tool_post(
         return _tool_error_response(request_id, exc)
 
 
+def _dispatch_personal_document_request(
+    server: StrataWikiServer,
+    *,
+    request_id: str,
+    method: str,
+    resource_path: str,
+    tenant_id: str,
+    user_id: str,
+    query: Mapping[str, list[str]],
+    body: bytes,
+) -> HttpRuntimeResponse:
+    service = _personal_document_service(server)
+
+    if resource_path == "personal-documents":
+        if method == "GET":
+            try:
+                limit_value = _single_query_value(query, "limit")
+                return _success_response(
+                    request_id,
+                    service.list_documents(
+                        domain=_required_query_value(query, "domain"),
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        subspace=_single_query_value(query, "subspace"),
+                        kind=_single_query_value(query, "kind"),
+                        status=_single_query_value(query, "status"),
+                        limit=int(limit_value) if limit_value is not None else 20,
+                    ),
+                )
+            except Exception as exc:
+                return _tool_error_response(request_id, exc)
+        if method == "POST":
+            try:
+                payload = _parse_json_object(body)
+                _coerce_path_field(payload, "tenant_id", tenant_id)
+                _coerce_path_field(payload, "user_id", user_id)
+                return _success_response(
+                    request_id,
+                    service.create_document(
+                        domain=_required_string(payload, "domain"),
+                        tenant_id=_required_string(payload, "tenant_id"),
+                        user_id=_required_string(payload, "user_id"),
+                        profile_version=_required_string(payload, "profile_version"),
+                        subspace=_required_string(payload, "subspace"),
+                        kind=_required_string(payload, "kind"),
+                        title=_required_string(payload, "title"),
+                        body_markdown=_optional_string(payload, "body_markdown"),
+                        asset_refs=_optional_string_list(payload, "asset_refs"),
+                        anchors=_optional_json_list(payload, "anchors"),
+                    ),
+                )
+            except Exception as exc:
+                return _tool_error_response(request_id, exc)
+        return _method_not_allowed(request_id, allowed="GET, POST")
+
+    if not resource_path.startswith("personal-documents/"):
+        return _error_response(
+            request_id,
+            status_code=HTTPStatus.BAD_REQUEST,
+            code="invalid_request",
+            message="document_id must be present in the path.",
+        )
+
+    document_id = resource_path.removeprefix("personal-documents/").strip()
+    if not document_id:
+        return _error_response(
+            request_id,
+            status_code=HTTPStatus.BAD_REQUEST,
+            code="invalid_request",
+            message="document_id must be present in the path.",
+        )
+
+    if method == "GET":
+        try:
+            return _success_response(
+                request_id,
+                service.get_document(
+                    domain=_required_query_value(query, "domain"),
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    document_id=unquote(document_id),
+                ),
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+    if method == "PATCH":
+        try:
+            payload = _parse_json_object(body)
+            _coerce_path_field(payload, "tenant_id", tenant_id)
+            _coerce_path_field(payload, "user_id", user_id)
+            _coerce_path_field(payload, "document_id", unquote(document_id))
+            return _success_response(
+                request_id,
+                service.update_document(
+                    domain=_required_string(payload, "domain"),
+                    tenant_id=_required_string(payload, "tenant_id"),
+                    user_id=_required_string(payload, "user_id"),
+                    document_id=_required_string(payload, "document_id"),
+                    profile_version=_required_string(payload, "profile_version"),
+                    if_version=_required_positive_int(payload, "if_version"),
+                    title=_optional_string(payload, "title"),
+                    body_markdown=_optional_string(payload, "body_markdown"),
+                    anchors=_optional_json_list(payload, "anchors"),
+                    asset_refs=_optional_string_list(payload, "asset_refs"),
+                    status=_optional_string(payload, "status"),
+                ),
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+    if method == "DELETE":
+        try:
+            payload = _parse_json_object(body)
+            _coerce_path_field(payload, "tenant_id", tenant_id)
+            _coerce_path_field(payload, "user_id", user_id)
+            _coerce_path_field(payload, "document_id", unquote(document_id))
+            return _success_response(
+                request_id,
+                service.delete_document(
+                    domain=_required_string(payload, "domain"),
+                    tenant_id=_required_string(payload, "tenant_id"),
+                    user_id=_required_string(payload, "user_id"),
+                    document_id=_required_string(payload, "document_id"),
+                    if_version=_required_positive_int(payload, "if_version"),
+                ),
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+    return _method_not_allowed(request_id, allowed="GET, PATCH, DELETE")
+
+
+def _personal_document_service(server: StrataWikiServer) -> Any:
+    bootstrap = getattr(server, "bootstrap", None)
+    service = getattr(bootstrap, "personal_document_service", None)
+    if service is None:
+        raise ValueError("Personal document service is not configured.")
+    return service
+
+
 def _call_tool(
     server: StrataWikiServer,
     *,
@@ -691,6 +756,52 @@ def _required_query_value(query: Mapping[str, list[str]], key: str) -> str:
     if value is None:
         raise ValueError(f"Query parameter {key!r} is required.")
     return value
+
+
+def _required_string(payload: Mapping[str, object], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Field {key!r} must be a non-empty string.")
+    return value.strip()
+
+
+def _required_positive_int(payload: Mapping[str, object], key: str) -> int:
+    value = payload.get(key)
+    if not isinstance(value, int) or value <= 0:
+        raise ValueError(f"Field {key!r} must be a positive integer.")
+    return value
+
+
+def _optional_string(payload: Mapping[str, object], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"Field {key!r} must be a string when provided.")
+    return value.strip()
+
+
+def _optional_string_list(payload: Mapping[str, object], key: str) -> list[str] | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValueError(f"Field {key!r} must be a list when provided.")
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise ValueError(f"Field {key!r} must contain only strings.")
+        result.append(item.strip())
+    return result
+
+
+def _optional_json_list(payload: Mapping[str, object], key: str) -> list[object] | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ValueError(f"Field {key!r} must be a list when provided.")
+    return list(value)
 
 
 def _parse_personal_document_action_path(path: str) -> dict[str, str]:
