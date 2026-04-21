@@ -4,3 +4,10 @@
 주제 ID: $subject_id
 사실 목록:
 $facts_block
+
+위 fact만 근거로 시장 트렌드 해석 하나를 작성하세요.
+요구사항:
+- `title`, `claim`, `summary`는 모두 비어 있지 않아야 하고 위 fact에 구체적으로 근거해야 합니다
+- `body.headline`, `body.thesis`도 비어 있지 않아야 합니다
+- 단순한 자리표시자나 주제 ID 반복만 쓰지 마세요
+- 근거가 제한적이면 `summary`나 `counterpoints`에서 그 점을 분명히 밝히되, 필수 필드는 모두 채우세요

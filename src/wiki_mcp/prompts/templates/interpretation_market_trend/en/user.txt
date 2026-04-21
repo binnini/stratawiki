@@ -4,3 +4,10 @@ Subject type: $subject_type
 Subject id: $subject_id
 Facts:
 $facts_block
+
+Produce one market-trend interpretation grounded only in these facts.
+Requirements:
+- `title`, `claim`, and `summary` must all be non-empty and specific to the facts above
+- `body.headline` and `body.thesis` must be non-empty
+- avoid generic placeholders and avoid repeating the subject id without a factual statement
+- if the evidence is limited, say that explicitly in `summary` or `counterpoints`, but still fill every required field

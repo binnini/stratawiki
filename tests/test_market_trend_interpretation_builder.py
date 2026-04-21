@@ -81,7 +81,41 @@ def test_market_trend_builder_supports_korean_prompt_templates() -> None:
     request = captured_request["request"]
     assert "근거 기반의 recruiting 시장 트렌드" in request["messages"][0]["content"]
     assert request["messages"][1]["content"].startswith("도메인:")
+    assert "`title`, `claim`, `summary`는 모두 비어 있지 않아야" in request["messages"][1]["content"]
     assert request["prompt_version"] == "interp.market_trend.v1.ko"
+
+
+def test_market_trend_builder_falls_back_when_structured_output_is_empty() -> None:
+    builder = MarketTrendInterpretationBuilder(
+        llm_gateway=DeterministicLLMGateway(
+            provider="mock-provider",
+            model="mock-model-v1",
+            default_structured_output={
+                "kind": "market_trend",
+                "title": "",
+                "claim": "",
+                "summary": "",
+                "body": {
+                    "headline": "",
+                    "thesis": "",
+                    "signals": [],
+                    "observations": [],
+                    "counterpoints": [],
+                },
+            },
+        )
+    )
+
+    proposal = builder.build_proposal(_proposal_context())
+
+    assert proposal is not None
+    assert proposal["title"] == "Evidence-backed market trend for backend-japan-midlevel"
+    assert "Recent recruiting facts for backend-japan-midlevel" in proposal["claim"]
+    assert "Multiple recruiting facts in backend-japan-midlevel" in proposal["summary"]
+    assert proposal["body"]["signals"]
+    assert proposal["body"]["counterpoints"] == [
+        "This fallback interpretation should be reviewed because the model output was incomplete."
+    ]
 
 
 def _proposal_context() -> InterpretationProposalContext:
