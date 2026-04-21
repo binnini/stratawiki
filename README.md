@@ -235,6 +235,26 @@ Important notes:
 - the stdio `server` container remains available as a compatibility and rollback path during the migration
 - rendered pages are written to the shared `stratawiki-render` volume
 
+If you want a slower live smoke that proves the current `market_trend` interpretation path with a real local model, run:
+
+```bash
+/Users/yebin/venv/bin/python scripts/real_ollama_market_trend_publish_smoke.py
+```
+
+That smoke assumes:
+
+- a running local `StrataWiki HTTP runtime`
+- local Postgres with current recruiting facts
+- local Ollama with the configured model already available
+
+It verifies:
+
+- `StrataWiki /healthz`
+- Ollama model availability
+- `POST /api/v1/interpretation-builds` with `publish=true`
+- a published shared `market_trend` record persisted in Postgres
+- provenance containing `provider=ollama`, concrete `model`, and `prompt_version`
+
 ## External Write Contract
 
 For external integration clients, the preferred write contract is now `DomainProposalBatch`.
