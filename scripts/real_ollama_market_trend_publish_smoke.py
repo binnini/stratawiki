@@ -165,6 +165,53 @@ def _select_fact_ids(*, domain: str, fact_snapshot_id: str, limit: int = 5) -> l
     return fact_ids
 
 
+def _resolve_fact_snapshot_with_shared_facts(*, domain: str, preferred_snapshot: str) -> str:
+    connection, _ = _connect_smoke_database()
+    try:
+        with connection.cursor() as cursor:
+            if preferred_snapshot.strip():
+                cursor.execute(
+                    """
+                    SELECT fact_snapshot_id
+                    FROM fact.record_envelopes
+                    WHERE domain = %s
+                      AND scope = 'shared'
+                      AND status = 'active'
+                      AND fact_snapshot_id = %s
+                    LIMIT 1
+                    """,
+                    (domain, preferred_snapshot),
+                )
+                preferred_row = cursor.fetchone()
+                if preferred_row and preferred_row.get("fact_snapshot_id"):
+                    return str(preferred_row["fact_snapshot_id"])
+
+            cursor.execute(
+                """
+                SELECT fact_snapshot_id
+                FROM fact.record_envelopes
+                WHERE domain = %s
+                  AND scope = 'shared'
+                  AND status = 'active'
+                  AND fact_snapshot_id IS NOT NULL
+                GROUP BY fact_snapshot_id
+                ORDER BY MAX(updated_at) DESC
+                LIMIT 1
+                """,
+                (domain,),
+            )
+            fallback_row = cursor.fetchone()
+    finally:
+        connection.close()
+
+    if fallback_row and fallback_row.get("fact_snapshot_id"):
+        return str(fallback_row["fact_snapshot_id"])
+
+    raise SmokeFailure(
+        f"No shared fact snapshot with active facts was found for domain={domain!r}."
+    )
+
+
 def _fetch_published_record(*, domain: str, subject_id: str) -> dict[str, Any]:
     connection, _ = _connect_smoke_database()
     try:
@@ -234,6 +281,10 @@ def main() -> int:
             f"{json.dumps(snapshot_result, ensure_ascii=False)}"
         )
 
+    fact_snapshot = _resolve_fact_snapshot_with_shared_facts(
+        domain=domain,
+        preferred_snapshot=fact_snapshot,
+    )
     fact_ids = _select_fact_ids(domain=domain, fact_snapshot_id=fact_snapshot)
     subject_id = f"live-ollama-market-trend-smoke-{uuid4().hex[:10]}"
 
