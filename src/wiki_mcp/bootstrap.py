@@ -51,6 +51,19 @@ from wiki_mcp.storage.postgres.repositories import (
 DEFAULT_DATABASE_URL = "postgresql://stratawiki:stratawiki@localhost:5432/stratawiki"
 
 
+def _assert_non_demo_llm_gateway_configured(llm_gateway: Any) -> None:
+    has_provider_gateway = bool(getattr(llm_gateway, "gateways_by_provider", {}))
+    has_profile_gateway = bool(getattr(llm_gateway, "gateways_by_model_profile", {}))
+
+    if has_provider_gateway or has_profile_gateway:
+        return
+
+    raise RuntimeError(
+        "No non-demo LLM provider is configured. Set OPENAI_API_KEY or enable Ollama "
+        "with WIKI_MCP_ENABLE_OLLAMA/OLLAMA_BASE_URL before starting the runtime."
+    )
+
+
 @dataclass(slots=True)
 class BootstrapContext:
     """Runtime bootstrap context for the current MVP slice."""
@@ -177,9 +190,8 @@ def bootstrap_application(
     snapshot_repository = PostgresSnapshotRepository(resolved_connection)
     outbox_repository = PostgresOutboxRepository(resolved_connection)
     rendering_repository = FileSystemRenderingRepository(render_root)
-    llm_gateway = build_llm_gateway_router_from_env(
-        default_gateway=build_demo_llm_gateway(),
-    )
+    llm_gateway = build_llm_gateway_router_from_env()
+    _assert_non_demo_llm_gateway_configured(llm_gateway)
     core_ingestion_service = DefaultCoreIngestionService(
         fact_repository=fact_repository,
         snapshot_repository=snapshot_repository,

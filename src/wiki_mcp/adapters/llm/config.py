@@ -25,7 +25,7 @@ def resolve_model_for_profile(
 ) -> str:
     """Resolve a concrete model for a logical model profile."""
 
-    env = environ or os.environ
+    env = os.environ if environ is None else environ
     env_key = f"WIKI_MCP_OPENAI_MODEL_{model_profile.upper()}"
     if env_key in env and env[env_key].strip():
         return env[env_key].strip()
@@ -39,7 +39,7 @@ def resolve_ollama_model_for_profile(
 ) -> str:
     """Resolve a concrete Ollama model for a logical model profile."""
 
-    env = environ or os.environ
+    env = os.environ if environ is None else environ
     env_key = f"WIKI_MCP_OLLAMA_MODEL_{model_profile.upper()}"
     if env_key in env and env[env_key].strip():
         return env[env_key].strip()
@@ -53,8 +53,7 @@ def build_llm_gateway_router_from_env(
 ) -> LLMGatewayRouter:
     """Build the minimal runtime gateway router for the current MVP slice."""
 
-    env = environ or os.environ
-    fallback_gateway = default_gateway or DeterministicLLMGateway()
+    env = os.environ if environ is None else environ
     gateways_by_provider = {}
     gateways_by_model_profile = {}
     preferred_provider = env.get("WIKI_MCP_DEFAULT_PROVIDER", "").strip().lower()
@@ -101,7 +100,7 @@ def build_llm_gateway_router_from_env(
             gateways_by_model_profile[model_profile] = ollama_gateway
 
     return LLMGatewayRouter(
-        default_gateway=fallback_gateway,
+        default_gateway=default_gateway,
         gateways_by_provider=gateways_by_provider,
         gateways_by_model_profile=gateways_by_model_profile,
     )

@@ -191,3 +191,11 @@ def test_build_router_from_env_registers_ollama_when_enabled() -> None:
     assert isinstance(provider_gateway, OllamaChatGateway)
     assert router.gateways_by_model_profile["balanced_default"] is provider_gateway
     assert router.gateways_by_model_profile["deep_synthesis"] is provider_gateway
+
+
+def test_build_router_from_env_has_no_default_fallback_without_configured_provider() -> None:
+    router = build_llm_gateway_router_from_env(environ={})
+
+    assert router.default_gateway is None
+    assert router.gateways_by_provider == {}
+    assert router.gateways_by_model_profile == {}
