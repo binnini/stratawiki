@@ -7,6 +7,7 @@ from wiki_mcp.http_runtime import dispatch_http_request
 from wiki_mcp.services import (
     PersonalAssetConflictError,
     PersonalAssetNotFoundError,
+    PersonalAssetRegistrationService,
     PersonalAssetValidationError,
     PersonalDocumentConflictError,
     PersonalDocumentNotFoundError,
@@ -197,13 +198,51 @@ class FakePersonalDocumentService:
         return {"status": "ok", "document": dict(document)}
 
 
+class _FakeProfileContextRepository:
+    def __init__(self, server: "FakeHttpServer") -> None:
+        self.server = server
+
+    def get_profile_context(self, domain: str, tenant_id: str, user_id: str) -> dict[str, object]:
+        profile = self.server.profile_contexts.get((domain, tenant_id, user_id))
+        if profile is None:
+            raise KeyError("missing profile context")
+        return profile
+
+
+class _FakePersonalAssetRepository:
+    def __init__(self, server: "FakeHttpServer") -> None:
+        self.server = server
+        self.records: dict[str, dict[str, object]] = {}
+        self.identity_to_asset_id: dict[str, str] = {}
+
+    def create_record(self, record: dict[str, object]) -> dict[str, object]:
+        identity_key = str(record["identity_key"])
+        existing_id = self.identity_to_asset_id.get(identity_key)
+        if existing_id is not None:
+            raise PersonalAssetConflictError(
+                "Personal asset is already registered for this user scope.",
+                details={"asset_id": existing_id},
+            )
+        asset_id = str(record["asset_id"])
+        stored = dict(record)
+        self.identity_to_asset_id[identity_key] = asset_id
+        self.records[asset_id] = stored
+        return stored
+
+
 class FakeHttpServer:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.profile_contexts: dict[tuple[str, str, str], dict[str, object]] = {}
         self.personal_documents: dict[tuple[str, str, str, str], dict[str, object]] = {}
         self.personal_assets: dict[tuple[str, str, str, str], dict[str, object]] = {}
-        self.bootstrap = SimpleNamespace(personal_document_service=FakePersonalDocumentService(self))
+        self.bootstrap = SimpleNamespace(
+            personal_document_service=FakePersonalDocumentService(self),
+            personal_asset_registration_service=PersonalAssetRegistrationService(
+                asset_repository=_FakePersonalAssetRepository(self),
+                profile_context_repository=_FakeProfileContextRepository(self),
+            )
+        )
         self._tools = [
             ToolDefinition(
                 name="validate_domain_proposal_batch",
@@ -1498,13 +1537,15 @@ def test_http_runtime_registers_personal_asset_and_normalizes_errors() -> None:
     )
 
     assert success.status_code == 200
-    assert success.payload["result"]["asset_id"] == "passet_http_123"
-    assert fake_server.calls[0][1]["tenant_id"] == "tenant-a"
-    assert fake_server.calls[0][1]["user_id"] == "user-42"
+    assert success.payload["result"]["asset_id"].startswith("passet_")
+    assert success.payload["result"]["asset"]["asset_id"] == success.payload["result"]["asset_id"]
+    assert success.payload["result"]["asset"]["tenant_id"] == "tenant-a"
+    assert success.payload["result"]["asset"]["user_id"] == "user-42"
+    assert fake_server.calls == []
 
     assert conflict.status_code == 409
     assert conflict.payload["error"]["code"] == "conflict"
-    assert conflict.payload["error"]["details"]["asset_id"] == "passet_http_123"
+    assert conflict.payload["error"]["details"]["asset_id"] == success.payload["result"]["asset_id"]
 
     assert invalid.status_code == 422
     assert invalid.payload["error"]["code"] == "validation_error"

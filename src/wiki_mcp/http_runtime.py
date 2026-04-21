@@ -173,12 +173,7 @@ def dispatch_http_request(
             payload = _parse_json_object(body)
             _coerce_path_field(payload, "tenant_id", tenant_id)
             _coerce_path_field(payload, "user_id", user_id)
-            return _call_tool(
-                server,
-                request_id=request_id,
-                tool_name="register_personal_asset",
-                arguments=payload,
-            )
+            return _register_personal_asset(server, request_id=request_id, arguments=payload)
         except Exception as exc:
             return _tool_error_response(request_id, exc)
 
@@ -611,6 +606,19 @@ def _call_tool(
     arguments: dict[str, object],
 ) -> HttpRuntimeResponse:
     result = server.call_tool(tool_name, arguments)
+    return _success_response(request_id, result)
+
+
+def _register_personal_asset(
+    server: StrataWikiServer,
+    *,
+    request_id: str,
+    arguments: dict[str, object],
+) -> HttpRuntimeResponse:
+    service = server.bootstrap.personal_asset_registration_service
+    if service is None:
+        raise ValueError("Personal asset registration service is not configured.")
+    result = service.register_personal_asset(arguments)
     return _success_response(request_id, result)
 
 
