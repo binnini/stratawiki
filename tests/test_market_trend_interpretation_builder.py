@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from wiki_mcp.adapters.llm import DeterministicLLMGateway
+from wiki_mcp.prompts import PromptCatalog
 from wiki_mcp.services.interpretation_families import (
     InterpretationProposalContext,
     MarketTrendInterpretationBuilder,
@@ -49,6 +50,38 @@ def test_market_trend_builder_generates_llm_backed_proposal() -> None:
     ]
     assert proposal["provenance"]["generated_by"]["provider"] == "mock-provider"
     assert proposal["provenance"]["generated_by"]["schema_name"] == "interpretation.market_trend"
+
+
+def test_market_trend_builder_supports_korean_prompt_templates() -> None:
+    captured_request = {}
+    builder = MarketTrendInterpretationBuilder(
+        llm_gateway=DeterministicLLMGateway(
+            provider="mock-provider",
+            model="mock-model-v1",
+            structured_factory=lambda request: captured_request.setdefault("request", request) or {
+                "kind": "market_trend",
+                "title": "제목",
+                "claim": "주장",
+                "summary": "요약",
+                "body": {
+                    "headline": "헤드라인",
+                    "thesis": "테제",
+                    "signals": [],
+                    "observations": [],
+                    "counterpoints": [],
+                },
+            },
+        ),
+        prompt_catalog=PromptCatalog(language="ko"),
+    )
+
+    proposal = builder.build_proposal(_proposal_context())
+
+    assert proposal is not None
+    request = captured_request["request"]
+    assert "근거 기반의 recruiting 시장 트렌드" in request["messages"][0]["content"]
+    assert request["messages"][1]["content"].startswith("도메인:")
+    assert request["prompt_version"] == "interp.market_trend.v1.ko"
 
 
 def _proposal_context() -> InterpretationProposalContext:

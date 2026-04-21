@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from wiki_mcp.adapters.llm.gateway import LLMGateway
+from wiki_mcp.prompts import PromptCatalog, resolve_prompt_language, resolve_prompt_version
 from wiki_mcp.services.interpretation_families.base import InterpretationProposalContext
 
 
@@ -20,12 +21,16 @@ class MarketTrendInterpretationBuilder:
         provider: str | None = None,
         model: str | None = None,
         freshness_ttl: timedelta = timedelta(hours=24),
+        prompt_catalog: PromptCatalog | None = None,
     ) -> None:
         self.llm_gateway = llm_gateway
         self.model_profile = model_profile
         self.provider = provider
         self.model = model
         self.freshness_ttl = freshness_ttl
+        self.prompt_catalog = prompt_catalog or PromptCatalog(
+            language=resolve_prompt_language()
+        )
 
     def build_proposal(
         self,
@@ -77,9 +82,9 @@ class MarketTrendInterpretationBuilder:
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "You synthesize one evidence-backed recruiting market trend. "
-                        "Return concise structured output grounded only in the provided facts."
+                    "content": self.prompt_catalog.read_text(
+                        "interpretation_market_trend",
+                        "system",
                     ),
                 },
                 {
@@ -89,7 +94,10 @@ class MarketTrendInterpretationBuilder:
             ],
             "model_profile": self.model_profile,
             "prompt_id": "interp.market_trend",
-            "prompt_version": "interp.market_trend.v1",
+            "prompt_version": resolve_prompt_version(
+                "interp.market_trend.v1",
+                self.prompt_catalog.language,
+            ),
             "schema_name": "interpretation.market_trend",
             "schema_version": "interpretation.market_trend.v1",
             "output_schema": {
@@ -141,15 +149,14 @@ class MarketTrendInterpretationBuilder:
                 line += f" | summary={summary}"
             fact_lines.append(line)
 
-        return "\n".join(
-            [
-                f"Domain: {context.domain}",
-                f"Family: {context.family}",
-                f"Subject type: {context.subject_type}",
-                f"Subject id: {context.subject_id}",
-                "Facts:",
-                *fact_lines,
-            ]
+        return self.prompt_catalog.render(
+            "interpretation_market_trend",
+            "user",
+            domain=context.domain,
+            family=context.family,
+            subject_type=context.subject_type,
+            subject_id=context.subject_id,
+            facts_block="\n".join(fact_lines),
         )
 
     def _build_body(self, output: dict[str, object]) -> dict[str, object]:

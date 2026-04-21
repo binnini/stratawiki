@@ -1,0 +1,6 @@
+Domain: $domain
+Family: $family
+Subject type: $subject_type
+Subject id: $subject_id
+Facts:
+$facts_block

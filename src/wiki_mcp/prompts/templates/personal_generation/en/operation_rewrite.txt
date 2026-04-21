@@ -1,0 +1,1 @@
+Rewrite the raw source into clearer wiki prose. Goal: $instruction_value.

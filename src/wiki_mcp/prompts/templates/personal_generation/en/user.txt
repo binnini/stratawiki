@@ -1,0 +1,22 @@
+Operation:
+$operation
+
+Instruction:
+$operation_hint
+
+Source Document Ref:
+$source_document_ref_json
+
+Snapshot Ref:
+$snapshot_ref_json
+
+Source Anchors:
+$source_anchors_json
+
+Source Title:
+$source_title
+
+Source Body:
+$source_body
+
+Return markdown only. Prefer a concise heading and sections that remain readable as a Personal wiki note.

@@ -1,0 +1,6 @@
+도메인: $domain
+패밀리: $family
+주제 타입: $subject_type
+주제 ID: $subject_id
+사실 목록:
+$facts_block

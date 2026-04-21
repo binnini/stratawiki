@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from wiki_mcp.adapters.llm import DeterministicLLMGateway
+from wiki_mcp.prompts import PromptCatalog
 from wiki_mcp.services.personal_query import (
     PersonalKnowledgeQueryService,
     PersonalQueryOrchestrator,
@@ -239,3 +240,38 @@ def test_query_personal_knowledge_save_persists_metadata_and_markdown_body(
     assert '"interp:1"' in persisted_body
     assert '"fact:1"' in persisted_body
     assert answer["answer_markdown"] in persisted_body
+
+
+def test_query_personal_knowledge_supports_korean_prompt_templates() -> None:
+    retrieval_service = StubRetrievalService(_retrieval_result())
+    orchestrator = PersonalQueryOrchestrator(retrieval_service=retrieval_service)
+    captured_request: dict[str, Any] = {}
+
+    def capture_request(request: dict[str, Any]) -> str:
+        captured_request["request"] = request
+        return "## 답변\n\n테스트"
+
+    gateway = DeterministicLLMGateway(
+        provider="mock",
+        model="mock-model-v1",
+        text_factory=capture_request,
+    )
+    service = PersonalKnowledgeQueryService(
+        orchestrator=orchestrator,
+        llm_gateway=gateway,
+        prompt_catalog=PromptCatalog(language="ko"),
+    )
+
+    answer = service.query_personal_knowledge(
+        domain="recruiting",
+        question="무엇에 집중해야 하나요?",
+        scope_ref=_scope_ref(),
+        profile_context=_profile_context(),
+        model_profile="balanced_default",
+        save=False,
+    )
+
+    request = captured_request["request"]
+    assert "사용자 범위 Personal 답변" in request["messages"][0]["content"]
+    assert "질문:" in request["messages"][1]["content"]
+    assert answer["provenance"]["prompt_version"] == "personal.query.answer.v1.ko"

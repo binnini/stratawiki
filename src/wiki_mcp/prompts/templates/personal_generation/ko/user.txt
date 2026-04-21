@@ -1,0 +1,22 @@
+작업:
+$operation
+
+지시:
+$operation_hint
+
+원본 문서 참조:
+$source_document_ref_json
+
+스냅샷 참조:
+$snapshot_ref_json
+
+원본 앵커:
+$source_anchors_json
+
+원본 제목:
+$source_title
+
+원본 본문:
+$source_body
+
+마크다운만 반환하세요. 간결한 제목을 포함하고, Personal wiki 노트로 읽기 쉬운 섹션 구조를 우선하세요.

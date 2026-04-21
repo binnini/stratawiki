@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from wiki_mcp.adapters.llm.gateway import LLMGateway
+from wiki_mcp.prompts import PromptCatalog, resolve_prompt_language, resolve_prompt_version
 from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
 from wiki_mcp.schemas.scope_ref import ScopeRef
 
@@ -26,6 +27,7 @@ class PersonalDocumentGenerationService:
         interpretation_repository: Any,
         snapshot_repository: Any,
         profile_context_repository: Any,
+        prompt_catalog: PromptCatalog | None = None,
     ) -> None:
         self.llm_gateway = llm_gateway
         self.personal_repository = personal_repository
@@ -34,6 +36,9 @@ class PersonalDocumentGenerationService:
         self.interpretation_repository = interpretation_repository
         self.snapshot_repository = snapshot_repository
         self.profile_context_repository = profile_context_repository
+        self.prompt_catalog = prompt_catalog or PromptCatalog(
+            language=resolve_prompt_language()
+        )
 
     def summarize_personal_document_to_wiki(
         self,
@@ -404,9 +409,9 @@ class PersonalDocumentGenerationService:
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "You transform Personal raw notes into Personal wiki markdown. "
-                        "Do not invent facts. Preserve source intent and make the result readable."
+                    "content": self.prompt_catalog.read_text(
+                        "personal_generation",
+                        "system",
                     ),
                 },
                 {
@@ -421,7 +426,10 @@ class PersonalDocumentGenerationService:
             ],
             "model_profile": model_profile,
             "prompt_id": f"personal.raw_to_wiki.{operation}",
-            "prompt_version": f"personal.raw_to_wiki.{operation}.v1",
+            "prompt_version": resolve_prompt_version(
+                f"personal.raw_to_wiki.{operation}.v1",
+                self.prompt_catalog.language,
+            ),
         }
         response = self.llm_gateway.generate_text(request)
         body_markdown = self._normalize_generated_markdown(response["content"], source_document["title"])
@@ -445,38 +453,42 @@ class PersonalDocumentGenerationService:
         snapshot_ref: dict[str, Any],
         instruction_value: str,
     ) -> str:
-        operation_hint = {
-            "summarize": f"Summarize the raw source into a concise wiki artifact. Style: {instruction_value}.",
-            "rewrite": f"Rewrite the raw source into clearer wiki prose. Goal: {instruction_value}.",
-            "structure": f"Restructure the raw source into stable wiki sections. Template: {instruction_value}.",
-        }[operation]
-        return "\n\n".join(
-            [
-                f"Operation:\n{operation}",
-                f"Instruction:\n{operation_hint}",
-                "Source Document Ref:\n"
-                + json.dumps(
-                    {
-                        "document_id": source_document["document_id"],
-                        "subspace": source_document["subspace"],
-                        "version": source_document["version"],
-                        "kind": source_document.get("document_kind") or source_document.get("kind"),
-                        "asset_refs": source_document.get("asset_refs", []),
-                    },
-                    ensure_ascii=True,
-                    sort_keys=True,
-                    indent=2,
-                ),
-                "Snapshot Ref:\n"
-                + json.dumps(snapshot_ref, ensure_ascii=True, sort_keys=True, indent=2),
-                "Source Anchors:\n"
-                + json.dumps(source_document.get("anchors", []), ensure_ascii=True, sort_keys=True, indent=2),
-                f"Source Title:\n{source_document['title']}",
-                f"Source Body:\n{source_document['body_markdown']}",
-                (
-                    "Return markdown only. Prefer a concise heading and sections that remain readable as a Personal wiki note."
-                ),
-            ]
+        operation_hint = self.prompt_catalog.render(
+            "personal_generation",
+            f"operation_{operation}",
+            instruction_value=instruction_value,
+        )
+        return self.prompt_catalog.render(
+            "personal_generation",
+            "user",
+            operation=operation,
+            operation_hint=operation_hint,
+            source_document_ref_json=json.dumps(
+                {
+                    "document_id": source_document["document_id"],
+                    "subspace": source_document["subspace"],
+                    "version": source_document["version"],
+                    "kind": source_document.get("document_kind") or source_document.get("kind"),
+                    "asset_refs": source_document.get("asset_refs", []),
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+                indent=2,
+            ),
+            snapshot_ref_json=json.dumps(
+                snapshot_ref,
+                ensure_ascii=True,
+                sort_keys=True,
+                indent=2,
+            ),
+            source_anchors_json=json.dumps(
+                source_document.get("anchors", []),
+                ensure_ascii=True,
+                sort_keys=True,
+                indent=2,
+            ),
+            source_title=source_document["title"],
+            source_body=source_document["body_markdown"],
         )
 
     def _load_document(

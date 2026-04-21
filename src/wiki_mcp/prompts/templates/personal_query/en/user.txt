@@ -1,0 +1,13 @@
+Question:
+$question
+
+Scope:
+$scope_json
+$profile_context_section$snapshot_ref_section$retrieval_metadata_section
+$personal_context_section
+
+$interpretation_context_section
+
+$fact_context_section
+
+$response_instruction

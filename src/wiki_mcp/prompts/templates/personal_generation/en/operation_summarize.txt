@@ -1,0 +1,1 @@
+Summarize the raw source into a concise wiki artifact. Style: $instruction_value.

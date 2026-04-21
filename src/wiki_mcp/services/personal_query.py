@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from wiki_mcp.adapters.llm.gateway import LLMGateway
+from wiki_mcp.prompts import PromptCatalog, resolve_prompt_language, resolve_prompt_version
 from wiki_mcp.schemas.personal_query_answer import (
     PersonalQueryAnswer,
     PersonalQueryCitation,
@@ -138,11 +139,15 @@ class PersonalKnowledgeQueryService:
         llm_gateway: LLMGateway,
         personal_repository: PersonalRepository | None = None,
         rendering_repository: RenderingRepository | None = None,
+        prompt_catalog: PromptCatalog | None = None,
     ) -> None:
         self.orchestrator = orchestrator
         self.llm_gateway = llm_gateway
         self.personal_repository = personal_repository
         self.rendering_repository = rendering_repository
+        self.prompt_catalog = prompt_catalog or PromptCatalog(
+            language=resolve_prompt_language()
+        )
 
     def query_personal_knowledge(
         self,
@@ -172,7 +177,10 @@ class PersonalKnowledgeQueryService:
             "messages": self._build_messages(bundle),
             "model_profile": model_profile,
             "prompt_id": self.prompt_id,
-            "prompt_version": self.prompt_version,
+            "prompt_version": resolve_prompt_version(
+                self.prompt_version,
+                self.prompt_catalog.language,
+            ),
         }
         if provider is not None:
             request["provider"] = provider
@@ -219,11 +227,7 @@ class PersonalKnowledgeQueryService:
         return [
             {
                 "role": "system",
-                "content": (
-                    "You write user-scoped Personal answers for StrataWiki. "
-                    "Use only the provided Personal, Interpretation, and Fact context. "
-                    "Be explicit, practical, and do not invent unsupported claims."
-                ),
+                "content": self.prompt_catalog.read_text("personal_query", "system"),
             },
             {
                 "role": "user",
@@ -232,43 +236,79 @@ class PersonalKnowledgeQueryService:
         ]
 
     def _render_prompt(self, bundle: PersonalQueryBundle) -> str:
-        sections = [
-            f"Question:\n{bundle['question']}",
-            f"Scope:\n{json.dumps(bundle['scope_ref'], ensure_ascii=True, sort_keys=True)}",
-        ]
+        labels = {
+            "en": {
+                "profile_context_title": "Profile Context",
+                "snapshot_ref_title": "Snapshot Ref",
+                "retrieval_metadata_title": "Retrieval Metadata",
+                "personal_context_title": "Personal Context",
+                "interpretation_context_title": "Interpretation Context",
+                "fact_context_title": "Fact Context",
+                "response_instruction": (
+                    "Write a markdown answer that is personalized to the profile, "
+                    "cites only the given context implicitly, and prioritizes concrete next steps."
+                ),
+            },
+            "ko": {
+                "profile_context_title": "프로필 맥락",
+                "snapshot_ref_title": "스냅샷 참조",
+                "retrieval_metadata_title": "검색 메타데이터",
+                "personal_context_title": "Personal 맥락",
+                "interpretation_context_title": "Interpretation 맥락",
+                "fact_context_title": "Fact 맥락",
+                "response_instruction": (
+                    "프로필에 맞춘 마크다운 답변을 작성하세요. "
+                    "주어진 맥락만 사용하고, 구체적인 다음 행동을 우선하세요."
+                ),
+            },
+        }[self.prompt_catalog.language]
+
+        profile_context_section = ""
         profile_context = bundle.get("profile_context")
         if profile_context is not None:
-            sections.append(
-                "Profile Context:\n"
+            profile_context_section = (
+                f"{labels['profile_context_title']}:\n"
                 + json.dumps(profile_context, ensure_ascii=True, sort_keys=True, indent=2)
+                + "\n\n"
             )
+        snapshot_ref_section = ""
         snapshot_ref = bundle.get("snapshot_ref")
         if snapshot_ref is not None:
-            sections.append(
-                "Snapshot Ref:\n"
+            snapshot_ref_section = (
+                f"{labels['snapshot_ref_title']}:\n"
                 + json.dumps(snapshot_ref, ensure_ascii=True, sort_keys=True, indent=2)
+                + "\n\n"
             )
+        retrieval_metadata_section = ""
         retrieval_metadata = bundle.get("retrieval_metadata")
         if retrieval_metadata is not None:
-            sections.append(
-                "Retrieval Metadata:\n"
+            retrieval_metadata_section = (
+                f"{labels['retrieval_metadata_title']}:\n"
                 + json.dumps(retrieval_metadata, ensure_ascii=True, sort_keys=True, indent=2)
+                + "\n\n"
             )
-        sections.append(
-            self._render_context_section("Personal Context", bundle["personal_context"])
-        )
-        sections.append(
-            self._render_context_section(
-                "Interpretation Context",
+        return self.prompt_catalog.render(
+            "personal_query",
+            "user",
+            question=bundle["question"],
+            scope_json=json.dumps(bundle["scope_ref"], ensure_ascii=True, sort_keys=True),
+            profile_context_section=profile_context_section,
+            snapshot_ref_section=snapshot_ref_section,
+            retrieval_metadata_section=retrieval_metadata_section,
+            personal_context_section=self._render_context_section(
+                labels["personal_context_title"],
+                bundle["personal_context"],
+            ),
+            interpretation_context_section=self._render_context_section(
+                labels["interpretation_context_title"],
                 bundle["interpretation_context"],
-            )
+            ),
+            fact_context_section=self._render_context_section(
+                labels["fact_context_title"],
+                bundle["fact_context"],
+            ),
+            response_instruction=labels["response_instruction"],
         )
-        sections.append(self._render_context_section("Fact Context", bundle["fact_context"]))
-        sections.append(
-            "Write a markdown answer that is personalized to the profile, cites only the given context implicitly, "
-            "and prioritizes concrete next steps."
-        )
-        return "\n\n".join(sections)
 
     def _render_context_section(
         self,
@@ -276,7 +316,8 @@ class PersonalKnowledgeQueryService:
         items: list[PersonalQueryBundleItem],
     ) -> str:
         if not items:
-            return f"{title}:\n- none"
+            none_label = "없음" if self.prompt_catalog.language == "ko" else "none"
+            return f"{title}:\n- {none_label}"
         lines = [f"{title}:"]
         for item in items:
             line = f"- [{item['layer']}] {item['record_id']}: {item['title']} :: {item['summary']}"
