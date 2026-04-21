@@ -26,6 +26,7 @@ The intended first external consumers are service-to-service clients such as Job
 - resource-specific DomainProposalBatch validate and ingest endpoints
 - resource-specific profile sync and Personal query endpoints
 - resource-specific interpretation build and operator status endpoints
+- resource-specific command submit/status endpoints for sync/admin workflows
 
 ### Recommended but Not Yet Fixed
 
@@ -180,6 +181,8 @@ The first HTTP baseline intentionally exposes generic runtime endpoints before t
 | `/api/v1/profile-contexts/{tenant_id}/{user_id}` | `PUT` | `upsert_profile_context` | upsert one profile context | implemented |
 | `/api/v1/personal-queries` | `POST` | `query_personal_knowledge` | run one Personal query | implemented |
 | `/api/v1/interpretation-builds` | `POST` | `build_interpretation_snapshot` | request one interpretation build | implemented |
+| `/api/v1/commands` | `POST` | tool registry | submit one command for lifecycle tracking | implemented |
+| `/api/v1/commands/{command_id}` | `GET` | tool registry | inspect one submitted command | implemented |
 | `/api/v1/jobs/{job_id}` | `GET` | `get_job_status` | inspect one background job | implemented |
 | `/api/v1/snapshot-status` | `GET` | `get_snapshot_status` | inspect current snapshot state | implemented |
 | `/api/v1/cache-status/{record_id}` | `GET` | `get_cache_status` | inspect one saved Personal output status | implemented |
@@ -246,6 +249,36 @@ The HTTP layer should preserve existing tool payloads as much as possible.
 
 This baseline exists so the HTTP transport can reuse the current runtime immediately.
 The resource-specific endpoints above should gradually replace direct generic tool calls for external integrations.
+
+### Command Submit and Status
+
+`POST /api/v1/commands`
+
+```json
+{
+  "name": "validate_domain_proposal_batch",
+  "arguments": {
+    "batch": {
+      "batch_id": "jobs-wiki-batch-001",
+      "domain": "recruiting",
+      "producer": "jobs-wiki",
+      "pack_version": "2026-04-18"
+    }
+  }
+}
+```
+
+The command resource returns a normalized lifecycle record with:
+
+- `state` values such as `succeeded`, `failed`, or `queued`
+- `terminal` to distinguish finished from still-active work
+- `retryable` to distinguish terminal validation-style failures from retryable runtime failures
+- `result` for the tool response when the command finishes successfully or queues background work
+- `error` for terminal failure detail
+
+Poll with:
+
+`GET /api/v1/commands/{command_id}`
 
 ### Validate Proposal Batch
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Mapping
@@ -26,6 +27,124 @@ class HttpRuntimeResponse:
     status_code: int
     payload: dict[str, object]
     headers: dict[str, str]
+
+
+@dataclass
+class _HttpCommandStore:
+    commands: dict[str, dict[str, object]] = field(default_factory=dict)
+    command_keys: dict[tuple[str, str], str] = field(default_factory=dict)
+
+    def submit(
+        self,
+        server: StrataWikiServer,
+        *,
+        request_id: str,
+        name: str,
+        arguments: dict[str, object],
+        idempotency_key: str | None,
+    ) -> tuple[dict[str, object], HTTPStatus]:
+        argument_fingerprint = json.dumps(arguments, sort_keys=True, separators=(",", ":"))
+        if idempotency_key is not None:
+            existing_id = self.command_keys.get((idempotency_key, name))
+            if existing_id is not None:
+                command = self.commands[existing_id]
+                if command["argument_fingerprint"] != argument_fingerprint:
+                    raise ValueError("Idempotency-Key cannot be reused for a different command payload.")
+                public_command = self._public_record(command)
+                return public_command, HTTPStatus.ACCEPTED if not bool(command["terminal"]) else HTTPStatus.CREATED
+
+        command_id = f"cmd-{uuid.uuid4().hex}"
+        submitted_at = _utc_timestamp()
+        base_record: dict[str, object] = {
+            "command_id": command_id,
+            "name": name,
+            "request_id": request_id,
+            "submitted_at": submitted_at,
+            "started_at": submitted_at,
+            "finished_at": None,
+            "attempt_count": 1,
+            "terminal": False,
+            "retryable": False,
+            "state": "running",
+            "request": {
+                "name": name,
+                "arguments": deepcopy(arguments),
+            },
+            "result": None,
+            "error": None,
+            "job": None,
+            "idempotency_key": idempotency_key,
+            "argument_fingerprint": argument_fingerprint,
+        }
+
+        try:
+            result = server.call_tool(name, deepcopy(arguments))
+        except Exception as exc:
+            error, retryable = _normalize_command_error(exc)
+            command = self._finalize_record(
+                base_record,
+                state="failed",
+                terminal=True,
+                retryable=retryable,
+                result=None,
+                error=error,
+            )
+        else:
+            normalized_result = deepcopy(result)
+            if isinstance(normalized_result, dict) and str(normalized_result.get("status") or "").strip().lower() == "queued":
+                command = self._finalize_record(
+                    base_record,
+                    state="queued",
+                    terminal=False,
+                    retryable=False,
+                    result=normalized_result,
+                    job=_extract_command_job_reference(normalized_result),
+                )
+            else:
+                command = self._finalize_record(
+                    base_record,
+                    state="succeeded",
+                    terminal=True,
+                    retryable=False,
+                    result=normalized_result,
+                )
+
+        self.commands[command_id] = deepcopy(command)
+        if idempotency_key is not None:
+            self.command_keys[(idempotency_key, name)] = command_id
+        return self._public_record(command), HTTPStatus.ACCEPTED if command["state"] == "queued" else HTTPStatus.CREATED
+
+    def get(self, command_id: str) -> dict[str, object]:
+        command = self.commands.get(command_id)
+        if command is None:
+            raise KeyError(f"Unknown command: {command_id}")
+        return self._public_record(command)
+
+    def _finalize_record(
+        self,
+        base_record: dict[str, object],
+        *,
+        state: str,
+        terminal: bool,
+        retryable: bool,
+        result: object,
+        error: dict[str, object] | None = None,
+        job: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        record = dict(base_record)
+        record["state"] = state
+        record["terminal"] = terminal
+        record["retryable"] = retryable
+        record["finished_at"] = _utc_timestamp() if terminal else None
+        record["result"] = deepcopy(result)
+        record["error"] = deepcopy(error) if error is not None else None
+        record["job"] = deepcopy(job) if job is not None else None
+        return record
+
+    def _public_record(self, command: dict[str, object]) -> dict[str, object]:
+        public_command = deepcopy(command)
+        public_command.pop("argument_fingerprint", None)
+        return public_command
 
 
 def run_http_runtime(
@@ -264,6 +383,23 @@ def dispatch_http_request(
         except Exception as exc:
             return _tool_error_response(request_id, exc)
 
+    if normalized_path == "/api/v1/commands":
+        if normalized_method != "POST":
+            return _method_not_allowed(request_id, allowed="POST")
+        try:
+            return _dispatch_command_post(server, request_id=request_id, headers=headers, body=body)
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
+    if normalized_path.startswith("/api/v1/commands/"):
+        if normalized_method != "GET":
+            return _method_not_allowed(request_id, allowed="GET")
+        try:
+            command_id = _single_path_part(normalized_path.removeprefix("/api/v1/commands/"), label="command path")
+            return _success_response(request_id, _get_command_status(server, command_id))
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
     if normalized_path.startswith("/api/v1/jobs/"):
         if normalized_method != "GET":
             return _method_not_allowed(request_id, allowed="GET")
@@ -449,7 +585,6 @@ def _dispatch_tool_post(
         return _call_tool(server, request_id=request_id, tool_name=tool_name, arguments=payload)
     except Exception as exc:
         return _tool_error_response(request_id, exc)
-
 
 def _dispatch_personal_document_request(
     server: StrataWikiServer,
@@ -669,6 +804,51 @@ def _dispatch_personal_document_generation_post(
         return _success_response(request_id, result)
     raise ValueError(f"Unsupported personal document action: {action}")
 
+def _dispatch_command_post(
+    server: StrataWikiServer,
+    *,
+    request_id: str,
+    headers: Mapping[str, str] | None,
+    body: bytes,
+) -> HttpRuntimeResponse:
+    payload = _parse_json_object(body)
+    name = _required_string(payload, "name")
+    arguments = payload.get("arguments", {})
+    if not isinstance(arguments, dict):
+        raise ValueError("Command arguments must decode to an object when provided.")
+    command_store = _http_command_store(server)
+    command, status_code = command_store.submit(
+        server,
+        request_id=request_id,
+        name=name,
+        arguments=arguments,
+        idempotency_key=_header_value(headers, "Idempotency-Key"),
+    )
+    command_id = str(command["command_id"])
+    response_headers: dict[str, str] = {
+        "X-Request-Id": request_id,
+        "Location": f"/api/v1/commands/{command_id}",
+    }
+    if command["state"] == "queued":
+        response_headers["Retry-After"] = "1"
+    return HttpRuntimeResponse(
+        status_code=int(status_code),
+        payload={
+            "ok": True,
+            "request_id": request_id,
+            "result": command,
+        },
+        headers=response_headers,
+    )
+
+
+def _get_command_status(server: StrataWikiServer, command_id: str) -> dict[str, object]:
+    command_store = _http_command_store(server)
+    command = command_store.get(command_id)
+    return {
+        "status": "ok",
+        "command": command,
+    }
 
 def _call_tool(
     server: StrataWikiServer,
@@ -781,6 +961,88 @@ def _tool_error_response(request_id: str, exc: Exception) -> HttpRuntimeResponse
     )
 
 
+def _http_command_store(server: StrataWikiServer) -> _HttpCommandStore:
+    store = getattr(server, "_http_command_store", None)
+    if store is None:
+        store = _HttpCommandStore()
+        setattr(server, "_http_command_store", store)
+    if not isinstance(store, _HttpCommandStore):
+        raise TypeError("HTTP command store has an unexpected type.")
+    return store
+
+
+def _header_value(headers: Mapping[str, str] | None, key: str) -> str | None:
+    if headers is None:
+        return None
+    normalized = {str(header_key).lower(): str(value) for header_key, value in headers.items()}
+    raw = normalized.get(key.lower())
+    if raw is None:
+        return None
+    value = raw.strip()
+    return value or None
+
+
+def _required_string(payload: Mapping[str, object], field: str) -> str:
+    value = payload.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Field {field!r} must be a non-empty string.")
+    return value.strip()
+
+
+def _normalize_command_error(exc: Exception) -> tuple[dict[str, object], bool]:
+    if hasattr(exc, "status_code") and hasattr(exc, "code"):
+        status_code = getattr(exc, "status_code")
+        code = getattr(exc, "code")
+        details = getattr(exc, "details", None)
+        retryable = bool(getattr(exc, "retryable", False))
+        if isinstance(status_code, int) and isinstance(code, str):
+            if not retryable:
+                retryable = status_code >= 500
+            error: dict[str, object] = {
+                "code": code,
+                "message": str(exc),
+            }
+            if isinstance(details, dict) and details:
+                error["details"] = deepcopy(details)
+            return error, retryable
+    if isinstance(exc, ValueError):
+        return (
+            {
+                "code": "validation_error",
+                "message": str(exc),
+                "details": {"type": exc.__class__.__name__},
+            },
+            False,
+        )
+    if isinstance(exc, KeyError):
+        return (
+            {
+                "code": "not_found",
+                "message": str(exc),
+                "details": {"type": exc.__class__.__name__},
+            },
+            False,
+        )
+    return (
+        {
+            "code": "internal_error",
+            "message": str(exc),
+            "details": {"type": exc.__class__.__name__},
+        },
+        True,
+    )
+
+
+def _extract_command_job_reference(result: dict[str, object]) -> dict[str, object] | None:
+    if "job_id" not in result:
+        return None
+    job: dict[str, object] = {"job_id": result["job_id"]}
+    for key in ("event_id", "event_type", "execution_mode"):
+        if key in result:
+            job[key] = result[key]
+    return job
+
+
 def _success_response(request_id: str, result: object) -> HttpRuntimeResponse:
     return HttpRuntimeResponse(
         status_code=HTTPStatus.OK,
@@ -858,6 +1120,12 @@ def _resolve_request_id(headers: Mapping[str, str] | None) -> str:
         if raw:
             return raw
     return f"req-{uuid.uuid4().hex}"
+
+
+def _utc_timestamp() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _single_query_value(query: Mapping[str, list[str]], key: str) -> str | None:

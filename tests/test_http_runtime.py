@@ -1187,6 +1187,95 @@ def test_http_runtime_executes_tool_call_and_propagates_request_id() -> None:
     assert fake_server.calls == [("get_snapshot_status", {"domain": "recruiting"})]
 
 
+def test_http_runtime_submits_and_polls_commands() -> None:
+    fake_server = FakeHttpServer()
+
+    submitted = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/commands",
+        headers={"X-Request-Id": "req-command", "Idempotency-Key": "cmd-key-1"},
+        body=b'{"name":"get_snapshot_status","arguments":{"domain":"recruiting"}}',
+    )
+    command_id = submitted.payload["result"]["command_id"]
+    fetched = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path=f"/api/v1/commands/{command_id}",
+        headers={"X-Request-Id": "req-command-status"},
+        body=b"",
+    )
+    repeated = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/commands",
+        headers={"X-Request-Id": "req-command-retry", "Idempotency-Key": "cmd-key-1"},
+        body=b'{"name":"get_snapshot_status","arguments":{"domain":"recruiting"}}',
+    )
+    queued = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/commands",
+        headers={"X-Request-Id": "req-command-queued"},
+        body=(
+            b'{"name":"build_interpretation_snapshot","arguments":{"domain":"recruiting",'
+            b'"partition":{"family":"market_trends","segment":"backend-japan-midlevel"},'
+            b'"fact_ids":["fact:job:1"],"fact_snapshot":"fact_snap:seed","model_profile":"balanced_default",'
+            b'"publish":true,"execution_mode":"background"}}'
+        ),
+    )
+
+    assert submitted.status_code == 201
+    assert submitted.payload["ok"] is True
+    assert submitted.payload["request_id"] == "req-command"
+    assert submitted.payload["result"]["state"] == "succeeded"
+    assert submitted.payload["result"]["terminal"] is True
+    assert submitted.payload["result"]["result"]["status"] == "ok"
+    assert submitted.headers["Location"] == f"/api/v1/commands/{command_id}"
+
+    assert fetched.status_code == 200
+    assert fetched.payload["result"]["command"]["command_id"] == command_id
+    assert fetched.payload["result"]["command"]["state"] == "succeeded"
+    assert fetched.payload["result"]["command"]["request"]["name"] == "get_snapshot_status"
+
+    assert repeated.status_code == 201
+    assert repeated.payload["result"]["command_id"] == command_id
+
+    assert queued.status_code == 202
+    assert queued.payload["result"]["state"] == "queued"
+    assert queued.payload["result"]["terminal"] is False
+    assert queued.payload["result"]["job"]["job_id"] == "job-123"
+    assert queued.headers["Retry-After"] == "1"
+
+
+def test_http_runtime_normalizes_command_failures() -> None:
+    fake_server = FakeHttpServer()
+
+    failed = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/commands",
+        headers={"X-Request-Id": "req-command-failed"},
+        body=b'{"name":"explode","arguments":{}}',
+    )
+    command_id = failed.payload["result"]["command_id"]
+    fetched = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path=f"/api/v1/commands/{command_id}",
+        headers={},
+        body=b"",
+    )
+
+    assert failed.status_code == 201
+    assert failed.payload["result"]["state"] == "failed"
+    assert failed.payload["result"]["terminal"] is True
+    assert failed.payload["result"]["retryable"] is True
+    assert failed.payload["result"]["error"]["code"] == "internal_error"
+    assert fetched.payload["result"]["command"]["state"] == "failed"
+    assert fetched.payload["result"]["command"]["retryable"] is True
+
+
 def test_http_runtime_exposes_domain_proposal_validate_and_ingest_endpoints() -> None:
     fake_server = FakeHttpServer()
     payload = b'{"batch":{"batch_id":"jobs-wiki-batch-001","domain":"recruiting","producer":"jobs-wiki","pack_version":"2026-04-18","facts":[],"relations":[]}}'

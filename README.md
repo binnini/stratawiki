@@ -354,6 +354,7 @@ curl -s \
 Current status notes:
 
 - the HTTP runtime now includes first-pass resource-specific endpoints for write, Personal, interpretation, and operator flows
+- command submit/status now has a dedicated HTTP resource surface for sync/admin polling
 - `server-http` plus `worker` is the checked-in shared-environment baseline for external WAS integration
 - service-to-service auth is available through `STRATAWIKI_HTTP_AUTH_TOKEN`
 - when that token is configured, `/api/v1/*` endpoints require `Authorization: Bearer <token>`
