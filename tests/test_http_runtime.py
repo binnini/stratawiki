@@ -233,6 +233,7 @@ class _FakePersonalAssetRepository:
 class FakeHttpServer:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
+        self.bootstrap: Any | None = None
         self.profile_contexts: dict[tuple[str, str, str], dict[str, object]] = {}
         self.personal_documents: dict[tuple[str, str, str, str], dict[str, object]] = {}
         self.personal_assets: dict[tuple[str, str, str, str], dict[str, object]] = {}
@@ -901,6 +902,210 @@ class FakeHttpServer:
         raise KeyError(f"Unknown tool: {name}")
 
 
+class FakePersonalGenerationService:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.documents: dict[str, dict[str, object]] = {
+            "personal:wiki:1": {
+                "document_id": "personal:wiki:1",
+                "subspace": "wiki",
+                "version": 3,
+                "anchors": [
+                    {"layer": "interpretation", "id": "interp:published:1"},
+                    {"layer": "fact", "id": "fact:job:1"},
+                ],
+                "provenance": {"generated_by": {"kind": "llm"}},
+            }
+        }
+
+    def summarize_personal_document_to_wiki(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, object],
+        source_document_ref: dict[str, object],
+        profile_version: str,
+        model_profile: str,
+        save_target: dict[str, object],
+        summary_style: str,
+    ) -> dict[str, object]:
+        self.calls.append(
+            (
+                "summarize_personal_document_to_wiki",
+                {
+                    "domain": domain,
+                    "scope_ref": dict(scope_ref),
+                    "source_document_ref": dict(source_document_ref),
+                    "profile_version": profile_version,
+                    "model_profile": model_profile,
+                    "save_target": dict(save_target),
+                    "summary_style": summary_style,
+                },
+            )
+        )
+        document = {
+            "document_id": "personal:wiki:generated",
+            "domain": domain,
+            "subspace": "wiki",
+            "version": 1,
+            "source_document_ref": dict(source_document_ref),
+            "provenance": {
+                "generated_by": {"kind": "llm"},
+                "source_ids": ["personal_document:personal:raw:1"],
+            },
+        }
+        self.documents[document["document_id"]] = document
+        return {"status": "ok", "document": document}
+
+    def rewrite_personal_document_to_wiki(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, object],
+        source_document_ref: dict[str, object],
+        profile_version: str,
+        model_profile: str,
+        save_target: dict[str, object],
+        rewrite_goal: str,
+    ) -> dict[str, object]:
+        self.calls.append(
+            (
+                "rewrite_personal_document_to_wiki",
+                {
+                    "domain": domain,
+                    "scope_ref": dict(scope_ref),
+                    "source_document_ref": dict(source_document_ref),
+                    "profile_version": profile_version,
+                    "model_profile": model_profile,
+                    "save_target": dict(save_target),
+                    "rewrite_goal": rewrite_goal,
+                },
+            )
+        )
+        document = {
+            "document_id": "personal:wiki:generated",
+            "domain": domain,
+            "subspace": "wiki",
+            "version": 1,
+            "source_document_ref": dict(source_document_ref),
+            "provenance": {"generated_by": {"kind": "llm"}},
+        }
+        self.documents[document["document_id"]] = document
+        return {"status": "ok", "document": document}
+
+    def structure_personal_document_to_wiki(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, object],
+        source_document_ref: dict[str, object],
+        profile_version: str,
+        model_profile: str,
+        save_target: dict[str, object],
+        structure_template: str,
+    ) -> dict[str, object]:
+        self.calls.append(
+            (
+                "structure_personal_document_to_wiki",
+                {
+                    "domain": domain,
+                    "scope_ref": dict(scope_ref),
+                    "source_document_ref": dict(source_document_ref),
+                    "profile_version": profile_version,
+                    "model_profile": model_profile,
+                    "save_target": dict(save_target),
+                    "structure_template": structure_template,
+                },
+            )
+        )
+        document = {
+            "document_id": "personal:wiki:generated",
+            "domain": domain,
+            "subspace": "wiki",
+            "version": 1,
+            "source_document_ref": dict(source_document_ref),
+            "provenance": {"generated_by": {"kind": "llm"}},
+        }
+        self.documents[document["document_id"]] = document
+        return {"status": "ok", "document": document}
+
+    def suggest_personal_wiki_links(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, object],
+        wiki_document_id: str,
+        wiki_document_version: int,
+        profile_version: str,
+        model_profile: str,
+        max_suggestions: int,
+    ) -> dict[str, object]:
+        self.calls.append(
+            (
+                "suggest_personal_wiki_links",
+                {
+                    "domain": domain,
+                    "scope_ref": dict(scope_ref),
+                    "wiki_document_id": wiki_document_id,
+                    "wiki_document_version": wiki_document_version,
+                    "profile_version": profile_version,
+                    "model_profile": model_profile,
+                    "max_suggestions": max_suggestions,
+                },
+            )
+        )
+        document = self.documents.get(wiki_document_id)
+        if document is None:
+            raise KeyError("Unknown Personal wiki document.")
+        if wiki_document_version != document["version"]:
+            raise ValueError(
+                f"wiki_document_version does not match the current stored version. Current version is {document['version']}."
+            )
+        return {
+            "status": "ok",
+            "wiki_document_id": wiki_document_id,
+            "wiki_document_version": wiki_document_version,
+            "suggestions": [{"layer": "fact", "id": "fact:job:1"}],
+        }
+
+    def attach_personal_wiki_links(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, object],
+        wiki_document_id: str,
+        wiki_document_version: int,
+        attachments: list[dict[str, object]],
+    ) -> dict[str, object]:
+        self.calls.append(
+            (
+                "attach_personal_wiki_links",
+                {
+                    "domain": domain,
+                    "scope_ref": dict(scope_ref),
+                    "wiki_document_id": wiki_document_id,
+                    "wiki_document_version": wiki_document_version,
+                    "attachments": [dict(item) for item in attachments],
+                },
+            )
+        )
+        document = self.documents.get(wiki_document_id)
+        if document is None:
+            raise KeyError("Unknown Personal wiki document.")
+        if wiki_document_version != document["version"]:
+            raise ValueError(
+                f"wiki_document_version does not match the current stored version. Current version is {document['version']}."
+            )
+        document["anchors"] = [*document.get("anchors", []), *attachments]
+        document["version"] = int(document["version"]) + 1
+        return {
+            "status": "ok",
+            "wiki_document_id": wiki_document_id,
+            "wiki_document_version": document["version"],
+            "attached": [dict(item) for item in attachments],
+        }
+
+
 def test_http_runtime_health_and_readiness_return_success_envelopes() -> None:
     fake_server = FakeHttpServer()
 
@@ -1130,6 +1335,11 @@ def test_http_runtime_personal_query_maps_missing_profile_and_profile_mismatch()
 
 def test_http_runtime_exposes_personal_raw_to_wiki_action_endpoints() -> None:
     fake_server = FakeHttpServer()
+    fake_server.bootstrap = type(
+        "Bootstrap",
+        (),
+        {"personal_document_generation_service": FakePersonalGenerationService()},
+    )()
 
     summarize_response = dispatch_http_request(
         fake_server,
@@ -1142,6 +1352,28 @@ def test_http_runtime_exposes_personal_raw_to_wiki_action_endpoints() -> None:
             b'"save_target":{"subspace":"wiki"},"summary_style":"concise"}'
         ),
     )
+    rewrite_response = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-1/user-1/personal-documents/personal%3Araw%3A2/rewrite-wiki",
+        headers={"X-Request-Id": "req-rewrite"},
+        body=(
+            b'{"domain":"recruiting","profile_version":"profile:v1","model_profile":"balanced_default",'
+            b'"source_document_ref":{"subspace":"raw","version":2},"save_target":{"document_id":"personal:wiki:1","version":3},'
+            b'"rewrite_goal":"job-prep"}'
+        ),
+    )
+    structure_response = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-1/user-1/personal-documents/personal%3Araw%3A3/structure-wiki",
+        headers={"X-Request-Id": "req-structure"},
+        body=(
+            b'{"domain":"recruiting","profile_version":"profile:v1","model_profile":"balanced_default",'
+            b'"source_document_ref":{"subspace":"raw","version":1},"save_target":{"subspace":"wiki"},'
+            b'"structure_template":"outline"}'
+        ),
+    )
     suggest_response = dispatch_http_request(
         fake_server,
         method="POST",
@@ -1150,6 +1382,16 @@ def test_http_runtime_exposes_personal_raw_to_wiki_action_endpoints() -> None:
         body=(
             b'{"domain":"recruiting","profile_version":"profile:v1","model_profile":"balanced_default",'
             b'"wiki_document_version":3,"max_suggestions":5}'
+        ),
+    )
+    invalid_response = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-1/user-1/personal-documents/personal%3Awiki%3A1/suggest-links",
+        headers={"X-Request-Id": "req-invalid"},
+        body=(
+            b'{"domain":"recruiting","profile_version":"profile:v1","model_profile":"balanced_default",'
+            b'"wiki_document_version":"three"}'
         ),
     )
     attach_response = dispatch_http_request(
@@ -1162,24 +1404,49 @@ def test_http_runtime_exposes_personal_raw_to_wiki_action_endpoints() -> None:
             b'"attachments":[{"layer":"fact","id":"fact:job:1"}]}'
         ),
     )
+    conflict_response = dispatch_http_request(
+        fake_server,
+        method="POST",
+        path="/api/v1/users/tenant-1/user-1/personal-documents/personal%3Awiki%3A1/attach-links",
+        headers={"X-Request-Id": "req-conflict"},
+        body=(
+            b'{"domain":"recruiting","wiki_document_version":3,'
+            b'"attachments":[{"layer":"fact","id":"fact:job:2"}]}'
+        ),
+    )
 
     assert summarize_response.status_code == 200
     assert summarize_response.payload["result"]["document"]["source_document_ref"]["document_id"] == "personal:raw:1"
+    assert summarize_response.payload["result"]["document"]["source_document_ref"]["subspace"] == "raw"
+
+    assert rewrite_response.status_code == 200
+    assert rewrite_response.payload["result"]["document"]["source_document_ref"]["document_id"] == "personal:raw:2"
+
+    assert structure_response.status_code == 200
+    assert structure_response.payload["result"]["document"]["source_document_ref"]["document_id"] == "personal:raw:3"
 
     assert suggest_response.status_code == 200
     assert suggest_response.payload["result"]["wiki_document_id"] == "personal:wiki:1"
     assert suggest_response.payload["result"]["wiki_document_version"] == 3
 
+    assert invalid_response.status_code == 422
+    assert invalid_response.payload["ok"] is False
+    assert invalid_response.payload["error"]["code"] == "validation_error"
+
     assert attach_response.status_code == 200
     assert attach_response.payload["result"]["wiki_document_version"] == 4
 
-    assert fake_server.calls[-3:] == [
+    assert conflict_response.status_code == 422
+    assert conflict_response.payload["ok"] is False
+    assert conflict_response.payload["error"]["code"] == "validation_error"
+
+    service = fake_server.bootstrap.personal_document_generation_service
+    assert service.calls == [
         (
             "summarize_personal_document_to_wiki",
             {
                 "domain": "recruiting",
-                "profile_version": "profile:v1",
-                "model_profile": "balanced_default",
+                "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
                 "source_document_ref": {
                     "document_id": "personal:raw:1",
                     "subspace": "raw",
@@ -1187,37 +1454,78 @@ def test_http_runtime_exposes_personal_raw_to_wiki_action_endpoints() -> None:
                     "kind": "raw_document",
                     "asset_refs": ["asset:1"],
                 },
+                "profile_version": "profile:v1",
+                "model_profile": "balanced_default",
                 "save_target": {"subspace": "wiki"},
                 "summary_style": "concise",
-                "tenant_id": "tenant-1",
-                "user_id": "user-1",
+            },
+        ),
+        (
+            "rewrite_personal_document_to_wiki",
+            {
+                "domain": "recruiting",
+                "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+                "source_document_ref": {
+                    "document_id": "personal:raw:2",
+                    "subspace": "raw",
+                    "version": 2,
+                },
+                "profile_version": "profile:v1",
+                "model_profile": "balanced_default",
+                "save_target": {"document_id": "personal:wiki:1", "version": 3, "subspace": "wiki"},
+                "rewrite_goal": "job-prep",
+            },
+        ),
+        (
+            "structure_personal_document_to_wiki",
+            {
+                "domain": "recruiting",
+                "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+                "source_document_ref": {
+                    "document_id": "personal:raw:3",
+                    "subspace": "raw",
+                    "version": 1,
+                },
+                "profile_version": "profile:v1",
+                "model_profile": "balanced_default",
+                "save_target": {"subspace": "wiki"},
+                "structure_template": "outline",
             },
         ),
         (
             "suggest_personal_wiki_links",
             {
                 "domain": "recruiting",
+                "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+                "wiki_document_id": "personal:wiki:1",
+                "wiki_document_version": 3,
                 "profile_version": "profile:v1",
                 "model_profile": "balanced_default",
-                "wiki_document_version": 3,
                 "max_suggestions": 5,
-                "tenant_id": "tenant-1",
-                "user_id": "user-1",
-                "wiki_document_id": "personal:wiki:1",
             },
         ),
         (
             "attach_personal_wiki_links",
             {
                 "domain": "recruiting",
+                "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
+                "wiki_document_id": "personal:wiki:1",
                 "wiki_document_version": 3,
                 "attachments": [{"layer": "fact", "id": "fact:job:1"}],
-                "tenant_id": "tenant-1",
-                "user_id": "user-1",
+            },
+        ),
+        (
+            "attach_personal_wiki_links",
+            {
+                "domain": "recruiting",
+                "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
                 "wiki_document_id": "personal:wiki:1",
+                "wiki_document_version": 3,
+                "attachments": [{"layer": "fact", "id": "fact:job:2"}],
             },
         ),
     ]
+    assert fake_server.calls == []
 
 
 def test_http_runtime_exposes_personal_document_crud_endpoints() -> None:

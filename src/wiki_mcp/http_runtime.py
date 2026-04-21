@@ -199,21 +199,12 @@ def dispatch_http_request(
                 payload = _parse_json_object(body)
                 _coerce_path_field(payload, "tenant_id", route["tenant_id"])
                 _coerce_path_field(payload, "user_id", route["user_id"])
-                if route["action"] in {"summarize-wiki", "rewrite-wiki", "structure-wiki"}:
-                    source_document_ref = payload.get("source_document_ref")
-                    if source_document_ref is None:
-                        source_document_ref = {}
-                        payload["source_document_ref"] = source_document_ref
-                    if not isinstance(source_document_ref, dict):
-                        raise ValueError("Field 'source_document_ref' must be an object.")
-                    _coerce_path_field(source_document_ref, "document_id", route["document_id"])
-                else:
-                    _coerce_path_field(payload, "wiki_document_id", route["document_id"])
-                return _call_tool(
+                return _dispatch_personal_document_generation_post(
                     server,
                     request_id=request_id,
-                    tool_name=_personal_document_action_tool_name(route["action"]),
-                    arguments=payload,
+                    action=route["action"],
+                    document_id=route["document_id"],
+                    payload=payload,
                 )
             except Exception as exc:
                 return _tool_error_response(request_id, exc)
@@ -598,6 +589,87 @@ def _personal_document_service(server: StrataWikiServer) -> Any:
     return service
 
 
+def _dispatch_personal_document_generation_post(
+    server: StrataWikiServer,
+    *,
+    request_id: str,
+    action: str,
+    document_id: str,
+    payload: dict[str, object],
+) -> HttpRuntimeResponse:
+    service = _personal_document_generation_service(server)
+    domain = _required_string(payload, "domain")
+    scope_ref = {
+        "scope": "user",
+        "tenant_id": _required_string(payload, "tenant_id"),
+        "user_id": _required_string(payload, "user_id"),
+    }
+
+    if action in {"summarize-wiki", "rewrite-wiki", "structure-wiki"}:
+        source_document_ref = _personal_source_document_ref(payload, document_id=document_id)
+        if action == "summarize-wiki":
+            result = service.summarize_personal_document_to_wiki(
+                domain=domain,
+                scope_ref=scope_ref,
+                source_document_ref=source_document_ref,
+                profile_version=_required_string(payload, "profile_version"),
+                model_profile=_required_string(payload, "model_profile"),
+                save_target=_personal_wiki_save_target(payload),
+                summary_style=_optional_string(payload, "summary_style") or "concise",
+            )
+            return _success_response(request_id, result)
+        if action == "rewrite-wiki":
+            result = service.rewrite_personal_document_to_wiki(
+                domain=domain,
+                scope_ref=scope_ref,
+                source_document_ref=source_document_ref,
+                profile_version=_required_string(payload, "profile_version"),
+                model_profile=_required_string(payload, "model_profile"),
+                save_target=_personal_wiki_save_target(payload),
+                rewrite_goal=_optional_string(payload, "rewrite_goal") or "general",
+            )
+            return _success_response(request_id, result)
+        result = service.structure_personal_document_to_wiki(
+            domain=domain,
+            scope_ref=scope_ref,
+            source_document_ref=source_document_ref,
+            profile_version=_required_string(payload, "profile_version"),
+            model_profile=_required_string(payload, "model_profile"),
+            save_target=_personal_wiki_save_target(payload),
+            structure_template=_optional_string(payload, "structure_template") or "default",
+        )
+        return _success_response(request_id, result)
+
+    _coerce_path_field(payload, "wiki_document_id", document_id)
+    wiki_document_id = _required_string(payload, "wiki_document_id")
+    wiki_document_version = _required_int(payload, "wiki_document_version")
+
+    if action == "suggest-links":
+        result = service.suggest_personal_wiki_links(
+            domain=domain,
+            scope_ref=scope_ref,
+            wiki_document_id=wiki_document_id,
+            wiki_document_version=wiki_document_version,
+            profile_version=_required_string(payload, "profile_version"),
+            model_profile=_required_string(payload, "model_profile"),
+            max_suggestions=_optional_limit(payload, default=10, field="max_suggestions"),
+        )
+        return _success_response(request_id, result)
+    if action == "attach-links":
+        attachments = payload.get("attachments")
+        if not isinstance(attachments, list):
+            raise ValueError("attachments must be a list.")
+        result = service.attach_personal_wiki_links(
+            domain=domain,
+            scope_ref=scope_ref,
+            wiki_document_id=wiki_document_id,
+            wiki_document_version=wiki_document_version,
+            attachments=attachments,
+        )
+        return _success_response(request_id, result)
+    raise ValueError(f"Unsupported personal document action: {action}")
+
+
 def _call_tool(
     server: StrataWikiServer,
     *,
@@ -620,6 +692,55 @@ def _register_personal_asset(
         raise ValueError("Personal asset registration service is not configured.")
     result = service.register_personal_asset(arguments)
     return _success_response(request_id, result)
+
+
+def _personal_source_document_ref(payload: dict[str, object], *, document_id: str) -> dict[str, object]:
+    source_document_ref = payload.get("source_document_ref")
+    if source_document_ref is None:
+        source_document_ref = {}
+        payload["source_document_ref"] = source_document_ref
+    if not isinstance(source_document_ref, dict):
+        raise ValueError("Field 'source_document_ref' must be an object.")
+    _coerce_path_field(source_document_ref, "document_id", document_id)
+    _coerce_path_field(source_document_ref, "subspace", "raw")
+    return source_document_ref
+
+
+def _personal_wiki_save_target(payload: dict[str, object]) -> dict[str, object]:
+    save_target = payload.get("save_target")
+    if save_target is None:
+        save_target = {}
+        payload["save_target"] = save_target
+    if not isinstance(save_target, dict):
+        raise ValueError("Field 'save_target' must be an object.")
+    _coerce_path_field(save_target, "subspace", "wiki")
+    return save_target
+
+
+def _required_int(payload: Mapping[str, object], field: str) -> int:
+    value = payload.get(field)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"Field '{field}' must be an integer.")
+    return value
+
+
+def _optional_limit(payload: Mapping[str, object], *, default: int, field: str) -> int:
+    value = payload.get(field)
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"Field '{field}' must be an integer.")
+    if value < 1:
+        raise ValueError(f"Field '{field}' must be greater than zero.")
+    return value
+
+
+def _personal_document_generation_service(server: StrataWikiServer) -> Any:
+    bootstrap = getattr(server, "bootstrap", None)
+    service = getattr(bootstrap, "personal_document_generation_service", None)
+    if service is None:
+        raise ValueError("Personal document generation service is not configured.")
+    return service
 
 
 def _tool_error_response(request_id: str, exc: Exception) -> HttpRuntimeResponse:
