@@ -225,6 +225,18 @@ class OllamaChatGateway:
         return metadata
 
     def _parse_json_object(self, content: str) -> dict[str, Any]:
+        normalized = self._extract_json_candidate(content)
+        output = json.loads(normalized)
+        if not isinstance(output, dict):
+            raise LLMGatewayError(
+                "LLM_INVALID_SCHEMA_RESPONSE",
+                "Ollama structured generation returned JSON that was not an object.",
+                retryable=True,
+                details={"raw_output": content},
+            )
+        return output
+
+    def _extract_json_candidate(self, content: str) -> str:
         normalized = content.strip()
         if normalized.startswith("```"):
             lines = normalized.splitlines()
@@ -236,15 +248,44 @@ class OllamaChatGateway:
             if normalized.lower().startswith("json"):
                 normalized = normalized[4:].lstrip()
 
-        output = json.loads(normalized)
-        if not isinstance(output, dict):
-            raise LLMGatewayError(
-                "LLM_INVALID_SCHEMA_RESPONSE",
-                "Ollama structured generation returned JSON that was not an object.",
-                retryable=True,
-                details={"raw_output": content},
-            )
-        return output
+        if normalized.startswith("{") and normalized.endswith("}"):
+            return normalized
+
+        extracted = self._find_first_json_object(normalized)
+        if extracted is not None:
+            return extracted
+
+        return normalized
+
+    def _find_first_json_object(self, content: str) -> str | None:
+        start_index = content.find("{")
+        while start_index != -1:
+            depth = 0
+            in_string = False
+            escape = False
+            for index in range(start_index, len(content)):
+                character = content[index]
+                if in_string:
+                    if escape:
+                        escape = False
+                    elif character == "\\":
+                        escape = True
+                    elif character == "\"":
+                        in_string = False
+                    continue
+
+                if character == "\"":
+                    in_string = True
+                    continue
+                if character == "{":
+                    depth += 1
+                    continue
+                if character == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return content[start_index : index + 1]
+            start_index = content.find("{", start_index + 1)
+        return None
 
     def _extract_http_error(self, raw_body: str) -> tuple[str, dict[str, Any]]:
         try:

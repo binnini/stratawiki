@@ -147,6 +147,30 @@ def test_ollama_gateway_structured_generation_accepts_fenced_json() -> None:
     assert response["output"] == {"summary": "Demand is rising"}
 
 
+def test_ollama_gateway_structured_generation_extracts_json_from_surrounding_text() -> None:
+    gateway = OllamaChatGateway(model_resolver=lambda profile: "gemma3:1b")
+
+    with patch(
+        "urllib.request.urlopen",
+        lambda req, timeout: _FakeHTTPResponse(
+            {
+                "model": "gemma3:1b",
+                "message": {
+                    "role": "assistant",
+                    "content": (
+                        "Here is the requested result.\n"
+                        "{\"summary\":\"Demand is rising\"}\n"
+                        "This is grounded in the provided facts."
+                    ),
+                },
+            }
+        ),
+    ):
+        response = gateway.generate_structured(_structured_request())
+
+    assert response["output"] == {"summary": "Demand is rising"}
+
+
 def test_ollama_gateway_raises_structured_error_for_http_failure() -> None:
     gateway = OllamaChatGateway(model_resolver=lambda profile: "gemma3:270m")
 
