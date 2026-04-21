@@ -646,6 +646,7 @@ def _tool_definitions() -> list[ToolDefinition]:
 @dataclass(slots=True)
 class StrataWikiServer:
     bootstrap: BootstrapContext
+    http_command_store: object | None = None
 
     def list_tools(self) -> list[ToolDefinition]:
         return _tool_definitions()

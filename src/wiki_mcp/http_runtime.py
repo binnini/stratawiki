@@ -962,10 +962,10 @@ def _tool_error_response(request_id: str, exc: Exception) -> HttpRuntimeResponse
 
 
 def _http_command_store(server: StrataWikiServer) -> _HttpCommandStore:
-    store = getattr(server, "_http_command_store", None)
+    store = getattr(server, "http_command_store", None)
     if store is None:
         store = _HttpCommandStore()
-        setattr(server, "_http_command_store", store)
+        setattr(server, "http_command_store", store)
     if not isinstance(store, _HttpCommandStore):
         raise TypeError("HTTP command store has an unexpected type.")
     return store
