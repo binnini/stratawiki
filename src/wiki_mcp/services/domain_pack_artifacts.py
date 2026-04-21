@@ -12,6 +12,22 @@ from wiki_mcp.services.interfaces.domain_pack_governance import DomainPackApprov
 
 DEFAULT_DOMAIN_PACK_PATHS_ENV = "STRATAWIKI_DOMAIN_PACK_PATHS"
 DEFAULT_ACTIVE_DOMAIN_PACKS_ENV = "STRATAWIKI_ACTIVE_DOMAIN_PACKS"
+LEGACY_DOMAIN_PACK_PATHS_ENVS = (
+    DEFAULT_DOMAIN_PACK_PATHS_ENV,
+    "JOBS_WIKI_STRATAWIKI_DOMAIN_PACK_PATHS",
+)
+LEGACY_ACTIVE_DOMAIN_PACKS_ENVS = (
+    DEFAULT_ACTIVE_DOMAIN_PACKS_ENV,
+    "JOBS_WIKI_STRATAWIKI_ACTIVE_DOMAIN_PACKS",
+)
+
+
+def _first_non_empty_env(names: Iterable[str]) -> str:
+    for name in names:
+        raw_value = os.environ.get(name, "")
+        if raw_value.strip():
+            return raw_value
+    return ""
 
 
 def _manifest_value(pack: Mapping[str, Any], key: str) -> str | None:
@@ -30,7 +46,7 @@ def resolve_domain_pack_paths(
     if domain_pack_paths is not None:
         return [Path(path).expanduser().resolve() for path in domain_pack_paths]
 
-    raw = os.environ.get(DEFAULT_DOMAIN_PACK_PATHS_ENV, "")
+    raw = _first_non_empty_env(LEGACY_DOMAIN_PACK_PATHS_ENVS)
     if not raw.strip():
         return []
     return [Path(part).expanduser().resolve() for part in raw.split(os.pathsep) if part.strip()]
@@ -46,7 +62,7 @@ def resolve_active_domain_pack_versions(
             if str(domain).strip() and str(pack_version).strip()
         }
 
-    raw = os.environ.get(DEFAULT_ACTIVE_DOMAIN_PACKS_ENV, "")
+    raw = _first_non_empty_env(LEGACY_ACTIVE_DOMAIN_PACKS_ENVS)
     if not raw.strip():
         return {}
 
