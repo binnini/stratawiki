@@ -21,6 +21,7 @@ It is intentionally written from the external integration point of view.
 
 - a machine-readable REST contract
 - the final decision to remove or keep the wrapper as a long-term rollback path
+- Jobs-Wiki migration from generic tool-call bridge to fully resource-shaped Personal HTTP endpoints
 
 ### Currently Unknown and Must Be Decided
 
@@ -49,6 +50,12 @@ The current REST state after `#41` through `#47` is:
 - a checked-in Docker Compose deployment path exists for `server-http` plus `worker`
 
 Jobs-Wiki can now target HTTP directly for shared-environment testing, while still keeping the wrapper path as a rollback option during the migration.
+
+Important current reality:
+
+- Jobs-Wiki already uses HTTP mode in practice for ask and Personal document flows.
+- However, a large part of the Personal document family is still sent through generic `tool-calls` over HTTP rather than through dedicated resource-shaped Personal endpoints.
+- In other words, the current transport is HTTP-primary, but the consumer contract is still partly in the bridge phase.
 
 ## Future Target Path
 
@@ -162,6 +169,11 @@ For workspace-first document authoring:
    `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/suggest-links`
    followed by `POST /api/v1/users/{tenant_id}/{user_id}/personal-documents/{document_id}/attach-links`
 
+Current implementation note:
+
+- The sequence below is the target resource-shaped contract.
+- Jobs-Wiki current code may still reach parts of this flow through generic `tool-calls` while migration is in progress.
+
 Rules:
 
 - shared rendered pages stay read-only
@@ -198,7 +210,7 @@ Jobs-Wiki should not do these things yet:
 - prepare dual-mode config keys for wrapper and HTTP
 - treat `DomainProposalBatch` as the only default external write contract
 - prefer the new HTTP proposal endpoints over the generic `/api/v1/tool-calls` bridge for write traffic
-- use the new HTTP profile and Personal endpoints rather than the generic `/api/v1/tool-calls` bridge for these flows
+- move Jobs-Wiki off the generic `/api/v1/tool-calls` bridge for Personal document and Personal asset flows once endpoint parity is complete
 - keep profile sync before Personal query
 - use the dedicated HTTP interpretation and status endpoints rather than the generic `/api/v1/tool-calls` bridge for these flows
 - use the Personal document and Personal asset endpoints for workspace authoring once implemented
