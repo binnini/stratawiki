@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -206,7 +207,45 @@ def test_doctor_cli_uses_runtime_validator_without_creating_server() -> None:
         "require_bootstrap_tables": True,
     }
     assert json.loads(stdout.getvalue()) == {
+        "env_file": "/Users/yebin/workSpace/Ontology/stratawiki/.env",
         "render_root": "data-runtime",
+        "status": "ok",
+    }
+    assert stderr.getvalue() == ""
+
+
+def test_doctor_cli_reports_loaded_env_file(tmp_path: Path) -> None:
+    stdout = StringIO()
+    stderr = StringIO()
+    env_file = tmp_path / ".env"
+    env_file.write_text("STRATAWIKI_RENDER_ROOT=env-render-root\n", encoding="utf-8")
+    previous_render_root = os.environ.get("STRATAWIKI_RENDER_ROOT")
+
+    try:
+        os.environ.pop("STRATAWIKI_RENDER_ROOT", None)
+        exit_code = run_cli(
+            [
+                "--env-file",
+                str(env_file),
+                "doctor",
+            ],
+            server_factory=lambda **kwargs: (_ for _ in ()).throw(
+                AssertionError("server should not be created")
+            ),
+            runtime_validator=lambda **kwargs: {"status": "ok", "render_root": kwargs["render_root"]},
+            stdout=stdout,
+            stderr=stderr,
+        )
+    finally:
+        if previous_render_root is None:
+            os.environ.pop("STRATAWIKI_RENDER_ROOT", None)
+        else:
+            os.environ["STRATAWIKI_RENDER_ROOT"] = previous_render_root
+
+    assert exit_code == 0
+    assert json.loads(stdout.getvalue()) == {
+        "env_file": str(env_file.resolve()),
+        "render_root": "env-render-root",
         "status": "ok",
     }
     assert stderr.getvalue() == ""

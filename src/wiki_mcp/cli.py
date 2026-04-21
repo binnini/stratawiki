@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -38,6 +39,43 @@ RuntimeValidator = Callable[..., dict[str, object]]
 HttpRuntimeRunner = Callable[..., int]
 
 
+def resolve_env_candidate_paths(cwd: str | Path | None = None) -> list[Path]:
+    resolved_cwd = Path(cwd or Path.cwd())
+    module_root = Path(__file__).resolve().parents[3]
+    return list(
+        dict.fromkeys(
+            [
+                resolved_cwd / ".env",
+                module_root / ".env",
+            ]
+        )
+    )
+
+
+def load_nearest_env_file(
+    *,
+    cwd: str | Path | None = None,
+    explicit_path: str | Path | None = None,
+) -> Path | None:
+    candidates = (
+        [Path(explicit_path).expanduser()]
+        if explicit_path is not None
+        else resolve_env_candidate_paths(cwd)
+    )
+    for candidate in candidates:
+        resolved_candidate = candidate.resolve()
+        if not resolved_candidate.is_file():
+            continue
+        for raw_line in resolved_candidate.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+        return resolved_candidate
+    return None
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="stratawiki",
@@ -46,6 +84,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--database-url",
         help="Optional PostgreSQL connection string. Defaults to DATABASE_URL or the local default.",
+    )
+    parser.add_argument(
+        "--env-file",
+        help="Optional env file to load before resolving runtime defaults.",
     )
     parser.add_argument(
         "--render-root",
@@ -168,8 +210,16 @@ def run_cli(
     stdout: TextIO | None = None,
     stderr: TextIO | None = None,
 ) -> int:
+    argv_list = list(argv) if argv is not None else sys.argv[1:]
+    explicit_env_file: str | None = None
+    for index, token in enumerate(argv_list):
+        if token == "--env-file" and index + 1 < len(argv_list):
+            explicit_env_file = argv_list[index + 1]
+            break
+    loaded_env_file = load_nearest_env_file(explicit_path=explicit_env_file)
+
     parser = build_argument_parser()
-    args = parser.parse_args(list(argv) if argv is not None else None)
+    args = parser.parse_args(argv_list)
     resolved_stdin = stdin or sys.stdin
     resolved_stdout = stdout or sys.stdout
     resolved_stderr = stderr or sys.stderr
@@ -200,6 +250,8 @@ def run_cli(
         except Exception as exc:
             resolved_stderr.write(json.dumps({"ok": False, "error": exc.__class__.__name__, "message": str(exc)}) + "\n")
             return 1
+        if loaded_env_file is not None:
+            result["env_file"] = str(loaded_env_file)
         _write_json(resolved_stdout, result)
         return 0
 
@@ -214,6 +266,8 @@ def run_cli(
         except Exception as exc:
             resolved_stderr.write(json.dumps({"ok": False, "error": exc.__class__.__name__, "message": str(exc)}) + "\n")
             return 1
+        if loaded_env_file is not None:
+            result["env_file"] = str(loaded_env_file)
         _write_json(resolved_stdout, result)
         return 0
 
@@ -226,6 +280,9 @@ def run_cli(
                 domain_pack_paths=args.domain_pack_path,
                 require_bootstrap_tables=True,
             )
+            if loaded_env_file is not None:
+                validation_result = dict(validation_result)
+                validation_result["env_file"] = str(loaded_env_file)
         except Exception as exc:
             resolved_stderr.write(json.dumps({"ok": False, "error": exc.__class__.__name__, "message": str(exc)}) + "\n")
             return 1

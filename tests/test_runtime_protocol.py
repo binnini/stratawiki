@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 from io import StringIO
+from pathlib import Path
 from typing import Any
+
+import os
 
 from wiki_mcp.cli import run_cli
 from wiki_mcp.tools import ToolDefinition
@@ -193,6 +196,71 @@ def test_serve_http_cli_uses_validated_host_and_port() -> None:
     assert captured["server"] is fake_server
     assert captured["host"] == "0.0.0.0"
     assert captured["port"] == 8091
-    assert captured["ready_payload"] == {"status": "ok", "bootstrap_tables_checked": True}
+    assert captured["ready_payload"] == {
+        "status": "ok",
+        "bootstrap_tables_checked": True,
+        "env_file": "/Users/yebin/workSpace/Ontology/stratawiki/.env",
+    }
     assert captured["auth_token"] is None
+    assert fake_server.closed is True
+
+
+def test_serve_http_cli_loads_env_file_before_resolving_defaults(tmp_path: Path) -> None:
+    fake_server = FakeServeServer()
+    captured: dict[str, object] = {}
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "STRATAWIKI_HTTP_HOST=0.0.0.0",
+                "STRATAWIKI_HTTP_PORT=8099",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_http_runner(
+        server: FakeServeServer,
+        *,
+        host: str,
+        port: int,
+        ready_payload: dict[str, object] | None,
+        auth_token: str | None,
+    ) -> int:
+        captured["server"] = server
+        captured["host"] = host
+        captured["port"] = port
+        captured["ready_payload"] = ready_payload
+        captured["auth_token"] = auth_token
+        return 0
+
+    previous_host = os.environ.get("STRATAWIKI_HTTP_HOST")
+    previous_port = os.environ.get("STRATAWIKI_HTTP_PORT")
+    os.environ.pop("STRATAWIKI_HTTP_HOST", None)
+    os.environ.pop("STRATAWIKI_HTTP_PORT", None)
+    try:
+        exit_code = run_cli(
+            ["--env-file", str(env_file), "serve-http"],
+            server_factory=lambda **kwargs: fake_server,
+            runtime_validator=lambda **kwargs: {"status": "ok", "bootstrap_tables_checked": True},
+            http_runtime_runner=fake_http_runner,
+        )
+    finally:
+        if previous_host is None:
+            os.environ.pop("STRATAWIKI_HTTP_HOST", None)
+        else:
+            os.environ["STRATAWIKI_HTTP_HOST"] = previous_host
+        if previous_port is None:
+            os.environ.pop("STRATAWIKI_HTTP_PORT", None)
+        else:
+            os.environ["STRATAWIKI_HTTP_PORT"] = previous_port
+
+    assert exit_code == 0
+    assert captured["host"] == "0.0.0.0"
+    assert captured["port"] == 8099
+    assert captured["ready_payload"] == {
+        "status": "ok",
+        "bootstrap_tables_checked": True,
+        "env_file": str(env_file.resolve()),
+    }
     assert fake_server.closed is True
