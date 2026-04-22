@@ -71,7 +71,7 @@ def _retrieval_result() -> dict[str, Any]:
                 "kind": "plan",
                 "title": "Existing plan",
                 "summary": "Prior saved plan",
-                "body_path": "wiki/users/user-1/plans/existing-plan.md",
+                "path": "wiki/users/user-1/plans/existing-plan.md",
             }
         ],
         "interpretation_records": [
@@ -226,20 +226,19 @@ def test_query_personal_knowledge_save_persists_metadata_and_markdown_body(
         "profile_version": "profile:v1",
     }
     assert saved_record["profile_version"] == "profile:v1"
-    assert saved_record["body_path"].startswith("wiki/users/user-1/answers/")
+    assert saved_record["subspace"] == "wiki"
+    assert saved_record["asset_refs"] == []
+    assert saved_record["version"] == 1
+    assert saved_record["path"].startswith("wiki/users/user-1/answers/")
     assert saved_record["anchors"] == [
         {"layer": "interpretation", "id": "interp:1"},
         {"layer": "fact", "id": "fact:1"},
     ]
 
-    persisted_path = tmp_path / saved_record["body_path"]
+    persisted_path = tmp_path / saved_record["path"]
     assert persisted_path.exists()
     persisted_body = persisted_path.read_text(encoding="utf-8")
-    assert "stratawiki:personal_query_answer" in persisted_body
-    assert '"anchors": [' in persisted_body
-    assert '"interp:1"' in persisted_body
-    assert '"fact:1"' in persisted_body
-    assert answer["answer_markdown"] in persisted_body
+    assert persisted_body == answer["answer_markdown"] + "\n"
 
 
 def test_query_personal_knowledge_supports_korean_prompt_templates() -> None:

@@ -69,9 +69,14 @@ def test_get_by_ids_maps_personal_anchor_metadata() -> None:
                         "fact_snapshot_id": "fact_snap:1",
                         "interpretation_snapshot_id": "interp_snap:1",
                         "profile_version": "profile:v1",
-                        "body_path": "wiki/users/user-1/answers/answer.md",
+                        "path": "wiki/users/user-1/answers/answer.md",
+                        "subspace": "wiki",
                         "status": "active",
+                        "content_hash": "abc123",
                         "schema_version": "personal.v1",
+                        "version": 1,
+                        "created_at": "2026-04-20T00:00:00Z",
+                        "asset_refs_json": [],
                         "anchors_json": [
                             {"layer": "interpretation", "id": "interp:1"},
                             {"layer": "fact", "id": "fact:1"},
@@ -103,13 +108,18 @@ def test_get_by_ids_maps_personal_anchor_metadata() -> None:
                 "profile_version": "profile:v1",
             },
             "profile_version": "profile:v1",
-            "body_path": "wiki/users/user-1/answers/answer.md",
+            "path": "wiki/users/user-1/answers/answer.md",
+            "subspace": "wiki",
+            "asset_refs": [],
+            "content_hash": "abc123",
             "anchors": [
                 {"layer": "interpretation", "id": "interp:1"},
                 {"layer": "fact", "id": "fact:1"},
             ],
             "status": "active",
             "schema_version": "personal.v1",
+            "version": 1,
+            "created_at": "2026-04-20T00:00:00Z",
             "provenance": {"generated_by": {"kind": "llm"}},
         }
     ]
@@ -136,7 +146,7 @@ def test_save_record_persists_personal_anchor_metadata() -> None:
                 "profile_version": "profile:v1",
             },
             "profile_version": "profile:v1",
-            "body_path": "wiki/users/user-1/answers/answer.md",
+            "path": "wiki/users/user-1/answers/answer.md",
             "anchors": [
                 {"layer": "interpretation", "id": "interp:1"},
                 {"layer": "fact", "id": "fact:1"},
@@ -150,7 +160,9 @@ def test_save_record_persists_personal_anchor_metadata() -> None:
     query, params = cursor.executed[0]
     assert "anchors_json" in query
     assert isinstance(params, tuple)
-    assert json.loads(params[14]) == [
+    assert params[14] == ""
+    assert json.loads(params[18]) == []
+    assert json.loads(params[19]) == [
         {"layer": "interpretation", "id": "interp:1"},
         {"layer": "fact", "id": "fact:1"},
     ]
@@ -173,7 +185,7 @@ def test_search_by_anchors_queries_anchor_metadata_column() -> None:
                         "fact_snapshot_id": "fact_snap:1",
                         "interpretation_snapshot_id": "interp_snap:1",
                         "profile_version": "profile:v1",
-                        "body_path": "wiki/users/user-1/answers/answer.md",
+                        "path": "wiki/users/user-1/answers/answer.md",
                         "status": "active",
                         "schema_version": "personal.v1",
                         "anchors_json": [
@@ -204,7 +216,7 @@ def test_search_by_anchors_queries_anchor_metadata_column() -> None:
     assert params[-1] == 5
 
 
-def test_list_records_maps_document_version_metadata_from_provenance() -> None:
+def test_list_records_maps_document_version_metadata_from_columns() -> None:
     cursor = FakeCursor(
         [
             {
@@ -221,19 +233,18 @@ def test_list_records_maps_document_version_metadata_from_provenance() -> None:
                         "fact_snapshot_id": "fact_snap:1",
                         "interpretation_snapshot_id": "interp_snap:1",
                         "profile_version": "profile:v1",
-                        "body_path": "wiki/users/user-1/personal-documents/pdoc_1.md",
+                        "path": "wiki/users/user-1/personal-documents/pdoc_1.md",
+                        "subspace": "raw",
                         "status": "active",
+                        "content_hash": "hash123",
                         "schema_version": "personal.document.v1",
+                        "version": 3,
+                        "created_at": "2026-04-19T23:59:00Z",
                         "updated_at": "2026-04-20T00:00:00Z",
+                        "asset_refs_json": [],
                         "anchors_json": [],
                         "provenance_json": {
                             "generated_by": {"kind": "user"},
-                            "_personal_document": {
-                                "subspace": "raw",
-                                "asset_refs": [],
-                                "version": 3,
-                                "created_at": "2026-04-19T23:59:00Z",
-                            },
                         },
                     }
                 ]

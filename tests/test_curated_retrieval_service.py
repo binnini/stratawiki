@@ -337,7 +337,7 @@ def test_curated_retrieval_uses_fact_search_fallback_when_no_evidence_exists() -
     assert result["fact_explanations"][0]["match_type"] == "curated_repository_search"
 
 
-def test_curated_retrieval_rehydrates_saved_answer_anchors_from_rendered_body() -> None:
+def test_curated_retrieval_uses_persisted_personal_anchor_metadata() -> None:
     personal_repository = StubPersonalRepository(
         search_results=[
             {
@@ -351,45 +351,13 @@ def test_curated_retrieval_rehydrates_saved_answer_anchors_from_rendered_body() 
                     "interpretation_snapshot_id": "interp_snap:1",
                     "profile_version": "profile:v1",
                 },
-                "body_path": "wiki/users/user-1/answers/saved-answer.md",
+                "path": "wiki/users/user-1/answers/saved-answer.md",
+                "anchors": [
+                    {"layer": "interpretation", "id": "interp:saved:1"},
+                    {"layer": "fact", "id": "fact:saved:1"},
+                ],
             }
         ]
-    )
-    rendering_repository = StubRenderingRepository(
-        bodies_by_path={
-            "wiki/users/user-1/answers/saved-answer.md": """<!-- stratawiki:personal_query_answer
-{
-  "anchor_details": [
-    {
-      "id": "interp:saved:1",
-      "layer": "interpretation",
-      "title": "Saved interpretation"
-    },
-    {
-      "id": "fact:saved:1",
-      "layer": "fact",
-      "title": "Saved fact"
-    }
-  ],
-  "anchors": [
-    "interp:saved:1",
-    "fact:saved:1"
-  ],
-  "answer_type": "personal_query_answer",
-  "provenance": {
-    "fact_snapshot": "fact_snap:1",
-    "interpretation_snapshot": "interp_snap:1",
-    "profile_version": "profile:v1"
-  },
-  "question": "What should I focus on next?"
-}
--->
-
-## Answer
-
-Saved answer body.
-"""
-        }
     )
     interpretation_repository = StubInterpretationRepository(
         by_id={"interp:saved:1": _interpretation("interp:saved:1", evidence=[])},
@@ -402,7 +370,6 @@ Saved answer body.
         fact_repository=fact_repository,
         interpretation_repository=interpretation_repository,
         personal_repository=personal_repository,
-        rendering_repository=rendering_repository,
     )
 
     result = service.retrieve_for_query(
@@ -414,12 +381,6 @@ Saved answer body.
     assert result["interpretation_ids"] == ["interp:saved:1"]
     assert result["fact_ids"] == ["fact:saved:1"]
     assert result["retrieval_metadata"]["personal_anchor_status"] == "present"
-    assert rendering_repository.read_calls == [
-        {
-            "path": "wiki/users/user-1/answers/saved-answer.md",
-            "scope_ref": _scope_ref(),
-        }
-    ]
     assert result["retrieval_metadata"]["fact_source"] == "personal_anchors"
     assert result["fact_explanations"][0]["match_type"] == "personal_anchor_expansion"
 
@@ -439,7 +400,7 @@ def test_curated_retrieval_reverse_looks_up_personal_records_from_persisted_anch
                     "interpretation_snapshot_id": "interp_snap:1",
                     "profile_version": "profile:v1",
                 },
-                "body_path": "wiki/users/user-1/answers/saved-answer.md",
+                "path": "wiki/users/user-1/answers/saved-answer.md",
                 "anchors": [
                     {"layer": "interpretation", "id": "interp:shared:1"},
                     {"layer": "fact", "id": "fact:shared:1"},

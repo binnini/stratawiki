@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import json
-import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from wiki_mcp.schemas.metadata_validation import ensure_personal_anchors
-from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
 from wiki_mcp.schemas.scope_ref import ScopeRef
+from wiki_mcp.services.personal_document_bodies import PersonalDocumentBodyStore
 
 
 class RuntimeContractError(Exception):
@@ -55,11 +53,6 @@ class PersonalDocumentNotFoundError(RuntimeContractError):
             status_code=404,
             details=details,
         )
-
-
-_PERSONAL_DOCUMENT_MARKER = "stratawiki:personal_document"
-_PERSONAL_DOCUMENT_STORAGE_KEY = "_personal_document"
-
 
 @dataclass(slots=True)
 class PersonalDocumentService:
@@ -162,13 +155,20 @@ class PersonalDocumentService:
             created_at=now,
             updated_at=now,
         )
-        artifact = self._artifact_from_record(record, body_markdown=normalized_body or "")
-        receipt = self.rendering_repository.replace_artifact_atomically(artifact)
+        receipt = self._body_store().replace_body_atomically(
+            domain=domain,
+            record_id=document_id,
+            path=str(record["path"]),
+            title=normalized_title,
+            body_markdown=normalized_body or "",
+            scope_ref=scope_ref,
+            snapshot_ref=snapshot_ref,
+        )
         try:
             self.personal_repository.save_record(record)
-            self.rendering_repository.commit_artifact_replacement(receipt)
+            self._body_store().commit_body_write(receipt)
         except Exception:
-            self.rendering_repository.rollback_artifact_replacement(receipt)
+            self._body_store().rollback_body_write(receipt)
             raise
         return self.get_document(
             domain=domain,
@@ -254,13 +254,20 @@ class PersonalDocumentService:
             created_at=str(current_document["created_at"]),
             updated_at=updated_at,
         )
-        artifact = self._artifact_from_record(record, body_markdown=next_body or "")
-        receipt = self.rendering_repository.replace_artifact_atomically(artifact)
+        receipt = self._body_store().replace_body_atomically(
+            domain=domain,
+            record_id=document_id,
+            path=str(record["path"]),
+            title=str(record["title"]),
+            body_markdown=next_body or "",
+            scope_ref=scope_ref,
+            snapshot_ref=record["snapshot_ref"],
+        )
         try:
             self.personal_repository.save_record(record)
-            self.rendering_repository.commit_artifact_replacement(receipt)
+            self._body_store().commit_body_write(receipt)
         except Exception:
-            self.rendering_repository.rollback_artifact_replacement(receipt)
+            self._body_store().rollback_body_write(receipt)
             raise
         return self.get_document(
             domain=domain,
@@ -341,7 +348,10 @@ class PersonalDocumentService:
             "scope_ref": dict(scope_ref),
             "snapshot_ref": dict(snapshot_ref),
             "profile_version": profile_version,
-            "body_path": self._body_path(scope_ref=scope_ref, document_id=document_id),
+            "path": self._document_path(scope_ref=scope_ref, document_id=document_id),
+            "subspace": subspace,
+            "asset_refs": list(asset_refs),
+            "content_hash": self._body_store().content_hash(body_markdown or ""),
             "anchors": list(anchors),
             "status": status,
             "schema_version": "personal.document.v1",
@@ -351,35 +361,7 @@ class PersonalDocumentService:
             "provenance": {
                 "generated_by": {"kind": "user"},
                 "generated_at": updated_at,
-                _PERSONAL_DOCUMENT_STORAGE_KEY: {
-                    "subspace": subspace,
-                    "asset_refs": list(asset_refs),
-                    "version": version,
-                    "created_at": created_at,
-                },
             },
-        }
-
-    def _artifact_from_record(
-        self,
-        record: dict[str, Any],
-        *,
-        body_markdown: str,
-    ) -> RenderedArtifact:
-        metadata = self._storage_metadata(record)
-        return {
-            "domain": record["domain"],
-            "layer": "personal",
-            "record_id": record["id"],
-            "path": record["body_path"],
-            "title": record["title"],
-            "body_markdown": self._render_document_body(
-                body_markdown=body_markdown,
-                subspace=str(metadata["subspace"]),
-                asset_refs=[str(value) for value in metadata.get("asset_refs", [])],
-            ),
-            "scope_ref": record["scope_ref"],
-            "snapshot_ref": record["snapshot_ref"],
         }
 
     def _document_from_record(
@@ -388,20 +370,14 @@ class PersonalDocumentService:
         *,
         scope_ref: ScopeRef,
     ) -> dict[str, object]:
-        storage_metadata = self._storage_metadata(record)
-        rendered_body = self.rendering_repository.read_body(
-            path=record["body_path"],
+        body_result = self._body_store().read_body(
+            path=self._record_path(record),
             scope_ref=scope_ref,
         )
-        parsed_metadata, body_markdown = self._parse_document_body(rendered_body)
-        subspace = str(
-            record.get("subspace")
-            or parsed_metadata.get("subspace")
-            or storage_metadata["subspace"]
-        )
-        asset_refs = parsed_metadata.get("asset_refs")
+        subspace = str(record.get("subspace") or "raw")
+        asset_refs = record.get("asset_refs")
         if not isinstance(asset_refs, list):
-            asset_refs = list(storage_metadata.get("asset_refs", []))
+            asset_refs = []
         return {
             "document_id": record["id"],
             "domain": record["domain"],
@@ -410,15 +386,15 @@ class PersonalDocumentService:
             "subspace": subspace,
             "kind": record["kind"],
             "title": record["title"],
-            "body_markdown": body_markdown,
+            "body_markdown": body_result.body_markdown,
             "asset_refs": [str(value) for value in asset_refs if isinstance(value, str) and value.strip()],
             "anchors": list(record.get("anchors", [])),
             "based_on": dict(record["snapshot_ref"]),
-            "provenance": self._public_provenance(record.get("provenance", {})),
+            "provenance": dict(record.get("provenance", {})),
             "status": record["status"],
-            "version": int(storage_metadata["version"]),
-            "created_at": str(storage_metadata["created_at"]),
-            "updated_at": str(record.get("updated_at") or storage_metadata["created_at"]),
+            "version": int(record.get("version") or 1),
+            "created_at": str(record.get("created_at") or record.get("updated_at") or self._now_iso()),
+            "updated_at": str(record.get("updated_at") or record.get("created_at") or self._now_iso()),
         }
 
     def _require_record(
@@ -523,61 +499,20 @@ class PersonalDocumentService:
     def _scope_ref(self, *, tenant_id: str, user_id: str) -> ScopeRef:
         return {"scope": "user", "tenant_id": tenant_id, "user_id": user_id}
 
-    def _body_path(self, *, scope_ref: ScopeRef, document_id: str) -> str:
+    def _document_path(self, *, scope_ref: ScopeRef, document_id: str) -> str:
         return f"wiki/users/{scope_ref['user_id']}/personal-documents/{document_id}.md"
 
-    def _storage_metadata(self, record: dict[str, Any]) -> dict[str, object]:
-        provenance = dict(record.get("provenance") or {})
-        raw = provenance.get(_PERSONAL_DOCUMENT_STORAGE_KEY)
-        data = dict(raw) if isinstance(raw, dict) else {}
-        data.setdefault("subspace", "raw")
-        data.setdefault("asset_refs", [])
-        data.setdefault("version", int(record.get("version") or 1))
-        data.setdefault("created_at", str(record.get("created_at") or record.get("updated_at") or self._now_iso()))
-        return data
+    def _record_path(self, record: dict[str, Any]) -> str:
+        path = record.get("path")
+        if not isinstance(path, str) or not path:
+            return self._document_path(
+                scope_ref=record["scope_ref"],
+                document_id=str(record["id"]),
+            )
+        return path
 
-    def _public_provenance(self, provenance: dict[str, Any]) -> dict[str, Any]:
-        public = dict(provenance)
-        public.pop(_PERSONAL_DOCUMENT_STORAGE_KEY, None)
-        return public
-
-    def _render_document_body(
-        self,
-        *,
-        body_markdown: str,
-        subspace: str,
-        asset_refs: list[str],
-    ) -> str:
-        metadata_json = json.dumps(
-            {"subspace": subspace, "asset_refs": asset_refs},
-            sort_keys=True,
-        )
-        normalized_body = body_markdown.strip("\n")
-        if normalized_body:
-            return f"<!-- {_PERSONAL_DOCUMENT_MARKER} {metadata_json} -->\n\n{normalized_body}\n"
-        return f"<!-- {_PERSONAL_DOCUMENT_MARKER} {metadata_json} -->\n"
-
-    def _parse_document_body(
-        self,
-        raw_body: str | None,
-    ) -> tuple[dict[str, object], str]:
-        if not isinstance(raw_body, str) or not raw_body.strip():
-            return {}, ""
-        pattern = re.compile(
-            rf"<!--\s*{re.escape(_PERSONAL_DOCUMENT_MARKER)}\s*(\{{.*?\}})\s*-->",
-            re.DOTALL,
-        )
-        match = pattern.search(raw_body)
-        if match is None:
-            return {}, raw_body.strip()
-        metadata_text = match.group(1)
-        try:
-            metadata = json.loads(metadata_text)
-        except json.JSONDecodeError:
-            return {}, raw_body.strip()
-        if not isinstance(metadata, dict):
-            metadata = {}
-        return metadata, raw_body[match.end():].lstrip("\n").rstrip()
+    def _body_store(self) -> PersonalDocumentBodyStore:
+        return PersonalDocumentBodyStore(self.rendering_repository)
 
     def _summary(self, *, title: str, body_markdown: str | None) -> str:
         body = (body_markdown or "").strip()

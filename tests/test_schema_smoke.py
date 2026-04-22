@@ -92,7 +92,7 @@ def test_shared_schema_examples_are_constructible() -> None:
         "scope_ref": scope_ref,
         "snapshot_ref": snapshot_ref,
         "profile_version": "profile_v7",
-        "body_path": "personal/recruiting/summary.md",
+        "path": "personal/recruiting/summary.md",
         "anchors": personal_anchors,
         "status": "active",
         "schema_version": "personal.v1",

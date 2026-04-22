@@ -8,14 +8,12 @@ from uuid import uuid4
 
 from wiki_mcp.adapters.llm.gateway import LLMGateway
 from wiki_mcp.prompts import PromptCatalog, resolve_prompt_language, resolve_prompt_version
-from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
 from wiki_mcp.schemas.scope_ref import ScopeRef
+from wiki_mcp.services.personal_document_bodies import PersonalDocumentBodyStore
 
 
 class PersonalDocumentGenerationService:
     """Run Personal raw-to-wiki generation and wiki link operations."""
-
-    document_marker = "stratawiki:personal_document"
 
     def __init__(
         self,
@@ -310,7 +308,7 @@ class PersonalDocumentGenerationService:
         if target_document_id is None:
             document_id = self._new_document_id(subspace="wiki")
             version = 1
-            body_path = self._body_path(scope_ref=scope_ref, subspace="wiki", title=generation["title"])
+            path = self._document_path(scope_ref=scope_ref, subspace="wiki", title=generation["title"])
             existing_anchors: list[dict[str, str]] = []
         else:
             if not isinstance(target_document_id, str) or not target_document_id.strip():
@@ -329,7 +327,7 @@ class PersonalDocumentGenerationService:
                 )
             document_id = target_document_id
             version = target_document["version"] + 1
-            body_path = target_document["body_path"]
+            path = str(target_document["path"])
             existing_anchors = list(target_document.get("anchors", []))
 
         kind = "wiki_summary" if operation == "summarize" else "wiki_note"
@@ -367,7 +365,7 @@ class PersonalDocumentGenerationService:
             "title": generation["title"],
             "summary": self._summarize_markdown(generation["body_markdown"]),
             "body_markdown": generation["body_markdown"],
-            "body_path": body_path,
+            "path": path,
             "scope_ref": scope_ref,
             "snapshot_ref": snapshot_ref,
             "profile_version": profile_version,
@@ -375,6 +373,7 @@ class PersonalDocumentGenerationService:
             "schema_version": "personal_document.v1",
             "anchors": anchors,
             "asset_refs": [],
+            "content_hash": self._body_store().content_hash(generation["body_markdown"]),
             "source_document_ref": {
                 "document_id": source_document["document_id"],
                 "subspace": "raw",
@@ -504,73 +503,59 @@ class PersonalDocumentGenerationService:
         record = dict(records[0])
         if record.get("domain") != domain:
             raise KeyError(f"Unknown personal document: {document_id}")
-        body_path = str(record["body_path"])
-        raw_body = self.rendering_repository.read_body(path=body_path, scope_ref=scope_ref)
+        path = str(record.get("path") or "")
+        raw_body = self.rendering_repository.read_body(path=path, scope_ref=scope_ref)
         if raw_body is None:
             raise KeyError(f"Personal document body was not found for {document_id}.")
-        metadata, body_markdown = self._parse_document_body(raw_body)
-        subspace = str(metadata.get("subspace") or self._infer_subspace(record))
-        version = int(metadata.get("version") or record.get("version") or 1)
-        asset_refs = metadata.get("asset_refs")
+        body_result = self._body_store().parse_body(raw_body)
+        provenance = dict(record.get("provenance") or {})
+        source_document_ref = provenance.get("source_document_ref")
+        generation = provenance.get("generation")
+        subspace = str(record.get("subspace") or self._infer_subspace(record))
+        version = int(record.get("version") or 1)
+        asset_refs = record.get("asset_refs")
         if not isinstance(asset_refs, list):
             asset_refs = []
-        anchors = metadata.get("anchors")
+        anchors = record.get("anchors")
         if not isinstance(anchors, list):
             anchors = list(record.get("anchors", []))
         document = {
-            "document_id": str(metadata.get("document_id") or record["id"]),
+            "document_id": str(record["id"]),
             "domain": domain,
             "subspace": subspace,
             "kind": str(record.get("kind") or "personal_document"),
-            "document_kind": str(metadata.get("kind") or record.get("kind") or "personal_document"),
+            "document_kind": str(record.get("kind") or "personal_document"),
             "version": version,
-            "title": str(metadata.get("title") or record.get("title") or record["id"]),
-            "summary": str(metadata.get("summary") or record.get("summary") or ""),
-            "body_markdown": body_markdown,
-            "body_path": body_path,
+            "title": str(record.get("title") or record["id"]),
+            "summary": str(record.get("summary") or ""),
+            "body_markdown": body_result.body_markdown,
+            "path": path,
             "scope_ref": dict(record["scope_ref"]),
             "snapshot_ref": dict(record.get("snapshot_ref") or {}),
-            "profile_version": str(record.get("profile_version") or metadata.get("profile_version") or ""),
+            "profile_version": str(record.get("profile_version") or ""),
             "status": str(record.get("status") or "active"),
             "schema_version": str(record.get("schema_version") or "personal_document.v1"),
             "anchors": self._normalize_attachments(anchors),
             "asset_refs": [str(item) for item in asset_refs if isinstance(item, str)],
-            "source_document_ref": metadata.get("source_document_ref"),
-            "generation": metadata.get("generation"),
-            "provenance": dict(record.get("provenance") or {}),
+            "content_hash": str(record.get("content_hash") or self._body_store().content_hash(body_result.body_markdown)),
+            "created_at": str(record.get("created_at") or self._now_iso()),
+            "updated_at": str(record.get("updated_at") or record.get("created_at") or self._now_iso()),
+            "source_document_ref": dict(source_document_ref) if isinstance(source_document_ref, dict) else None,
+            "generation": dict(generation) if isinstance(generation, dict) else None,
+            "provenance": provenance,
         }
         return document
 
     def _persist_document(self, document: dict[str, Any]) -> None:
-        metadata = {
-            "document_id": document["document_id"],
-            "domain": document["domain"],
-            "subspace": document["subspace"],
-            "kind": document.get("document_kind") or document["kind"],
-            "version": document["version"],
-            "title": document["title"],
-            "summary": document["summary"],
-            "profile_version": document["profile_version"],
-            "asset_refs": document.get("asset_refs", []),
-            "anchors": document.get("anchors", []),
-            **(
-                {"source_document_ref": document["source_document_ref"]}
-                if document.get("source_document_ref") is not None
-                else {}
-            ),
-            **({"generation": document["generation"]} if document.get("generation") is not None else {}),
-        }
-        artifact: RenderedArtifact = {
-            "domain": str(document["domain"]),
-            "layer": "personal",
-            "record_id": str(document["document_id"]),
-            "path": str(document["body_path"]),
-            "title": str(document["title"]),
-            "body_markdown": self._render_document_body(metadata, str(document["body_markdown"])),
-            "scope_ref": document["scope_ref"],
-            "snapshot_ref": document["snapshot_ref"],
-        }
-        persisted_body_path = self.rendering_repository.write_artifact(artifact)
+        persisted_path = self._body_store().write_body(
+            domain=str(document["domain"]),
+            record_id=str(document["document_id"]),
+            path=str(document["path"]),
+            title=str(document["title"]),
+            body_markdown=str(document["body_markdown"]),
+            scope_ref=document["scope_ref"],
+            snapshot_ref=document["snapshot_ref"],
+        )
         self.personal_repository.save_record(
             {
                 "id": document["document_id"],
@@ -582,38 +567,31 @@ class PersonalDocumentGenerationService:
                 "scope_ref": document["scope_ref"],
                 "snapshot_ref": document["snapshot_ref"],
                 "profile_version": document["profile_version"],
-                "body_path": persisted_body_path,
+                "path": persisted_path,
+                "subspace": document["subspace"],
+                "asset_refs": document.get("asset_refs", []),
+                "content_hash": document.get("content_hash") or self._body_store().content_hash(str(document["body_markdown"])),
                 "anchors": document.get("anchors", []),
                 "status": document["status"],
                 "schema_version": document["schema_version"],
-                "provenance": document["provenance"],
+                "version": document["version"],
+                "created_at": document["created_at"],
+                "updated_at": document["updated_at"],
+                "provenance": {
+                    **dict(document["provenance"]),
+                    **(
+                        {"source_document_ref": document["source_document_ref"]}
+                        if document.get("source_document_ref") is not None
+                        else {}
+                    ),
+                    **(
+                        {"generation": document["generation"]}
+                        if document.get("generation") is not None
+                        else {}
+                    ),
+                },
             }
         )
-
-    def _render_document_body(self, metadata: dict[str, Any], body_markdown: str) -> str:
-        return (
-            f"<!-- {self.document_marker}\n"
-            + json.dumps(metadata, ensure_ascii=True, indent=2, sort_keys=True)
-            + "\n-->\n\n"
-            + body_markdown.rstrip()
-            + "\n"
-        )
-
-    def _parse_document_body(self, raw_body: str) -> tuple[dict[str, Any], str]:
-        match = re.search(
-            rf"<!--\s*{self.document_marker}\s*(\{{.*?\}})\s*-->",
-            raw_body,
-            re.DOTALL,
-        )
-        if match is None:
-            return {}, raw_body.strip()
-        try:
-            metadata = json.loads(match.group(1))
-        except json.JSONDecodeError:
-            metadata = {}
-        if not isinstance(metadata, dict):
-            metadata = {}
-        return metadata, raw_body[match.end():].lstrip("\n").rstrip()
 
     def _document_response(self, document: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -761,10 +739,13 @@ class PersonalDocumentGenerationService:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         return f"pgen:{timestamp}:{uuid4().hex[:8]}"
 
-    def _body_path(self, *, scope_ref: ScopeRef, subspace: str, title: str) -> str:
+    def _document_path(self, *, scope_ref: ScopeRef, subspace: str, title: str) -> str:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         slug = self._slug(title) or "personal-document"
         return f"wiki/users/{scope_ref['user_id']}/documents/{subspace}/{timestamp}-{slug}.md"
+
+    def _body_store(self) -> PersonalDocumentBodyStore:
+        return PersonalDocumentBodyStore(self.rendering_repository)
 
     def _slug(self, text: str) -> str:
         return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:80]

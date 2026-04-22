@@ -20,7 +20,10 @@ class PersonalRecord(TypedDict):
     scope_ref: ScopeRef
     snapshot_ref: SnapshotRef
     profile_version: str
-    body_path: str
+    path: str
+    subspace: NotRequired[str]
+    asset_refs: NotRequired[list[str]]
+    content_hash: NotRequired[str]
     body: NotRequired[dict[str, Any] | str]
     anchors: NotRequired[list[PersonalAnchor]]
     status: str

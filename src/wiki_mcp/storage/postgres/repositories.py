@@ -1494,10 +1494,15 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     interpretation_snapshot_id,
                     profile_version,
-                    body_path,
+                    path,
+                    subspace,
                     status,
+                    content_hash,
                     schema_version,
+                    version,
+                    created_at,
                     updated_at,
+                    asset_refs_json,
                     anchors_json,
                     provenance_json
                 FROM personal.record
@@ -1545,10 +1550,15 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     interpretation_snapshot_id,
                     profile_version,
-                    body_path,
+                    path,
+                    subspace,
                     status,
+                    content_hash,
                     schema_version,
+                    version,
+                    created_at,
                     updated_at,
+                    asset_refs_json,
                     anchors_json,
                     provenance_json
                 FROM personal.record
@@ -1578,7 +1588,7 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             "kind",
             "title",
             "summary",
-            "body_path",
+            "path",
         )
         vector_sql = _fts_vector_sql(search_expr=search_expr)
         query_sql, query_params = _fts_query_sql(
@@ -1600,10 +1610,15 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     interpretation_snapshot_id,
                     profile_version,
-                    body_path,
+                    path,
+                    subspace,
                     status,
+                    content_hash,
                     schema_version,
+                    version,
+                    created_at,
                     updated_at,
+                    asset_refs_json,
                     anchors_json,
                     provenance_json
                 FROM personal.record
@@ -1661,10 +1676,15 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     interpretation_snapshot_id,
                     profile_version,
-                    body_path,
+                    path,
+                    subspace,
                     status,
+                    content_hash,
                     schema_version,
+                    version,
+                    created_at,
                     updated_at,
+                    asset_refs_json,
                     anchors_json,
                     provenance_json
                 FROM personal.record
@@ -1704,13 +1724,18 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     fact_snapshot_id,
                     interpretation_snapshot_id,
                     profile_version,
-                    body_path,
+                    path,
+                    subspace,
                     status,
+                    content_hash,
                     schema_version,
+                    version,
+                    created_at,
+                    asset_refs_json,
                     anchors_json,
                     provenance_json
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     title = EXCLUDED.title,
@@ -1721,9 +1746,14 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     fact_snapshot_id = EXCLUDED.fact_snapshot_id,
                     interpretation_snapshot_id = EXCLUDED.interpretation_snapshot_id,
                     profile_version = EXCLUDED.profile_version,
-                    body_path = EXCLUDED.body_path,
+                    path = EXCLUDED.path,
+                    subspace = EXCLUDED.subspace,
                     status = EXCLUDED.status,
+                    content_hash = EXCLUDED.content_hash,
                     schema_version = EXCLUDED.schema_version,
+                    version = EXCLUDED.version,
+                    created_at = EXCLUDED.created_at,
+                    asset_refs_json = EXCLUDED.asset_refs_json,
                     anchors_json = EXCLUDED.anchors_json,
                     provenance_json = EXCLUDED.provenance_json,
                     updated_at = NOW()
@@ -1740,9 +1770,14 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     snapshot_ref["fact_snapshot_id"],
                     snapshot_ref.get("interpretation_snapshot_id"),
                     record["profile_version"],
-                    record["body_path"],
+                    self._personal_record_path(record),
+                    str(record.get("subspace") or "raw"),
                     record["status"],
+                    str(record.get("content_hash") or ""),
                     record["schema_version"],
+                    int(record.get("version") or 1),
+                    str(record.get("created_at") or record.get("updated_at") or datetime.now(UTC).isoformat()),
+                    self._json(record.get("asset_refs", [])),
                     self._json(record.get("anchors", [])),
                     self._json(record["provenance"]),
                 ),
@@ -1754,10 +1789,17 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
         raw_anchors = data.get("anchors_json")
         if isinstance(raw_anchors, str):
             raw_anchors = json.loads(raw_anchors)
+        raw_asset_refs = data.get("asset_refs_json")
+        if isinstance(raw_asset_refs, str):
+            raw_asset_refs = json.loads(raw_asset_refs)
         provenance = self._load_json(data["provenance_json"])
-        storage = provenance.get("_personal_document")
-        if not isinstance(storage, dict):
-            storage = {}
+        path = data.get("path")
+        subspace = data.get("subspace") or "raw"
+        asset_refs = raw_asset_refs
+        if not isinstance(asset_refs, list):
+            asset_refs = []
+        version = data.get("version") if self._is_positive_int(data.get("version")) else 1
+        created_at = data.get("created_at") or data.get("updated_at")
         return {
             "id": data["id"],
             "domain": data["domain"],
@@ -1779,7 +1821,14 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                 **({"profile_version": data["profile_version"]} if data.get("profile_version") else {}),
             },
             "profile_version": data["profile_version"],
-            "body_path": data["body_path"],
+            "path": path,
+            "subspace": subspace,
+            "asset_refs": [
+                str(value)
+                for value in asset_refs
+                if isinstance(value, str) and value.strip()
+            ],
+            "content_hash": str(data.get("content_hash") or ""),
             **(
                 {"anchors": ensure_personal_anchors(raw_anchors, label=f"PersonalRecord {data['id']}.anchors")}
                 if raw_anchors is not None
@@ -1787,8 +1836,8 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             ),
             "status": data["status"],
             "schema_version": data["schema_version"],
-            **({"version": int(storage["version"])} if self._is_positive_int(storage.get("version")) else {}),
-            **({"created_at": str(storage["created_at"])} if storage.get("created_at") else {}),
+            "version": int(version),
+            "created_at": str(created_at),
             **({"updated_at": str(data["updated_at"])} if data.get("updated_at") else {}),
             "provenance": provenance,
         }
@@ -1803,7 +1852,7 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             record["profile_version"],
             label="PersonalRecord.profile_version",
         )
-        ensure_non_empty_string(record["body_path"], label="PersonalRecord.body_path")
+        ensure_non_empty_string(self._personal_record_path(record), label="PersonalRecord.path")
         ensure_non_empty_string(record["status"], label="PersonalRecord.status")
         ensure_non_empty_string(
             record["schema_version"],
@@ -1836,6 +1885,25 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
             raise ValueError(
                 f"PersonalRecord {record['id']} layer must be 'personal', got {record['layer']!r}."
             )
+        if "subspace" in record and str(record["subspace"]) not in {"raw", "wiki"}:
+            raise ValueError(
+                f"PersonalRecord {record['id']} subspace must be 'raw' or 'wiki'."
+            )
+        if "asset_refs" in record:
+            asset_refs = record.get("asset_refs")
+            if not isinstance(asset_refs, list) or any(
+                not isinstance(item, str) or not item.strip()
+                for item in asset_refs
+            ):
+                raise ValueError(
+                    f"PersonalRecord {record['id']} asset_refs must be a list of non-empty strings."
+                )
+
+    def _personal_record_path(self, record: PersonalRecord) -> str:
+        path = record.get("path")
+        if not isinstance(path, str):
+            raise ValueError(f"PersonalRecord {record['id']} path must be a string.")
+        return path
 
     def _load_json(self, value: Any) -> dict[str, Any]:
         if isinstance(value, dict):

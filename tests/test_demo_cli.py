@@ -38,7 +38,18 @@ def test_demo_cli_lists_tools_without_postgres(tmp_path: Path) -> None:
         "publish_interpretation_partition",
         "get_interpretation_proposal_status",
         "upsert_profile_context",
+        "register_personal_asset",
         "query_personal_knowledge",
+        "list_personal_documents",
+        "get_personal_document",
+        "create_personal_document",
+        "update_personal_document",
+        "delete_personal_document",
+        "summarize_personal_document_to_wiki",
+        "rewrite_personal_document_to_wiki",
+        "structure_personal_document_to_wiki",
+        "suggest_personal_wiki_links",
+        "attach_personal_wiki_links",
         "get_snapshot_status",
         "get_cache_status",
         "get_graph_neighbors",
@@ -103,7 +114,7 @@ def test_demo_mvp_runs_end_to_end_and_writes_personal_output(tmp_path: Path) -> 
     persisted_files = list(answers_dir.glob("*.md"))
     assert persisted_files, "expected demo flow to persist a personal answer markdown file"
     persisted_body = persisted_files[0].read_text(encoding="utf-8")
-    assert "stratawiki:personal_query_answer" in persisted_body
+    assert persisted_body.startswith("##")
     assert stderr.getvalue() == ""
 
 
@@ -141,9 +152,7 @@ def test_demo_mvp_is_repeatable_on_same_render_root(tmp_path: Path) -> None:
     answers_dir = tmp_path / "wiki" / "users" / "user-1" / "answers"
     persisted_files = list(answers_dir.glob("*.md"))
     assert persisted_files
-    assert "stratawiki:personal_query_answer" in persisted_files[0].read_text(
-        encoding="utf-8"
-    )
+    assert persisted_files[0].read_text(encoding="utf-8").startswith("##")
     assert first_stderr.getvalue() == ""
     assert second_stderr.getvalue() == ""
 

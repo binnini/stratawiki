@@ -159,7 +159,7 @@ class FakePersonalRepository:
                     "profile_version": "profile:v1",
                 },
                 "profile_version": "profile:v1",
-                "body_path": "wiki/users/user-1/plans/existing.md",
+                "path": "wiki/users/user-1/plans/existing.md",
                 "status": "active",
                 "schema_version": "personal.v1",
                 "provenance": {"generated_by": {"kind": "user"}},
@@ -716,26 +716,7 @@ def seed_personal_document(
     anchors: list[dict[str, str]] | None = None,
     asset_refs: list[str] | None = None,
 ) -> None:
-    metadata = {
-        "document_id": document_id,
-        "domain": "recruiting",
-        "subspace": subspace,
-        "kind": kind,
-        "version": version,
-        "title": title,
-        "summary": title,
-        "profile_version": "profile:v1",
-        "asset_refs": list(asset_refs or []),
-        "anchors": list(anchors or []),
-    }
     path = f"wiki/users/user-1/documents/{subspace}/{document_id}.md"
-    rendered_body = (
-        "<!-- stratawiki:personal_document\n"
-        + json.dumps(metadata, ensure_ascii=True, indent=2, sort_keys=True)
-        + "\n-->\n\n"
-        + body_markdown.rstrip()
-        + "\n"
-    )
     rendering_repository = server.bootstrap.rendering_repository
     rendering_repository.write_artifact(
         {
@@ -744,7 +725,7 @@ def seed_personal_document(
             "record_id": document_id,
             "path": path,
             "title": title,
-            "body_markdown": rendered_body,
+            "body_markdown": body_markdown.rstrip() + "\n",
             "scope_ref": {"scope": "user", "tenant_id": "tenant-1", "user_id": "user-1"},
             "snapshot_ref": {
                 "fact_snapshot_id": "fact_snap:seed",
@@ -768,10 +749,16 @@ def seed_personal_document(
                 "profile_version": "profile:v1",
             },
             "profile_version": "profile:v1",
-            "body_path": path,
+            "path": path,
+            "subspace": subspace,
+            "asset_refs": list(asset_refs or []),
+            "content_hash": "seed-hash",
             "anchors": list(anchors or []),
             "status": "active",
             "schema_version": "personal_document.v1",
+            "version": version,
+            "created_at": "2026-04-20T00:00:00Z",
+            "updated_at": "2026-04-20T00:00:00Z",
             "provenance": {"generated_by": {"kind": "user"}},
         }
     )

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import re
 from typing import Any, Literal
 
 from wiki_mcp.schemas.profile_context import ProfileContext
@@ -189,10 +187,6 @@ class CuratedRetrievalService:
                 limit=self.layer_result_limit,
             )
         )
-        direct_records = self._rehydrate_personal_anchors_from_rendered_bodies(
-            records=direct_records,
-            scope_ref=scope_ref,
-        )
         source_by_id = {
             record["id"]: {
                 "match_type": "curated_repository_search",
@@ -271,10 +265,7 @@ class CuratedRetrievalService:
         if exclude_ids:
             excluded = set(exclude_ids)
             records = [record for record in records if record["id"] not in excluded]
-        return self._rehydrate_personal_anchors_from_rendered_bodies(
-            records=records,
-            scope_ref=scope_ref,
-        )
+        return records
 
     def _resolve_interpretations(
         self,
@@ -738,40 +729,6 @@ class CuratedRetrievalService:
             return "present"
         return "absent"
 
-    def _rehydrate_personal_anchors_from_rendered_bodies(
-        self,
-        *,
-        records: list[dict[str, Any]],
-        scope_ref: ScopeRef,
-    ) -> list[dict[str, Any]]:
-        if self.rendering_repository is None:
-            return records
-
-        hydrated_records: list[dict[str, Any]] = []
-        for record in records:
-            if self._record_has_personal_anchors(record):
-                hydrated_records.append(record)
-                continue
-
-            body_path = record.get("body_path")
-            if not isinstance(body_path, str) or not body_path.strip():
-                hydrated_records.append(record)
-                continue
-
-            rendered_body = self.rendering_repository.read_body(
-                path=body_path,
-                scope_ref=scope_ref,
-            )
-            hydrated_anchors = self._parse_personal_anchors_from_rendered_body(rendered_body)
-            if not hydrated_anchors:
-                hydrated_records.append(record)
-                continue
-
-            hydrated_record = dict(record)
-            hydrated_record["anchors"] = hydrated_anchors
-            hydrated_records.append(hydrated_record)
-        return hydrated_records
-
     def _record_has_personal_anchors(self, record: dict[str, Any]) -> bool:
         if self._extract_anchor_ids(record.get("anchors"), expected_layer="interpretation"):
             return True
@@ -786,53 +743,6 @@ class CuratedRetrievalService:
             or self._extract_string_list(body.get("interpretation_ids"))
             or self._extract_string_list(body.get("fact_ids"))
         )
-
-    def _parse_personal_anchors_from_rendered_body(
-        self,
-        rendered_body: str | None,
-    ) -> list[dict[str, str]]:
-        if not isinstance(rendered_body, str) or not rendered_body.strip():
-            return []
-
-        match = re.search(
-            r"<!--\s*stratawiki:personal_query_answer\s*(\{.*?\})\s*-->",
-            rendered_body,
-            re.DOTALL,
-        )
-        if match is None:
-            return []
-
-        try:
-            metadata = json.loads(match.group(1))
-        except json.JSONDecodeError:
-            return []
-        if not isinstance(metadata, dict):
-            return []
-
-        anchors: list[dict[str, str]] = []
-        anchor_details = metadata.get("anchor_details")
-        if isinstance(anchor_details, list):
-            for item in anchor_details:
-                if not isinstance(item, dict):
-                    continue
-                layer = item.get("layer")
-                item_id = item.get("id") or item.get("record_id")
-                if layer in {"interpretation", "fact"} and isinstance(item_id, str) and item_id.strip():
-                    anchors.append({"layer": layer, "id": item_id.strip()})
-        if anchors:
-            return self._dedupe_personal_anchor_records(anchors)
-
-        for item_id in self._extract_anchor_ids(
-            metadata.get("anchors"),
-            expected_layer="interpretation",
-        ):
-            anchors.append({"layer": "interpretation", "id": item_id})
-        for item_id in self._extract_anchor_ids(
-            metadata.get("anchors"),
-            expected_layer="fact",
-        ):
-            anchors.append({"layer": "fact", "id": item_id})
-        return self._dedupe_personal_anchor_records(anchors)
 
     def _dedupe_personal_anchor_records(
         self,

@@ -336,7 +336,7 @@ class InMemoryPersonalRepository:
                 record.get("kind"),
                 record.get("title"),
                 record.get("summary"),
-                record.get("body_path"),
+                record.get("path"),
             )
         ]
         return matches[:limit]

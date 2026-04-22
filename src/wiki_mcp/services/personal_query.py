@@ -18,10 +18,10 @@ from wiki_mcp.schemas.personal_query_bundle import (
     PersonalQueryBundleItem,
 )
 from wiki_mcp.schemas.profile_context import ProfileContext
-from wiki_mcp.schemas.rendered_artifact import RenderedArtifact
 from wiki_mcp.schemas.retrieval_result import RetrievalResult
 from wiki_mcp.schemas.scope_ref import ScopeRef
 from wiki_mcp.schemas.snapshot_ref import SnapshotRef
+from wiki_mcp.services.personal_document_bodies import PersonalDocumentBodyStore
 from wiki_mcp.services.interfaces.repositories import PersonalRepository, RenderingRepository
 from wiki_mcp.services.interfaces.retrieval import RetrievalService
 
@@ -96,7 +96,7 @@ class PersonalQueryOrchestrator:
             }
             if "kind" in record:
                 item["kind"] = record["kind"]
-            path = record.get("body_path") or record.get("path")
+            path = record.get("path")
             if isinstance(path, str) and path:
                 item["path"] = path
             if explanation is not None:
@@ -450,37 +450,43 @@ class PersonalKnowledgeQueryService:
             )
 
         record_id = self._new_personal_record_id()
-        body_path = self._body_path(
+        path = self._answer_path(
             scope_ref=scope_ref,
             question=answer["question"],
         )
-        artifact: RenderedArtifact = {
-            "domain": domain,
-            "layer": "personal",
-            "record_id": record_id,
-            "path": body_path,
-            "title": self._title_for_question(answer["question"]),
-            "body_markdown": self._render_persisted_body(answer),
-            "scope_ref": scope_ref,
-            "snapshot_ref": snapshot_ref,
-        }
-        persisted_body_path = self.rendering_repository.write_artifact(artifact)
+        title = self._title_for_question(answer["question"])
+        persisted_path = self._body_store().write_body(
+            domain=domain,
+            record_id=record_id,
+            path=path,
+            title=title,
+            body_markdown=answer["answer_markdown"],
+            scope_ref=scope_ref,
+            snapshot_ref=snapshot_ref,
+        )
         anchors = self._anchor_metadata(answer)
+        now = self._now_iso()
         self.personal_repository.save_record(
             {
                 "id": record_id,
                 "layer": "personal",
                 "domain": domain,
                 "kind": "query_answer",
-                "title": artifact["title"],
+                "title": title,
                 "summary": answer["answer_summary"],
                 "scope_ref": scope_ref,
                 "snapshot_ref": snapshot_ref,
                 "profile_version": profile_context["profile_version"],
-                "body_path": persisted_body_path,
+                "path": persisted_path,
+                "subspace": "wiki",
+                "asset_refs": [],
+                "content_hash": self._body_store().content_hash(answer["answer_markdown"]),
                 "anchors": anchors,
                 "status": "active",
                 "schema_version": "personal.v1",
+                "version": 1,
+                "created_at": now,
+                "updated_at": now,
                 "provenance": {
                     "upstream_versions": {
                         "fact_snapshot": snapshot_ref["fact_snapshot_id"],
@@ -499,7 +505,7 @@ class PersonalKnowledgeQueryService:
                         "model": answer["provenance"]["model"],
                         "prompt_version": answer["provenance"]["prompt_version"],
                     },
-                    "generated_at": self._now_iso(),
+                    "generated_at": now,
                 },
             }
         )
@@ -520,36 +526,11 @@ class PersonalKnowledgeQueryService:
                 seen.add(key)
         return anchors
 
-    def _render_persisted_body(self, answer: PersonalQueryAnswer) -> str:
-        anchors = self._anchor_metadata(answer)
-        metadata = {
-            "answer_type": answer["answer_type"],
-            "question": answer["question"],
-            "anchors": [anchor["id"] for anchor in anchors],
-            "anchor_details": [
-                {
-                    "layer": citation["layer"],
-                    "id": citation["record_id"],
-                    "title": citation["title"],
-                }
-                for citation in answer["citations"]
-                if citation["layer"] in {"interpretation", "fact"}
-            ],
-            "provenance": answer["provenance"],
-        }
-        return (
-            "<!-- stratawiki:personal_query_answer\n"
-            + json.dumps(metadata, ensure_ascii=True, indent=2, sort_keys=True)
-            + "\n-->\n\n"
-            + answer["answer_markdown"].rstrip()
-            + "\n"
-        )
-
     def _title_for_question(self, question: str) -> str:
         normalized = question.strip().rstrip("?")
         return normalized or "Personal query answer"
 
-    def _body_path(self, *, scope_ref: ScopeRef, question: str) -> str:
+    def _answer_path(self, *, scope_ref: ScopeRef, question: str) -> str:
         slug = self._slug(question) or "personal-query-answer"
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         return (
@@ -560,6 +541,11 @@ class PersonalKnowledgeQueryService:
     def _new_personal_record_id(self) -> str:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         return f"personal:query_answer:{timestamp}:{uuid4().hex[:8]}"
+
+    def _body_store(self) -> PersonalDocumentBodyStore:
+        if self.rendering_repository is None:
+            raise ValueError("Personal query persistence requires a rendering repository.")
+        return PersonalDocumentBodyStore(self.rendering_repository)
 
     def _slug(self, text: str) -> str:
         slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")

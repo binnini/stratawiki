@@ -75,8 +75,6 @@ def test_demo_server_smoke_covers_fact_interpretation_personal_and_snapshot(
 
         personal_pages = list((tmp_path / "wiki" / "users" / "user-1" / "answers").glob("*.md"))
         assert personal_pages
-        assert "stratawiki:personal_query_answer" in personal_pages[0].read_text(
-            encoding="utf-8"
-        )
+        assert personal_pages[0].read_text(encoding="utf-8").startswith("##")
     finally:
         server.close()
