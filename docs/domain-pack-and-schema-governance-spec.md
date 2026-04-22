@@ -53,11 +53,12 @@ The current runtime split is:
 
 - source adapters still normalize raw inputs into `SourceRecord`
 - external integration clients should prefer `DomainProposalBatch` validation and ingestion
-- the existing recruiting ingestion plugin still decomposes normalized source into Facts for transition and internal source-driven use
+- the existing recruiting ingestion plugin still decomposes normalized source into Facts for transition and internal source-driven use only
 - Domain Pack artifacts can be loaded and activated during bootstrap
 - the Domain Pack registry, approval services, and proposal-ingestion service provide the runtime seam for pack-governed ingestion
 
 This means the current source-driven ingestion path remains available while schema governance is being introduced incrementally, but it is no longer the preferred external write contract.
+It should now be understood as an explicit compatibility path rather than a co-equal external contract.
 
 The intended ownership split is:
 
@@ -227,7 +228,7 @@ That is a temporary state, not the desired long-term ownership model.
 
 The intended migration path is:
 
-1. keep `SourceRecord` ingestion working
+1. keep `SourceRecord` ingestion working as a compatibility path
 2. define and register a recruiting `DomainPack`
 3. add validator and compatibility checks
 4. introduce proposal ingestion against registered packs as the preferred external write path

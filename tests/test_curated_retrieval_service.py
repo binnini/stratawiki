@@ -62,15 +62,22 @@ class StubPersonalRepository:
         *,
         search_results: list[dict[str, Any]] | None = None,
         anchor_search_results: list[dict[str, Any]] | None = None,
+        list_results: list[dict[str, Any]] | None = None,
     ) -> None:
         self.search_results = search_results or []
         self.anchor_search_results = anchor_search_results or []
+        self.list_results = list_results or list(self.search_results)
         self.search_calls: list[dict[str, Any]] = []
         self.anchor_search_calls: list[dict[str, Any]] = []
+        self.list_calls: list[dict[str, Any]] = []
 
     def search_for_retrieval(self, **kwargs: Any) -> list[dict[str, Any]]:
         self.search_calls.append(dict(kwargs))
         return list(self.search_results)
+
+    def list_records(self, **kwargs: Any) -> list[dict[str, Any]]:
+        self.list_calls.append(dict(kwargs))
+        return list(self.list_results)
 
     def search_by_anchors(self, **kwargs: Any) -> list[dict[str, Any]]:
         self.anchor_search_calls.append(dict(kwargs))
@@ -213,10 +220,13 @@ def test_curated_retrieval_expands_personal_anchors_then_interpretation_evidence
         "mode": "curated",
         "layer_order": ["personal", "interpretation", "fact"],
         "backend": "repository",
+        "personal_search_policy": "metadata_first_markdown_support",
+        "personal_support_source": "none",
         "personal_anchor_status": "present",
         "interpretation_source": "personal_anchors",
         "fact_source": "interpretation_evidence",
         "evidence_fact_limit": 2,
+        "graph_behavior": "support_only",
     }
 
 
@@ -261,6 +271,7 @@ def test_curated_retrieval_falls_back_to_interpretation_search_when_personal_anc
     assert result["fact_ids"] == ["fact:search"]
     assert interpretation_repository.search_calls[0]["query_text"] == "What trends should I care about?"
     assert result["retrieval_metadata"]["personal_anchor_status"] == "absent"
+    assert result["retrieval_metadata"]["personal_support_source"] == "none"
     assert result["retrieval_metadata"]["interpretation_source"] == "search_fallback"
     assert result["retrieval_metadata"]["fact_source"] == "interpretation_evidence"
     assert result["interpretation_records"][0]["interpretation_snapshot_id"] == "interp_snap:1"
@@ -383,9 +394,80 @@ def test_curated_retrieval_uses_persisted_personal_anchor_metadata() -> None:
     assert result["retrieval_metadata"]["personal_anchor_status"] == "present"
     assert result["retrieval_metadata"]["fact_source"] == "personal_anchors"
     assert result["fact_explanations"][0]["match_type"] == "personal_anchor_expansion"
+    assert result["personal_records"][0]["path"] == "wiki/users/user-1/answers/saved-answer.md"
 
 
-def test_curated_retrieval_reverse_looks_up_personal_records_from_persisted_anchors() -> None:
+def test_curated_retrieval_uses_markdown_body_support_before_shared_lookup() -> None:
+    personal_repository = StubPersonalRepository(
+        search_results=[],
+        list_results=[
+            {
+                "id": "personal:markdown:1",
+                "domain": "recruiting",
+                "kind": "query_answer",
+                "title": "Saved answer",
+                "summary": "Short saved answer",
+                "snapshot_ref": {
+                    "fact_snapshot_id": "fact_snap:1",
+                    "interpretation_snapshot_id": "interp_snap:1",
+                    "profile_version": "profile:v1",
+                },
+                "path": "wiki/users/user-1/answers/saved-answer.md",
+                "anchors": [
+                    {"layer": "interpretation", "id": "interp:shared:1"},
+                    {"layer": "fact", "id": "fact:shared:1"},
+                ],
+                "status": "active",
+            }
+        ],
+    )
+    interpretation_repository = StubInterpretationRepository(
+        by_id={"interp:shared:1": _interpretation("interp:shared:1", evidence=[])},
+        search_results=[],
+    )
+    fact_repository = StubFactRepository(
+        by_id={"fact:shared:1": _fact("fact:shared:1", "Shared fact")},
+        search_results=[],
+    )
+    rendering_repository = StubRenderingRepository(
+        bodies_by_path={
+            "wiki/users/user-1/answers/saved-answer.md": (
+                "Production AI hiring is rising for backend roles."
+            )
+        }
+    )
+
+    service = CuratedRetrievalService(
+        fact_repository=fact_repository,
+        interpretation_repository=interpretation_repository,
+        personal_repository=personal_repository,
+        rendering_repository=rendering_repository,
+    )
+
+    result = service.retrieve_for_query(
+        domain="recruiting",
+        question="production AI hiring",
+        scope_ref=_scope_ref(),
+    )
+
+    assert result["personal_ids"] == ["personal:markdown:1"]
+    assert result["interpretation_ids"] == ["interp:shared:1"]
+    assert result["fact_ids"] == ["fact:shared:1"]
+    assert personal_repository.anchor_search_calls == []
+    assert personal_repository.list_calls == [
+        {
+            "domain": "recruiting",
+            "scope_ref": _scope_ref(),
+            "limit": 20,
+        }
+    ]
+    assert result["personal_explanations"][0]["match_type"] == "personal_markdown_body_scan"
+    assert result["personal_explanations"][0]["matched_fields"] == ["body_markdown"]
+    assert result["personal_explanations"][0]["has_rendered_page"] is True
+    assert result["retrieval_metadata"]["personal_support_source"] == "markdown_body_scan"
+
+
+def test_curated_retrieval_anchor_reverse_lookup_is_compatibility_opt_in() -> None:
     personal_repository = StubPersonalRepository(
         search_results=[],
         anchor_search_results=[
@@ -427,6 +509,7 @@ def test_curated_retrieval_reverse_looks_up_personal_records_from_persisted_anch
         fact_repository=fact_repository,
         interpretation_repository=interpretation_repository,
         personal_repository=personal_repository,
+        enable_personal_anchor_reverse_lookup=True,
     )
 
     result = service.retrieve_for_query(
@@ -449,6 +532,7 @@ def test_curated_retrieval_reverse_looks_up_personal_records_from_persisted_anch
     ]
     assert result["personal_explanations"][0]["match_type"] == "personal_anchor_reverse_lookup"
     assert result["personal_explanations"][0]["matched_fields"] == ["anchors"]
+    assert result["retrieval_metadata"]["personal_support_source"] == "anchor_reverse_lookup"
 
 
 def test_personal_query_bundle_carries_retrieval_metadata() -> None:

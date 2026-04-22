@@ -267,7 +267,10 @@ def _tool_definitions() -> list[ToolDefinition]:
             name="query_personal_knowledge",
             group="personal",
             status="mvp",
-            description="Run the default Personal -> Interpretation -> Fact query flow.",
+            description=(
+                "Run the default Personal-first curated query flow: "
+                "Personal metadata plus markdown support, then Interpretation, then Fact."
+            ),
             entrypoint="server.call_tool",
             input_schema={
                 "type": "object",
@@ -760,13 +763,14 @@ class StrataWikiServer:
                 raise ValueError("Each source_records item must be an object.")
             if raw_source.get("domain") != domain:
                 raise ValueError("All source_records items must match the requested domain.")
-            result = self.bootstrap.core_ingestion_service.ingest_source(raw_source, plugin)
+            result = self.bootstrap.core_ingestion_service.ingest_legacy_source(raw_source, plugin)
             aggregate["fact_snapshot"] = result["fact_snapshot_id"]
             aggregate["facts_created"] += result["facts_created"]
             aggregate["facts_updated"] += result["facts_updated"]
             aggregate["affected_fact_ids"].extend(result["affected_fact_ids"])
         aggregate["warnings"] = [
-            "ingest_fact_batch remains available for transition and internal source-driven flows. "
+            "ingest_fact_batch is a legacy compatibility path around SourceRecord -> DomainIngestionPlugin. "
+            "It remains available for transition and internal source-driven flows. "
             "External integration clients should prefer validate_domain_proposal_batch and "
             "ingest_domain_proposal_batch."
         ]

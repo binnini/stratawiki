@@ -234,7 +234,7 @@ No single backend should be mandatory for every layer.
 
 ## Graph Retrieval Strategy
 
-Graph should be the preferred backend when the task requires:
+Graph should be an explicit support backend when the task requires:
 
 - multi-hop semantic expansion
 - evidence tracing
@@ -292,15 +292,15 @@ Markdown search use:
 
 Preferred backends:
 
-- graph traversal
-- document-store queries
+- repository queries over subject, family, kind, and published status
 - rendered shared page search
+- support-link lookup into evidence Facts
 
 Graph use:
 
 - related insight discovery
 - support or contradiction exploration
-- evidence tracebacks
+- bounded optional expansion beyond the curated path
 
 Markdown search use:
 
@@ -311,9 +311,9 @@ Markdown search use:
 
 Preferred backends:
 
-- personal store queries
-- rendered personal page search
-- anchor-based graph expansion
+- personal metadata queries
+- rendered personal markdown body search
+- optional anchor-based support expansion
 
 Graph use:
 
@@ -331,9 +331,9 @@ Any saved output should land in Personal, not in the shared rendered page itself
 
 An initial pragmatic split may be:
 
-- `Personal`: markdown search plus anchor lookups
-- `Interpretation`: graph-first retrieval plus document lookup
-- `Fact`: canonical DB and evidence lookup
+- `Personal`: metadata-first retrieval with bounded markdown-body support
+- `Interpretation`: repository retrieval plus support-link evidence lookup
+- `Fact`: canonical DB and bounded evidence lookup
 
 This is a recommendation, not a hard rule.
 

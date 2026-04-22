@@ -24,9 +24,13 @@ from wiki_mcp.services.interfaces.repositories import (
 class CuratedRetrievalService:
     """Repo-backed curated retrieval across Personal, Interpretation, and Fact.
 
-    This service intentionally avoids legacy page-read-first behavior. It is a
-    thin implementation of the current docs-defined default retrieval mode:
+    This service keeps the default retrieval posture
     `Personal -> Interpretation -> Fact`.
+
+    Personal retrieval is metadata-first with bounded markdown-body support so
+    the read path stays aligned with Personal markdown canonical storage.
+    Anchor reverse lookup remains an optional compatibility surface rather than
+    the default discovery strategy.
     """
 
     layer_order = ("personal", "interpretation", "fact")
@@ -41,6 +45,8 @@ class CuratedRetrievalService:
         rendering_repository: RenderingRepository | None = None,
         layer_result_limit: int = 5,
         evidence_fact_limit: int = 3,
+        personal_markdown_scan_limit: int = 20,
+        enable_personal_anchor_reverse_lookup: bool = False,
     ) -> None:
         self.fact_repository = fact_repository
         self.interpretation_repository = interpretation_repository
@@ -48,6 +54,8 @@ class CuratedRetrievalService:
         self.rendering_repository = rendering_repository
         self.layer_result_limit = layer_result_limit
         self.evidence_fact_limit = evidence_fact_limit
+        self.personal_markdown_scan_limit = personal_markdown_scan_limit
+        self.enable_personal_anchor_reverse_lookup = enable_personal_anchor_reverse_lookup
 
     def retrieve_for_query(
         self,
@@ -61,7 +69,7 @@ class CuratedRetrievalService:
         if not normalized_question:
             return self._empty_result()
 
-        personal_records, personal_source_by_id = self._search_personal(
+        personal_records, personal_source_by_id, personal_support_source = self._search_personal(
             domain=domain,
             question=normalized_question,
             query_tokens=query_tokens,
@@ -129,10 +137,13 @@ class CuratedRetrievalService:
                 "mode": "curated",
                 "layer_order": list(self.layer_order),
                 "backend": "repository",
+                "personal_search_policy": "metadata_first_markdown_support",
+                "personal_support_source": personal_support_source,
                 "personal_anchor_status": personal_anchor_status,
                 "interpretation_source": interpretation_source,
                 "fact_source": fact_source,
                 "evidence_fact_limit": self.evidence_fact_limit,
+                "graph_behavior": "support_only",
             },
         }
 
@@ -161,10 +172,13 @@ class CuratedRetrievalService:
                 "mode": "curated",
                 "layer_order": list(self.layer_order),
                 "backend": "repository",
+                "personal_search_policy": "metadata_first_markdown_support",
+                "personal_support_source": "none",
                 "personal_anchor_status": "not_available",
                 "interpretation_source": "none",
                 "fact_source": "none",
                 "evidence_fact_limit": self.evidence_fact_limit,
+                "graph_behavior": "support_only",
             },
         }
 
@@ -175,9 +189,13 @@ class CuratedRetrievalService:
         question: str,
         query_tokens: list[str],
         scope_ref: ScopeRef,
-    ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    ) -> tuple[
+        list[dict[str, Any]],
+        dict[str, dict[str, Any]],
+        Literal["markdown_body_scan", "anchor_reverse_lookup", "none"],
+    ]:
         if self.personal_repository is None:
-            return [], {}
+            return [], {}, "none"
 
         direct_records = list(
             self.personal_repository.search_for_retrieval(
@@ -190,16 +208,19 @@ class CuratedRetrievalService:
         )
         source_by_id = {
             record["id"]: {
-                "match_type": "curated_repository_search",
+                "match_type": "personal_metadata_search",
                 "matched_fields": self._matched_fields(record, query_tokens) or ["repository_search"],
                 "matched_token_count": len(query_tokens),
+                "has_rendered_page": self._record_has_rendered_page(record),
             }
             for record in direct_records
         }
 
-        reverse_lookup_records: list[dict[str, Any]] = []
-        if not any(self._record_has_personal_anchors(record) for record in direct_records):
-            reverse_lookup_records = self._search_personal_by_anchor_targets(
+        support_source: Literal["markdown_body_scan", "anchor_reverse_lookup", "none"] = "none"
+
+        markdown_records: list[dict[str, Any]] = []
+        if len(direct_records) < self.layer_result_limit:
+            markdown_records, markdown_source_by_id = self._search_personal_markdown_bodies(
                 domain=domain,
                 question=question,
                 query_tokens=query_tokens,
@@ -207,13 +228,92 @@ class CuratedRetrievalService:
                 exclude_ids=[record["id"] for record in direct_records],
                 limit=max(self.layer_result_limit - len(direct_records), 0),
             )
-        for record in reverse_lookup_records:
-            source_by_id[record["id"]] = {
-                "match_type": "personal_anchor_reverse_lookup",
-                "matched_fields": ["anchors"],
-                "matched_token_count": 0,
+            if markdown_records:
+                source_by_id.update(markdown_source_by_id)
+                support_source = "markdown_body_scan"
+
+        reverse_lookup_records: list[dict[str, Any]] = []
+        if (
+            self.enable_personal_anchor_reverse_lookup
+            and not direct_records
+            and not markdown_records
+        ):
+            reverse_lookup_records = self._search_personal_by_anchor_targets(
+                domain=domain,
+                question=question,
+                query_tokens=query_tokens,
+                scope_ref=scope_ref,
+                exclude_ids=[],
+                limit=self.layer_result_limit,
+            )
+            for record in reverse_lookup_records:
+                source_by_id[record["id"]] = {
+                    "match_type": "personal_anchor_reverse_lookup",
+                    "matched_fields": ["anchors"],
+                    "matched_token_count": 0,
+                    "has_rendered_page": self._record_has_rendered_page(record),
+                }
+            if reverse_lookup_records:
+                support_source = "anchor_reverse_lookup"
+        return direct_records + markdown_records + reverse_lookup_records, source_by_id, support_source
+
+    def _search_personal_markdown_bodies(
+        self,
+        *,
+        domain: str,
+        question: str,
+        query_tokens: list[str],
+        scope_ref: ScopeRef,
+        exclude_ids: list[str],
+        limit: int,
+    ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+        if (
+            self.personal_repository is None
+            or self.rendering_repository is None
+            or limit <= 0
+            or self.personal_markdown_scan_limit <= 0
+        ):
+            return [], {}
+
+        records = self.personal_repository.list_records(
+            domain=domain,
+            scope_ref=scope_ref,
+            limit=self.personal_markdown_scan_limit,
+        )
+        excluded = set(exclude_ids)
+        matches: list[tuple[int, int, dict[str, Any], list[str]]] = []
+        for index, record in enumerate(records):
+            if record["id"] in excluded:
+                continue
+            path = record.get("path")
+            if not isinstance(path, str) or not path:
+                continue
+            body_markdown = self.rendering_repository.read_body(path=path, scope_ref=scope_ref)
+            if not isinstance(body_markdown, str) or not body_markdown.strip():
+                continue
+            matched_fields = self._matched_markdown_body_fields(
+                record=record,
+                body_markdown=body_markdown,
+                question=question,
+                query_tokens=query_tokens,
+            )
+            if not matched_fields:
+                continue
+            matches.append((len(matched_fields), index, record, matched_fields))
+
+        matches.sort(key=lambda item: (-item[0], item[1]))
+        selected = matches[:limit]
+        selected_records = [record for _, _, record, _ in selected]
+        source_by_id = {
+            record["id"]: {
+                "match_type": "personal_markdown_body_scan",
+                "matched_fields": matched_fields,
+                "matched_token_count": len(query_tokens),
+                "has_rendered_page": True,
             }
-        return direct_records + reverse_lookup_records, source_by_id
+            for _, _, record, matched_fields in selected
+        }
+        return selected_records, source_by_id
 
     def _search_personal_by_anchor_targets(
         self,
@@ -465,7 +565,7 @@ class CuratedRetrievalService:
         return [by_id[record_id] for record_id in ids if record_id in by_id]
 
     def _map_personal_record(self, record: dict[str, Any]) -> RetrievalPersonalSummary:
-        return {
+        result: RetrievalPersonalSummary = {
             "id": record["id"],
             "domain": record["domain"],
             "kind": record["kind"],
@@ -473,6 +573,9 @@ class CuratedRetrievalService:
             "summary": record["summary"],
             "snapshot_ref": record["snapshot_ref"],
         }
+        if isinstance(record.get("path"), str) and record["path"]:
+            result["path"] = record["path"]
+        return result
 
     def _map_interpretation_record(
         self,
@@ -560,7 +663,9 @@ class CuratedRetrievalService:
                         source.get("matched_token_count", len(query_tokens))
                     ),
                     "profile_boost_applied": profile_context is not None and layer == "personal",
-                    "has_rendered_page": False,
+                    "has_rendered_page": bool(
+                        source.get("has_rendered_page", self._record_has_rendered_page(record))
+                    ),
                 }
             )
         return explanations
@@ -571,7 +676,15 @@ class CuratedRetrievalService:
         query_tokens: list[str],
     ) -> list[str]:
         candidates: list[tuple[str, str]] = []
-        for key in ("title", "summary", "kind", "entity_type", "canonical_key", "subject_id"):
+        for key in (
+            "title",
+            "summary",
+            "kind",
+            "entity_type",
+            "canonical_key",
+            "subject_id",
+            "path",
+        ):
             value = record.get(key)
             if isinstance(value, str):
                 candidates.append((key, value.lower()))
@@ -588,6 +701,24 @@ class CuratedRetrievalService:
             if any(token in haystack for token in query_tokens):
                 matched.append(field)
         return matched
+
+    def _matched_markdown_body_fields(
+        self,
+        *,
+        record: dict[str, Any],
+        body_markdown: str,
+        question: str,
+        query_tokens: list[str],
+    ) -> list[str]:
+        matched_fields = self._matched_fields(record, query_tokens)
+        normalized_body = body_markdown.lower()
+        normalized_question = question.strip().lower()
+        if (
+            normalized_question
+            and normalized_question in normalized_body
+        ) or any(token in normalized_body for token in query_tokens):
+            matched_fields.append("body_markdown")
+        return self._dedupe(matched_fields)
 
     def _merge_snapshot_ref(
         self,
@@ -750,6 +881,10 @@ class CuratedRetrievalService:
             or self._extract_string_list(body.get("interpretation_ids"))
             or self._extract_string_list(body.get("fact_ids"))
         )
+
+    def _record_has_rendered_page(self, record: dict[str, Any]) -> bool:
+        path = record.get("path")
+        return isinstance(path, str) and bool(path)
 
     def _dedupe_personal_anchor_records(
         self,

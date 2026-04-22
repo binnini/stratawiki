@@ -25,6 +25,7 @@ The system is intended for domains such as recruiting and job strategy first, wh
 - Fact is stored in a structured canonical store
 - Interpretation is stored as canonical derived records plus optional rendered shared views
 - Personal is stored as user-scoped markdown content with lightweight registry metadata
+- curated retrieval defaults to `Personal` metadata plus markdown support, then `Interpretation`, then `Fact`
 - shared rendered pages are read-only views rather than direct authoring surfaces
 - personal authoring may include both raw user documents and LLM-reworked personal wiki artifacts
 - Graph is treated as a sparse cross-layer index and dependency system rather than the primary knowledge model
@@ -268,6 +269,9 @@ Use:
 
 Treat `ingest_fact_batch` as a legacy transition path for internal or source-driven flows.
 It remains available, but it is not the recommended external integration contract.
+In code terms, that legacy path is the compatibility wrapper around
+`SourceRecord -> DomainIngestionPlugin`, while `DomainProposalBatch` is the
+clear primary external write surface.
 
 The repository includes a sample recruiting Domain Pack artifact and a matching proposal batch:
 

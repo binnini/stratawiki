@@ -9,7 +9,7 @@ from wiki_mcp.schemas.validation_result import ValidationResult
 
 
 class DomainIngestionPlugin(Protocol):
-    """Thin domain-specific ingestion contract consumed by core ingestion services."""
+    """Legacy source-driven decomposition contract kept for compatibility flows."""
 
     domain_name: str
     schema_version: str

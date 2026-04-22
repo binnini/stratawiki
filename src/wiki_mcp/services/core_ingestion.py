@@ -19,7 +19,12 @@ from wiki_mcp.services.interfaces.repositories import (
 
 
 class DefaultCoreIngestionService:
-    """First concrete core ingestion service for fact persistence."""
+    """Canonical Fact write service with a legacy source/plugin compatibility seam.
+
+    `ingest_batch` is the preferred shared persistence primitive used by the
+    proposal gateway. The `SourceRecord -> DomainIngestionPlugin` entrypoints
+    remain available for internal transition and compatibility flows.
+    """
 
     def __init__(
         self,
@@ -32,7 +37,7 @@ class DefaultCoreIngestionService:
         self.snapshot_repository = snapshot_repository
         self.outbox_repository = outbox_repository
 
-    def prepare_batch(
+    def prepare_legacy_source_batch(
         self,
         source: SourceRecord,
         plugin: DomainIngestionPlugin,
@@ -59,6 +64,13 @@ class DefaultCoreIngestionService:
             "relations": relations,
             "validation": validation,
         }
+
+    def prepare_batch(
+        self,
+        source: SourceRecord,
+        plugin: DomainIngestionPlugin,
+    ) -> IngestionBatch:
+        return self.prepare_legacy_source_batch(source, plugin)
 
     def ingest_batch(self, batch: IngestionBatch) -> IngestionResult:
         validation = batch["validation"]
@@ -91,13 +103,20 @@ class DefaultCoreIngestionService:
             "outbox_event_ids": outbox_event_ids,
         }
 
+    def ingest_legacy_source(
+        self,
+        source: SourceRecord,
+        plugin: DomainIngestionPlugin,
+    ) -> IngestionResult:
+        batch = self.prepare_legacy_source_batch(source, plugin)
+        return self.ingest_batch(batch)
+
     def ingest_source(
         self,
         source: SourceRecord,
         plugin: DomainIngestionPlugin,
     ) -> IngestionResult:
-        batch = self.prepare_batch(source, plugin)
-        return self.ingest_batch(batch)
+        return self.ingest_legacy_source(source, plugin)
 
     def _validate_scope_shapes(
         self,

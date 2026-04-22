@@ -1392,6 +1392,8 @@ class DomainProposalIngestionGateway:
             "body_markdown": body,
             "metadata": {
                 "kind": "domain_proposal_batch",
+                "ingestion_contract": "preferred_external_write",
+                "ingestion_path": "domain_proposal_batch",
                 "producer": batch["producer"],
                 "proposal_counts": {
                     "facts": len(batch.get("facts") or []),

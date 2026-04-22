@@ -351,13 +351,20 @@ Input:
 
 ```json
 {
-  "domain": "recruiting",
-  "source_ids": [
-    "greenhouse:job:abc123",
-    "lever:posting:def456"
+  "source_records": [
+    {
+      "source_id": "greenhouse:job:abc123",
+      "connector": "greenhouse",
+      "domain": "recruiting",
+      "title": "Backend Engineer",
+      "body_markdown": "## Job\n...",
+      "metadata": {},
+      "fetched_at": "2026-04-18T00:00:00Z",
+      "content_hash": "sha256:abc123",
+      "status": "active"
+    }
   ],
-  "dedupe": true,
-  "publish_snapshot": true
+  "domain": "recruiting"
 }
 ```
 

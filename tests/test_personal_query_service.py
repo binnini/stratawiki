@@ -129,10 +129,13 @@ def _retrieval_result() -> dict[str, Any]:
             "mode": "curated",
             "layer_order": ["personal", "interpretation", "fact"],
             "backend": "repository",
+            "personal_search_policy": "metadata_first_markdown_support",
+            "personal_support_source": "none",
             "personal_anchor_status": "present",
             "interpretation_source": "personal_anchors",
             "fact_source": "interpretation_evidence",
             "evidence_fact_limit": 3,
+            "graph_behavior": "support_only",
         },
         "snapshot_ref": {
             "fact_snapshot_id": "fact_snap:1",
