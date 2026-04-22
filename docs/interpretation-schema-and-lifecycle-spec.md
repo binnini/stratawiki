@@ -28,7 +28,7 @@ This document complements:
 - evidence-backed
 - revisable
 - versioned
-- richer and more flexible than `Fact`
+- lighter and more flexible than `Fact`
 
 `Interpretation` is not:
 
@@ -39,8 +39,9 @@ This document complements:
 The correct mental model is:
 
 - `Fact` is code-owned canonical truth
-- `Interpretation` is program-validated LLM-authored shared meaning
+- `Interpretation` is program-validated LLM-authored shared insight
 - rendered wiki pages are views built from interpretation records
+- `Interpretation` should stay lighter than a full shared wiki brain
 
 This document refines the generic `Interpretation` model in `docs/three-layer-data-model-spec.md`.
 
@@ -51,12 +52,14 @@ This document refines the generic `Interpretation` model in `docs/three-layer-da
 - support proposal before promotion into published shared knowledge
 - separate canonical interpretation records from rendered page artifacts
 - support both structured retrieval and readable wiki rendering
+- keep subject-centered multi-interpretation storage possible without forcing dense interpretation-to-interpretation graphs
 
 ## Non-Goals
 
 - forcing one rigid schema for every interpretation family
 - allowing arbitrary LLM output directly into published shared state
 - making markdown pages the only durable representation of interpretation
+- making interpretation-to-interpretation relations part of the mandatory base contract
 
 ## Interpretation Storage Shape
 
@@ -69,6 +72,7 @@ It means:
 - strong required metadata
 - explicit evidence and provenance contracts
 - stable lifecycle state
+- subject-centered records that can be supported by multiple facts
 
 Recommended storage choices:
 
@@ -88,12 +92,12 @@ Minimum canonical record shape:
   "scope": "shared",
   "tenant_id": null,
   "subject": {
-    "type": "market_segment",
-    "id": "backend_japan_midlevel",
-    "label": "Backend Japan Midlevel"
+    "type": "role",
+    "id": "role:backend_engineer",
+    "label": "Backend Engineer"
   },
-  "family": "market_trend",
-  "kind": "trend",
+  "family": "trend",
+  "kind": "skill_demand_shift",
   "title": "Production LLM experience preference is increasing",
   "claim": "Production LLM experience is increasingly preferred in this segment.",
   "summary": "Shared interpretation summary",
@@ -109,14 +113,6 @@ Minimum canonical record shape:
       "role": "primary"
     }
   ],
-  "relations": [
-    {
-      "type": "supports",
-      "target_id": "interp_122",
-      "confidence": 0.72,
-      "status": "active"
-    }
-  ],
   "confidence": 0.81,
   "confidence_detail": {
     "evidence_strength": 0.84,
@@ -130,8 +126,8 @@ Minimum canonical record shape:
     "expires_at": "2026-04-16T12:00:00Z"
   },
   "render_hints": {
-    "page_family": "market_trend",
-    "page_key": "backend-japan-midlevel",
+    "page_family": "trend",
+    "page_key": "role-backend-engineer",
     "priority": "high"
   },
   "provenance": {
@@ -182,10 +178,10 @@ Recommended but optional family-dependent fields:
 
 - `title`
 - `body`
-- `relations`
 - `confidence_detail`
 - `freshness`
 - `render_hints`
+- limited interpretation links
 
 ## Schema Philosophy
 
@@ -236,6 +232,17 @@ Examples:
 
 The body may vary substantially by family as long as the envelope remains valid.
 
+## Subject-Centered Model
+
+The preferred base model is:
+
+- `Subject 1 -> Interpretation N`
+- `Interpretation N -> Fact M`
+
+This is intentionally different from a one-fact-one-summary model.
+
+Interpretation should usually be generated from a fact bundle around a subject rather than from an isolated single fact.
+
 ## Interpretation Families
 
 Each family should define:
@@ -248,11 +255,24 @@ Each family should define:
 
 Examples:
 
-- `market_trend`
-- `skill_gap_pattern`
-- `regional_opportunity_summary`
-- `contradiction_summary`
+- `trend`
+- `opportunity`
+- `risk`
+- `comparison`
 - `strategy_input`
+
+## Interpretation Links
+
+Interpretation-to-Interpretation links may be useful later for:
+
+- `derived_from`
+- `contrasts_with`
+- `bundles`
+- `supersedes`
+
+But they are optional and should not be treated as required base structure.
+
+The critical path remains subject, evidence, and lifecycle.
 
 ## Evidence Contract
 

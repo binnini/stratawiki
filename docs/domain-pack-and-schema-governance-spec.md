@@ -12,6 +12,11 @@ registered, versioned artifacts that support:
 - proposal ingestion
 - pack-driven canonical key resolution
 
+This spec should be read together with the newer architecture position:
+
+- `StrataWiki` owns runtime governance and shared storage
+- external domain services such as `Jobs-Wiki` own domain semantics and pack contents
+
 This document describes what is already implemented and what still remains open.
 
 ## Current Status
@@ -54,9 +59,15 @@ The current runtime split is:
 
 This means the current source-driven ingestion path remains available while schema governance is being introduced incrementally, but it is no longer the preferred external write contract.
 
+The intended ownership split is:
+
+- domain meaning, interpretation families, and source-to-proposal mapping are external-domain responsibilities
+- pack registration, validation, activation, ingestion acceptance, and canonical shared persistence are StrataWiki responsibilities
+
 ## Domain Pack Contract
 
 The minimal `DomainPack` contract is intentionally small.
+It should stay focused on canonical shared substrate concerns rather than on full product read-model shape.
 
 ### Manifest
 
@@ -146,6 +157,12 @@ Supported fields:
 - `searchable_attributes`
 - `default_families`
 
+Interpretation-family guidance may also be carried by pack artifacts or adjacent domain-owned artifacts, but the core governance concern remains:
+
+- what shared fact and relation surfaces are allowed
+- what identity rules are valid
+- what shared interpretation families and kinds are recognized for the domain
+
 ## Registry Contract
 
 The registry interface currently supports:
@@ -216,6 +233,11 @@ The intended migration path is:
 4. introduce proposal ingestion against registered packs as the preferred external write path
 5. reduce hardcoded recruiting semantics in the ingestion plugin
 
+This migration is also a boundary clarification:
+
+- `StrataWiki` should become less domain-hardcoded over time
+- `Jobs-Wiki` should become the clearer owner of recruiting semantics over time
+
 ## Remaining Gaps
 
 The following still remain open:
@@ -223,5 +245,6 @@ The following still remain open:
 - a fully pack-driven replacement for the recruiting plugin decomposition path
 - stronger pack lifecycle metadata for active, deprecated, and superseded versions
 - richer operator-facing review tooling than the current persisted audit log
+- clearer documentation of how domain packs guide shared interpretation families without making StrataWiki product-specific
 
 Those are the next schema-governance steps after the currently implemented approval, loading, and proposal-ingestion runtime plus the preferred external `DomainProposalBatch` contract.

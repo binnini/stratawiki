@@ -1,706 +1,440 @@
+---
+status: draft
+---
+
 # 3-Layer Data Model Spec
 
 ## Purpose
 
-This document defines a concrete data model for a three-layer LLM Wiki MCP server:
+This document defines the current target data model for StrataWiki after the architecture reframe.
 
-- Fact
-- Interpretation
-- Personal
+The key design shift is:
 
-The model is intended to support:
+- the system center is `Personal`, not `Fact` or `Interpretation`
+- `Fact` and `Interpretation` exist to support a markdown-native Personal wiki
+- the overall shape is a lightweight RAG-like substrate, not a heavy shared knowledge graph
 
-- shared knowledge
-- versioned domain packs
-- user-scoped personalization
-- markdown rendering
-- cache-aware recomputation
+This document replaces earlier assumptions that treated the three layers as roughly symmetric.
 
-This is not a vendor-specific schema. It is a conceptual spec that can be implemented with a mix of RDBMS, NoSQL, and file-based rendering.
+## Design Position
 
-## Design Principles
+StrataWiki should be understood as:
 
-- Every layer must have a clear system of record
-- Every derived record must retain provenance
-- Shared and user-scoped records must be separable
-- Markdown pages are rendered artifacts, not the only source of truth
-- Domain packs should specialize the schema without breaking the core contracts
-- Every record family should carry an explicit `schema_version`
+- a domain-neutral shared runtime
+- a canonical store for minimal shared truth in `Fact`
+- a store for lightweight reusable shared insight in `Interpretation`
+- a retrieval substrate that helps a Personal wiki stay grounded with lower cost than full RAG
 
-## Core Concepts
+StrataWiki should not be understood as:
 
-### Record Identity
+- the complete owner of all user knowledge
+- a heavy graph-first ontology system
+- a system where markdown is the source of truth for every layer
+- a system where every shared insight must be modeled before Personal can work
 
-Every persistent record should have:
+## Core Principles
 
-- `id`
-- `layer`
-- `domain`
-- `tenant_id` if multi-tenant
-- `user_id` if user-scoped
-- `created_at`
-- `updated_at`
-- `version`
-- `schema_version`
-- `status`
+- `Personal` is the product center of gravity
+- `Fact` is source-grounded and canonical
+- `Interpretation` is shared, lightweight, revisable, and evidence-backed
+- `Fact` and `Interpretation` are DB-first layers
+- `Personal` is a markdown-first layer
+- PostgreSQL owns metadata, lifecycle, and cross-record relations
+- JSONB stores the flexible payload bodies for system-owned layers
+- markdown is canonical only for user-authored Personal content
+- relation density should stay intentionally low in shared layers
 
-Recommended status values:
+## Layer Summary
 
-- `active`
-- `superseded`
-- `stale`
-- `deleted`
-- `draft`
+### `Fact`
 
-For the `Interpretation` layer, this generic status model is refined further by the dedicated lifecycle in `docs/interpretation-schema-and-lifecycle-spec.md`.
-In particular, `published` there corresponds to the active shared interpretation state used for normal retrieval.
+`Fact` stores observed, normalized, canonical records.
 
-### Provenance
+Its role is not to express every possible domain nuance.
+Its role is to provide a stable substrate for shared retrieval and interpretation generation.
 
-Every derived record should retain provenance metadata.
+### `Interpretation`
 
-Minimum provenance shape:
+`Interpretation` stores reusable shared insight derived from Facts.
 
-```json
-{
-  "source_ids": ["source_1", "source_2"],
-  "upstream_versions": {
-    "fact_snapshot": "fact_snap_2026_04_15",
-    "profile_version": "profile_v7"
-  },
-  "generated_by": {
-    "kind": "llm",
-    "provider": "anthropic",
-    "model": "claude-sonnet",
-    "prompt_version": "interp-v3"
-  },
-  "generated_at": "2026-04-15T12:00:00Z"
-}
-```
+It is:
 
-### Snapshot Awareness
+- subject-centered
+- evidence-backed
+- revisable
+- lighter than a full shared wiki brain
 
-Any response that depends on upstream state should be attributable to:
+It is not:
 
-- a fact snapshot
-- an interpretation snapshot
-- a profile snapshot
+- the canonical source of truth
+- a rendered markdown page
+- a mandatory dense relation graph between insights
 
-This is necessary for reproducibility and invalidation.
+### `Personal`
 
-### Access Scope
+`Personal` is the real working wiki for the user.
 
-Every record that can be queried or rendered across users should carry an explicit scope model.
+It is:
 
-Minimum scope fields:
+- markdown-native
+- user-authored or user-curated
+- free-form
+- personalized with shared context from `Fact` and `Interpretation`
 
-- `scope`: `shared`, `tenant`, or `user`
-- `tenant_id` when not globally shared
-- `user_id` when user-scoped
+It is not:
 
-This is required for ACL-safe retrieval and graph traversal.
+- a structured document store that must round-trip through JSON
+- an upper-layer mutation path
+
+## Storage Model
+
+### Shared Layers
+
+`Fact` and `Interpretation` are stored in PostgreSQL.
+
+Recommended storage split:
+
+- relational columns for identity, scope, lifecycle, snapshot, and routing fields
+- JSONB for flexible payload bodies
+- explicit relation tables or support-link tables where needed
+
+### Personal Layer
+
+`Personal` content is stored as markdown files.
+
+PostgreSQL stores only minimal Personal metadata such as:
+
+- document id
+- user id
+- path
+- parent path or parent id
+- title
+- document type
+- status
+- timestamps
+- content hash or sync token
+
+The Personal markdown body should not be treated as canonical JSONB payload.
 
 ## Layer 1: Fact
 
-### Definition
+## Definition
 
-Fact records represent observed, normalized, canonical data.
+Fact records represent source-grounded canonical data.
 
-### Fact Record Interface
+They should remain intentionally conservative.
+If identity is weak, data should remain an attribute or source detail rather than be promoted into a canonical Fact.
+
+## Fact Record Shape
+
+Minimum conceptual shape:
 
 ```json
 {
-  "id": "job_posting_123",
+  "id": "fact:job_posting:159750",
   "layer": "fact",
   "domain": "recruiting",
+  "scope": "shared",
   "entity_type": "job_posting",
-  "canonical_key": "indeed:posting:abc123",
-  "attributes": {},
-  "relations": [],
-  "provenance": {},
-  "created_at": "2026-04-15T00:00:00Z",
-  "updated_at": "2026-04-15T00:00:00Z",
-  "version": 3,
-  "schema_version": "fact.v1",
-  "status": "active"
+  "canonical_key": "job_posting:159750",
+  "status": "active",
+  "attributes": {
+    "title": "Backend Developer",
+    "requirements_text": "Python, API development experience"
+  },
+  "provenance": {
+    "connector": "worknet",
+    "source_ids": ["159750"]
+  },
+  "current_snapshot_id": "fact_snap_2026_04_22",
+  "created_at": "2026-04-22T00:00:00Z",
+  "updated_at": "2026-04-22T00:00:00Z"
 }
 ```
 
-### Fact Subtypes
+## Fact Relations
 
-Common subtype categories:
+Fact relations should be explicit, sparse, and worth keeping.
 
-- `source_document`
-- `entity`
-- `event`
-- `measurement`
-- `observation`
-- `classification`
+They should exist only when:
 
-Registered domain packs define the concrete types and identity rules.
-
-### Example: Recruiting Fact Types
-
-- `job_posting`
-- `company`
-- `role`
-- `skill`
-- `location`
-- `compensation_range`
-- `language_requirement`
-- `visa_requirement`
-- `source_snapshot`
-
-### Fact Relations
-
-Fact relations should be explicit rather than inferred from free text.
+- the source clearly supports the relation
+- identity on both ends is stable enough
+- the relation is reusable across multiple retrieval or interpretation flows
 
 Example:
 
 ```json
 {
-  "type": "requires_skill",
-  "from_id": "job_posting_123",
-  "to_id": "skill_python",
-  "confidence": 1.0
-}
-```
-
-### Recommended Storage
-
-- primary: RDBMS
-- optional read model: columnar or analytics replica
-
-The point is not just transactions. It is canonical normalization.
-
-### Fact Indexing
-
-Fact should support:
-
-- canonical key indexes
-- entity type indexes
-- relation indexes
-- snapshot or updated-at indexes
-- lexical and optional embedding indexes for controlled retrieval
-
-## Layer 2: Interpretation
-
-### Definition
-
-Interpretation records represent shared derived meaning from Facts.
-
-Interpretation is not raw source truth. It is derived, revisable, and versioned.
-
-### Interpretation Record Interface
-
-```json
-{
-  "id": "interp_123",
-  "layer": "interpretation",
+  "id": "rel:posted_by:job_posting_159750:company_8821",
+  "layer": "fact_relation",
   "domain": "recruiting",
-  "subject_type": "market_segment",
-  "subject_id": "backend_japan_midlevel",
-  "kind": "trend",
-  "claim": "Production LLM experience is increasingly preferred in this segment.",
-  "summary": "Shared interpretation summary",
-  "confidence": 0.81,
-  "freshness": {
-    "computed_at": "2026-04-15T12:00:00Z",
-    "expires_at": "2026-04-16T12:00:00Z"
-  },
-  "evidence": [
-    {
-      "fact_id": "job_posting_123",
-      "weight": 0.4
-    }
-  ],
-  "relations": [
-    {
-      "type": "supports",
-      "target_id": "interp_122",
-      "confidence": 0.72
-    }
-  ],
-  "render_hints": {
-    "page_family": "market_trend",
-    "priority": "high"
-  },
-  "provenance": {},
-  "created_at": "2026-04-15T12:00:00Z",
-  "updated_at": "2026-04-15T12:00:00Z",
-  "version": 1,
-  "schema_version": "interpretation.v1",
-  "status": "active"
-}
-```
-
-### Interpretation Categories
-
-Recommended categories:
-
-- `trend`
-- `comparison`
-- `tension`
-- `opportunity`
-- `risk`
-- `contradiction`
-- `correlation`
-- `hypothesis`
-- `strategy_input`
-
-### Interpretation Relations
-
-Recommended relation types:
-
-- `supports`
-- `contradicts`
-- `refines`
-- `depends_on`
-- `supersedes`
-- `relevant_to`
-
-### Interpretation Rendering
-
-For the detailed interpretation envelope, lifecycle, validation, and publish model, see `docs/interpretation-schema-and-lifecycle-spec.md`.
-
-Interpretation records may be rendered into shared markdown pages.
-
-Rendered page families might include:
-
-- trend pages
-- segment summaries
-- company insight pages
-- concept pages
-- contradiction reports
-
-These are views, not the only storage format.
-
-### Recommended Storage
-
-- primary: NoSQL or document store
-- secondary: rendered markdown pages
-
-### Interpretation Indexing
-
-Interpretation should support:
-
-- subject indexes
-- evidence reverse indexes by `fact_id`
-- relation reverse indexes by `target_id`
-- freshness and status indexes
-- lexical and embedding indexes
-- page family or render target indexes
-
-## Layer 3: Personal
-
-### Definition
-
-Personal records represent user-scoped strategy, notes, plans, and cached derived views.
-
-Personal records are allowed to be opinionated and user-specific.
-They may include both user-authored raw artifacts and LLM-reworked personal wiki artifacts.
-They must remain user-scoped and must not silently promote into shared `Interpretation` or canonical `Fact`.
-
-### Personal Record Interface
-
-```json
-{
-  "id": "personal_plan_123",
-  "layer": "personal",
-  "domain": "recruiting",
-  "tenant_id": "tenant_a",
-  "user_id": "user_42",
-  "profile_version": "profile_v7",
-  "kind": "job_search_strategy",
-  "title": "Q2 transition plan",
-  "summary": "Three-month strategy focused on backend roles in Tokyo startups.",
-  "body_markdown": "## Strategy\n...",
-  "based_on": {
-    "fact_snapshot": "fact_snap_2026_04_15",
-    "interpretation_snapshot": "interp_snap_2026_04_15",
-    "profile_version": "profile_v7"
-  },
-  "relations": [
-    {
-      "type": "derived_from_interpretation",
-      "target_id": "interp_123"
-    }
-  ],
-  "provenance": {},
-  "created_at": "2026-04-15T13:00:00Z",
-  "updated_at": "2026-04-15T13:00:00Z",
-  "version": 1,
-  "schema_version": "personal.v1",
-  "status": "active"
-}
-```
-
-### Personal Categories
-
-- `strategy`
-- `plan`
-- `note`
-- `raw_note`
-- `raw_document`
-- `wiki_note`
-- `wiki_summary`
-- `answer_cache`
-- `reading_list`
-- `priority_tree`
-- `weekly_actions`
-- `profile_gap_analysis`
-
-### Personal Subspaces
-
-The Personal layer should distinguish at least two authoring subspaces.
-
-#### `personal/raw`
-
-This subspace is for user-authored or user-uploaded source material.
-
-Examples:
-
-- markdown drafts
-- imported PDF references
-- handwritten research notes
-- job-specific preparation notes
-
-#### `personal/wiki`
-
-This subspace is for LLM-reworked or user-curated wiki artifacts built from raw material plus upper-layer context.
-
-Examples:
-
-- summarized notes
-- rewritten strategy pages
-- linked topic notes
-- job-specific wiki summaries
-
-Rules:
-
-- `personal/raw` and `personal/wiki` remain user-scoped
-- both may anchor into `Interpretation` and `Fact`
-- neither may directly mutate shared `Interpretation` or canonical `Fact`
-- promotion from Personal into shared state, if ever desired, must be an explicit separate proposal flow
-
-### Recommended Storage
-
-- primary: user-scoped markdown or wiki pages plus metadata store
-- optional secondary: object store or document DB for large cached bodies
-
-Recommended conceptual path split:
-
-- `wiki/users/<user_id>/raw/`
-- `wiki/users/<user_id>/wiki/`
-
-### Personal Anchoring
-
-Personal records should keep explicit anchors to upper-layer records rather than copying all upstream content into the markdown body.
-
-Minimum anchor model:
-
-```json
-{
-  "anchors": [
-    "interp_123",
-    "interp_220",
-    "fact_job_posting_999"
-  ]
-}
-```
-
-These anchors support:
-
-- retrieval expansion
-- stale detection
-- explainability
-- selective regeneration
-
-Anchoring is not promotion.
-An anchored Personal page remains user-scoped even when it references shared `Interpretation` or canonical `Fact`.
-
-### Personal Indexing
-
-Personal should support:
-
-- user and tenant indexes
-- kind indexes
-- snapshot tuple indexes
-- anchor reverse indexes
-- stale and status indexes
-- lexical and embedding indexes
-
-## Profile Model
-
-Personalization requires an explicit profile model.
-
-### UserProfile
-
-```json
-{
-  "user_id": "user_42",
-  "tenant_id": "tenant_a",
-  "version": "profile_v7",
-  "domain": "recruiting",
-  "goals": ["transition_to_backend"],
-  "preferences": {
-    "location": ["tokyo", "remote"],
-    "seniority": "mid",
-    "salary_floor": 9000000
-  },
-  "attributes": {
-    "skills": ["python", "sql", "analytics"],
-    "experience_years": 4,
-    "language": ["en", "ja"]
-  },
-  "updated_at": "2026-04-15T12:55:00Z"
-}
-```
-
-The profile is not itself a wiki page. It is application state that informs Personal derivation.
-
-Profile changes should be versioned because they participate directly in cache keys and invalidation.
-
-## Source Model
-
-The system should normalize raw inputs before entering Fact.
-
-### SourceRecord
-
-```json
-{
-  "source_id": "notion:page:abc123",
-  "connector": "notion",
-  "domain": "recruiting",
-  "title": "Hiring memo",
-  "body_markdown": "Normalized content",
-  "metadata": {},
-  "fetched_at": "2026-04-15T10:00:00Z",
-  "content_hash": "sha256:...",
-  "status": "active"
-}
-```
-
-## Rendered Wiki Model
-
-Markdown pages remain useful as readable artifacts.
-
-### RenderedPage
-
-```json
-{
-  "page_id": "shared/market/backend-japan-midlevel",
-  "scope": "shared",
-  "layer": "interpretation",
-  "path": "wiki/shared/market/backend-japan-midlevel.md",
-  "title": "Backend Japan Mid-Level Market",
-  "body_markdown": "---\n...",
-  "render_source_ids": ["interp_123", "interp_124"],
-  "rendered_at": "2026-04-15T12:05:00Z"
-}
-```
-
-Scope values:
-
-- `shared`
-- `tenant`
-- `user`
-
-Rendered pages should also retain the snapshot tuple used to produce them.
-
-Interpretation-backed rendered pages with `scope: "shared"` should be treated as read-only views.
-User-authorable pages belong in the Personal layer with `scope: "user"`.
-
-## Graph Model
-
-The graph should be multi-layer aware.
-
-### Graph Node
-
-```json
-{
-  "id": "interp_123",
-  "layer": "interpretation",
-  "domain": "recruiting",
-  "label": "LLM experience demand trend",
-  "scope": "shared"
-}
-```
-
-### Graph Edge
-
-```json
-{
-  "from": "interp_123",
-  "to": "skill_llmops",
-  "type": "relevant_to",
-  "confidence": 0.82,
-  "scope": "shared"
-}
-```
-
-Shared and user-scoped graphs should be separable.
-
-The graph should be treated as a cross-layer index and dependency system, not as the sole canonical store.
-
-## Domain Pack Contract
-
-Canonical domain semantics should be expressed through a versioned `DomainPack`.
-
-The minimal current pack contract defines:
-
-- fact entity types
-- fact relation types
-- identity rules
-- merge policies
-- projection hints
-
-Adjacent domain-owned code may still define:
-
-- interpretation builders
-- rendering templates
-- freshness policies
-- proposal mappers
-- schema evolution support
-
-Those concerns are intentionally not all part of the minimal pack contract yet.
-
-### Minimal Domain Pack Shape
-
-```json
-{
-  "manifest": {
-    "domain": "recruiting",
-    "pack_version": "2026-04-18",
-    "compatibility": {
-      "min_stratawiki_version": "0.1.0"
-    },
-    "owner": {
-      "system": "jobs-wiki"
-    }
-  },
-  "entity_types": {
-    "job_posting": {
-      "name": "job_posting",
-      "required_attributes": ["title"],
-      "attributes": {
-        "title": {
-          "type": "string"
-        }
-      },
-      "identity": {
-        "mode": "external_id",
-        "field": "source_id",
-        "prefix": "job_posting"
-      },
-      "merge_policy": {
-        "mode": "upsert",
-        "conflict_strategy": "prefer_newer_source"
-      }
-    }
-  },
-  "relation_types": {
-    "posted_by": {
-      "name": "posted_by",
-      "from_entity_types": ["job_posting"],
-      "to_entity_types": ["company"],
-      "cardinality": "many_to_many",
-      "evidence_policy": "required"
-    }
-  },
-  "projection_hints": {
-    "default_title_attribute": {
-      "job_posting": "title"
-    }
+  "relation_type": "posted_by",
+  "from_canonical_key": "job_posting:159750",
+  "to_canonical_key": "company:8821",
+  "status": "active",
+  "attributes": {},
+  "provenance": {
+    "connector": "worknet",
+    "source_ids": ["159750"]
   }
 }
 ```
 
-The current repository also includes a registry interface and an in-memory implementation for resolving packs by `domain + pack_version`.
+Non-goal:
 
-The current repository now includes the first end-to-end schema-governance runtime:
+- making Fact a dense semantic graph just because relations are possible
 
-- pack validation
-- compatibility checking
-- approval gating
-- artifact loading
-- `DomainProposalBatch` validation and ingestion
+## Recommended Fact Storage
 
-Broader multi-domain generalization, richer tooling, and stronger operator workflows remain follow-up work.
+- `fact.record_envelopes`
+- `fact.relation_envelopes`
 
-## Example: Recruiting Data Model Slice
+Recommended physical model:
 
-### Fact
+- stable metadata in relational columns
+- `attributes_json` in JSONB
+- `provenance_json` in JSONB
 
-- `job_posting`
-- `company`
-- `skill`
-- `role`
-- `location`
+## Layer 2: Interpretation
 
-### Interpretation
+## Definition
 
-- `market_trend`
-- `role_transition_risk`
-- `skill_gap_pattern`
-- `regional_opportunity_summary`
+Interpretation records represent shared reusable insight derived from a subject-centered bundle of facts.
 
-### Personal
+The correct mental model is not:
 
-- `career_transition_plan`
-- `application_priority_list`
-- `interview_preparation_tree`
+- `Fact 1 -> Interpretation 1`
 
-## Example: Finance Data Model Slice
+The preferred mental model is:
 
-### Fact
+- `Subject 1 -> Interpretation N`
+- `Interpretation N -> Fact M`
 
-- `transaction`
-- `holding`
-- `account`
-- `price_event`
+This makes room for multiple insight families without forcing every fact into its own one-to-one summary.
 
-### Interpretation
+## Interpretation Design Rules
 
-- `spending_pattern`
-- `concentration_risk`
-- `cashflow_tension`
+- interpretation is about a `subject`
+- each interpretation belongs to a `family` and `kind`
+- each interpretation is supported by zero or more fact or relation links
+- interpretation-to-interpretation relations are optional and not first-class in v1 of this reframe
+- rendered markdown pages are projections, not the canonical record
 
-### Personal
+## Interpretation Metadata Shape
 
-- `budget_plan`
-- `watchlist_strategy`
-- `rebalance_note`
+Minimum canonical metadata shape:
 
-## Example: Health Data Model Slice
+```json
+{
+  "id": "interp:role_backend:trend_skill_demand_shift",
+  "layer": "interpretation",
+  "domain": "recruiting",
+  "scope": "shared",
+  "subject_type": "role",
+  "subject_id": "role:backend_engineer",
+  "family": "trend",
+  "kind": "skill_demand_shift",
+  "status": "published",
+  "fact_snapshot_id": "fact_snap_2026_04_22",
+  "pack_version": "recruiting.v2",
+  "confidence": 0.81,
+  "freshness_score": 0.73,
+  "stale": false,
+  "created_at": "2026-04-22T00:00:00Z",
+  "updated_at": "2026-04-22T00:00:00Z"
+}
+```
 
-### Fact
+## Interpretation Payload Shape
 
-- `sleep_event`
-- `symptom_entry`
-- `medication_event`
-- `biometric_reading`
+The payload should stay flexible and family-specific.
 
-### Interpretation
+Example:
 
-- `correlation_pattern`
-- `adherence_summary`
-- `trigger_cluster`
+```json
+{
+  "title": "AI/API demand is rising for backend roles",
+  "summary": "Recent job postings and market signals indicate higher demand for backend roles with AI integration capability.",
+  "claims": [
+    {
+      "type": "signal",
+      "text": "Multiple postings repeat Python and API integration requirements."
+    }
+  ],
+  "signals": [
+    "job posting demand increase",
+    "training supply expansion"
+  ],
+  "counter_signals": [
+    "experience expectations remain high"
+  ],
+  "watchpoints": [
+    "production experience",
+    "portfolio evidence"
+  ]
+}
+```
 
-### Personal
+## Interpretation Support Links
 
-- `routine_plan`
-- `experiment_note`
-- `daily_support_plan`
+Support links connect one interpretation to the facts and relations that justify it.
 
-## Recommended Implementation Rule
+Example conceptual shape:
 
-When in doubt:
+```json
+{
+  "interpretation_id": "interp:role_backend:trend_skill_demand_shift",
+  "fact_id": "fact:job_posting:159750",
+  "relation_id": null,
+  "support_role": "evidence",
+  "weight": 0.4
+}
+```
 
-- store canonical observed data in Fact
-- store shared derived claims in Interpretation
-- store user-scoped plans and notes in Personal
+Recommended storage:
 
-Do not allow Personal to become the only place where important shared knowledge exists.
+- `interpretation.records`
+- `interpretation.support_links`
+- `interpretation.payloads`
 
-For detailed graph, retrieval, and propagation behavior, see the dedicated graph specification document.
+## Interpretation Uniqueness
+
+The recommended primary shared uniqueness boundary is:
+
+- `domain`
+- `subject_type`
+- `subject_id`
+- `family`
+- `kind`
+- `scope`
+- `status = published`
+
+This allows multiple interpretations for the same subject while keeping one published primary record per family and kind.
+
+## Interpretation Relations
+
+Interpretation-to-Interpretation relations may become useful later for:
+
+- `derived_from`
+- `contrasts_with`
+- `bundles`
+- `supersedes`
+
+But they are not required for the base architecture.
+
+The initial reframe intentionally keeps them out of the critical path.
+
+## Layer 3: Personal
+
+## Definition
+
+Personal is the user's working wiki and PKM surface.
+
+It is the layer where:
+
+- user-authored notes live
+- LLM-reworked personal notes live
+- question results can be filed back into the workspace
+- upper-layer shared context is adapted to user goals
+
+## Personal Storage Position
+
+Personal is markdown-first.
+
+Markdown is the canonical content.
+The filesystem is the authoritative content store for the body.
+
+PostgreSQL stores only minimal Personal metadata and sync state.
+
+This means:
+
+- markdown is not rendered from canonical JSONB
+- markdown is not expected to round-trip into a strict JSON schema
+- user freedom is preferred over full structural normalization
+
+## Recommended Personal Filesystem Layout
+
+```text
+wiki/
+  users/
+    <user>/
+      profile/
+      inbox/
+      notes/
+      projects/
+      plans/
+      journal/
+      queries/
+```
+
+`shared/` rendered pages may also exist under the filesystem, but they are not part of Personal ownership.
+
+## Recommended Personal Metadata
+
+Recommended DB metadata:
+
+- `document_id`
+- `user_id`
+- `path`
+- `parent_path` or `parent_id`
+- `title`
+- `doc_type`
+- `status`
+- `created_at`
+- `updated_at`
+- `content_hash`
+
+Non-goal:
+
+- parsing every personal markdown document into canonical structured JSON
+
+## Retrieval Model
+
+The default retrieval order remains:
+
+1. `Personal`
+2. `Interpretation`
+3. `Fact`
+
+But the architecture should now be read as:
+
+- `Personal` is the main workspace
+- `Interpretation` is reusable shared context
+- `Fact` is canonical grounding fallback
+
+This is why the overall system is best described as a lightweight RAG-like architecture rather than a full graph-first knowledge system.
+
+## Responsibility Summary
+
+### StrataWiki
+
+StrataWiki owns:
+
+- canonical Fact storage
+- shared Interpretation storage
+- metadata, lifecycle, snapshots, and provenance
+- domain pack governance and runtime enforcement
+- retrieval substrate
+
+### Domain Services such as Jobs-Wiki
+
+External domain services own:
+
+- source ingestion
+- domain semantics
+- domain packs
+- source-to-proposal mapping
+- user-facing product and Personal workspace experience
+
+## Summary
+
+The three-layer model is no longer meant to imply three equally heavy layers.
+
+The intended shape is:
+
+- `Fact`: minimal canonical shared truth
+- `Interpretation`: lightweight shared reusable insight
+- `Personal`: markdown-native user knowledge workspace
+
+That is the current target architecture for StrataWiki.

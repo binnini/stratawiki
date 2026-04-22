@@ -1,31 +1,33 @@
 # StrataWiki
 
-Multi-user MCP server architecture for shared knowledge, shared interpretation, and user-scoped strategy generation.
+Multi-user MCP server architecture for a markdown-native Personal wiki backed by lightweight shared `Fact` and `Interpretation` layers.
 
 ## Core Idea
 
 StrataWiki is being rebuilt around three semantic layers:
 
 - `Fact`: canonical observed data
-- `Interpretation`: shared derived meaning
-- `Personal`: user-scoped plans, notes, and cached outputs
+- `Interpretation`: lightweight shared derived insight
+- `Personal`: markdown-native user workspace and wiki
 
 Current boundary assumptions:
 
 - user-facing `shared` documents are rendered views of the `Interpretation` layer
-- `Personal` may contain both user-authored raw documents and LLM-reworked personal wiki artifacts
+- `Personal` is the system center of gravity and may contain both user-authored raw documents and LLM-reworked personal wiki artifacts
 - Personal writes stay user-scoped and must not auto-promote into `Fact` or published `Interpretation`
+- `Fact` and `Interpretation` are DB-first layers backed by PostgreSQL plus JSONB
+- Personal content is markdown-first and file-backed; the database stores Personal metadata, not the canonical body
 
 The system is intended for domains such as recruiting and job strategy first, while staying extensible to other domains through a domain-neutral core plus registered `Domain Pack` artifacts for canonical schema semantics.
 
 ## Architecture Summary
 
 - Fact is stored in a structured canonical store
-- Interpretation is stored as canonical derived records plus rendered shared wiki views
-- Personal is stored as user-scoped wiki-style output with anchors into upper layers
+- Interpretation is stored as canonical derived records plus optional rendered shared views
+- Personal is stored as user-scoped markdown content with lightweight registry metadata
 - shared rendered pages are read-only views rather than direct authoring surfaces
 - personal authoring may include both raw user documents and LLM-reworked personal wiki artifacts
-- Graph is treated as a cross-layer index and dependency system
+- Graph is treated as a sparse cross-layer index and dependency system rather than the primary knowledge model
 - Caches and snapshots are explicit, versioned, and inspectable
 
 ## Current State
@@ -44,12 +46,12 @@ This repository currently contains:
 ## Current Gaps
 
 The main remaining gaps are no longer whether an MVP path exists at all.
-They are now mostly read-model, scheduling, and deployment-surface hardening work:
+They are now mostly read-model, scheduling, and deployment-surface hardening work after the Personal-centered reframe:
 
-- shared rendered-page read models remain thinner than the canonical interpretation and lifecycle flow
-- persisted Personal anchors are reusable, but still need a stronger indexed retrieval read model
+- the current shared interpretation model is still closer to partition summaries than the target subject-centered multi-interpretation shape
+- persisted Personal anchors are reusable, but Personal filesystem-first authoring still needs stronger workspace-oriented sync and retrieval read models
 - the background path currently centers on interpretation builds; scheduler orchestration and broader job families remain follow-up work
-- graph operator tools exist, but durable graph artifacts and dedicated graph build workers are still follow-up work
+- graph operator tools exist, but graph remains a support surface and should not expand into a dense primary ontology by default
 - the current stable long-lived runtime contract is stdio; later networked deployment surfaces remain a separate decision
 
 ## Local MVP Demo

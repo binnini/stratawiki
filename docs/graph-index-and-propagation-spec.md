@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines how graph, indexing, retrieval, and downstream propagation work in a three-layer LLM Wiki MCP server.
+This document defines how graph, indexing, retrieval, and downstream propagation work in a three-layer LLM Wiki MCP server after the Personal-centered architecture reframe.
 
 It complements the higher-level architecture, data model, and consistency documents by focusing on:
 
@@ -14,7 +14,7 @@ It complements the higher-level architecture, data model, and consistency docume
 ## Spec vs Actual
 
 - spec
-  - graph is a multi-role operational structure for retrieval, dependency routing, and propagation
+  - graph is a sparse operational structure for retrieval, dependency routing, and propagation
 - actual
   - the current live runtime is still stronger on dependency/operator lookup than on fully materialized graph artifacts
   - external consumers such as Jobs-Wiki should treat user-facing graph as a projection vocabulary, not as a promise of a dedicated canonical graph store
@@ -32,6 +32,12 @@ In this system, graph is a cross-layer operational structure that supports:
 - invalidation routing
 
 Graph is not the canonical store of Facts, Interpretations, or Personal records. Each layer retains its own storage of record.
+Graph is also not the primary knowledge model.
+The default architecture remains:
+
+- Personal markdown workspace first
+- shared Interpretation substrate second
+- canonical Fact grounding third
 
 ## Logical Graph Types
 
@@ -39,13 +45,13 @@ One physical implementation may store these together, but the system should dist
 
 ### Semantic Graph
 
-Used for knowledge exploration and retrieval expansion.
+Used for bounded knowledge exploration and retrieval expansion.
 
 Examples:
 
-- interpretation supports interpretation
-- interpretation relevant to fact entity
+- interpretation supported by fact neighborhood
 - personal note refers to interpretation trend
+- personal note anchored to a fact
 
 ### Dependency Graph
 
@@ -118,11 +124,10 @@ Minimum node metadata:
 
 Recommended semantic edge types:
 
-- `supports`
-- `contradicts`
-- `refines`
-- `relevant_to`
 - `mentions`
+- `relevant_to`
+- optional `contrasts_with`
+- optional `bundles`
 
 Recommended dependency edge types:
 
@@ -167,6 +172,7 @@ Answers:
 - which personal outputs were built from this snapshot or anchor set
 
 The dependency reverse index is often more important operationally than the semantic graph.
+In the current target architecture it is usually the more important graph surface.
 
 ## Layer-Specific Index Strategy
 
@@ -203,7 +209,7 @@ Recommended indexes:
 - subject type plus subject ID
 - interpretation kind
 - evidence.fact_id reverse index
-- relation.target_id reverse index
+- optional interpretation-link reverse index
 - freshness or expiry
 - lexical search
 - embedding search
@@ -216,6 +222,7 @@ Primary index goals:
 - user-scoped retrieval
 - stale detection
 - regeneration targeting
+- markdown workspace lookup
 
 Recommended indexes:
 
@@ -242,10 +249,11 @@ This keeps retrieval grounded in personalization while still allowing shared int
 
 This default order is compatible with both:
 
-- graph-first retrieval for cross-layer expansion
+- bounded graph expansion for cross-layer support
 - markdown-search-first retrieval for rendered personal or shared pages
 
 The correct backend split should be treated as an implementation tradeoff, not a fixed architectural law.
+But the graph should remain a support system, not expand into a dense ontology by default.
 
 ## Personal Query Retrieval Flow
 

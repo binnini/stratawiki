@@ -6,15 +6,15 @@ status: draft
 
 ## Purpose
 
-This document defines the first resource-shaped tool and REST draft for user-scoped Personal document authoring.
+This document defines the resource-shaped tool and REST draft for user-scoped Personal document authoring.
 
 It exists to support workspace-first external clients such as Jobs-Wiki without weakening the existing three-layer ownership model.
 
-The main goal is to add personal document CRUD and raw-to-wiki generation while preserving these boundaries:
+The main goal is to support Personal document CRUD and raw-to-wiki generation while preserving these boundaries:
 
 - `Fact` stays canonical and code-owned
 - `Interpretation` stays shared, published, and read-only to external clients
-- `Personal` stays user-scoped and writable
+- `Personal` stays user-scoped, writable, and markdown-native
 - Personal writes never auto-promote into upper shared layers
 
 ## Boundary Check
@@ -30,22 +30,23 @@ Already in good shape:
 
 Main gap for workspace-first authoring:
 
-- there is no first-class resource for user-authored Personal documents
+- there is no first-class resource for user-authored Personal markdown documents
 - there is no resource-shaped Personal CRUD surface
 - there is no explicit raw-to-wiki generation contract
 - shared rendered pages are conceptually present, but their read model is not yet expressed as a dedicated resource family
 
 This means the upper shared-layer contract does not need redesign.
-It needs one additional family: Personal document resources plus a clearer shared rendered-page read resource.
+It needs a clearer Personal document family whose canonical body lives in markdown files plus a clearer shared rendered-page read resource.
 
 ## Design Goals
 
 - preserve the existing upper-layer ownership model
 - give external WAS clients a stable Personal authoring contract
 - keep shared rendered pages explicitly read-only
-- support both markdown notes and PDF-backed personal documents
+- support markdown notes as canonical Personal content and PDF-backed assets as attachments
 - separate raw user material from LLM-reworked wiki artifacts
 - keep provenance, snapshot binding, and anchor metadata explicit
+- keep the DB role limited to metadata, registry, and sync state
 
 ## Non-Goals
 
@@ -83,7 +84,11 @@ External clients may not:
 
 This is the first-class writable user-scoped document resource.
 
-Minimum shape:
+The canonical content body lives in a markdown file on the Personal filesystem.
+
+The DB resource is metadata-first.
+
+Minimum metadata shape:
 
 ```json
 {
@@ -94,7 +99,7 @@ Minimum shape:
   "subspace": "raw",
   "kind": "note",
   "title": "Toss backend prep",
-  "body_markdown": "## Notes\n...",
+  "file_path": "wiki/users/user_42/notes/toss-backend-prep.md",
   "asset_refs": [],
   "anchors": [
     "interp_123",
@@ -108,7 +113,8 @@ Minimum shape:
   "provenance": {},
   "status": "active",
   "created_at": "2026-04-20T10:00:00Z",
-  "updated_at": "2026-04-20T10:00:00Z"
+  "updated_at": "2026-04-20T10:00:00Z",
+  "content_hash": "sha256:abcd..."
 }
 ```
 
@@ -118,6 +124,8 @@ Required rules:
 - Personal documents are always writable by the owning user scope
 - Personal documents may reference upper-layer records through anchors
 - Personal documents must not directly mutate shared `Interpretation` or canonical `Fact`
+- the markdown file is the authoritative body
+- the DB resource must not be treated as a canonical JSON reconstruction of the markdown body
 
 Authoritative identity and concurrency fields:
 
@@ -125,7 +133,8 @@ Authoritative identity and concurrency fields:
 - `domain + tenant_id + user_id + document_id` is the full resource identity
 - there is no separate `profile_id` in this contract
 - `profile_version` is required on create and update as Personal provenance and scope freshness metadata, but it is not part of the resource key
-- `version` is the server-managed optimistic write token and must increase on every successful update or delete transition
+- `version` is the server-managed optimistic write token and must increase on every successful metadata update or delete transition
+- `content_hash` tracks the currently indexed file content without implying full structural parsing
 
 ## 3. Personal Asset
 
@@ -167,6 +176,17 @@ Authoritative identity and reference fields:
 - `blob_sha256` is the stable content identity when the uploader can provide it
 - `asset_kind`, `media_type`, `filename`, and `size_bytes` describe the registered original blob and do not imply extraction or interpretation
 
+### Personal document reads and writes
+
+The write path should be understood as file-backed authoring.
+
+- create: register metadata and write a markdown file
+- update: rewrite markdown content and refresh metadata
+- delete: delete or tombstone the markdown file and transition metadata
+- read: return metadata plus optionally the current markdown content loaded from the file
+
+This is intentionally different from shared layers, where the DB payload is canonical.
+
 ## Authority Rules
 
 - shared rendered pages are read-only
@@ -175,6 +195,7 @@ Authoritative identity and reference fields:
 - link generation may attach anchors or related refs to a Personal document
 - no Personal write may publish or mutate shared Interpretation state
 - any future promotion from Personal to shared state must be a separate explicit proposal flow
+- Personal markdown is canonical; DB metadata only tracks and serves it
 
 ## Proposed Tool Surface
 

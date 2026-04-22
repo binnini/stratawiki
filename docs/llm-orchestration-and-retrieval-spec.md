@@ -38,12 +38,13 @@ This system should treat the LLM as:
 ## Design Goals
 
 - preserve canonical integrity in `Fact`
-- allow high-creativity synthesis in `Interpretation`
+- allow reusable but lightweight synthesis in `Interpretation`
 - allow high-utility personalization in `Personal`
 - support both curated retrieval and exploratory retrieval
 - make graph access explicit, bounded, and scope-safe
 - keep markdown search optional and modular
 - improve latency and token efficiency through retrieval discipline
+- keep the overall architecture closer to a lightweight RAG-like substrate than a heavy shared graph brain
 
 ## Non-Goals
 
@@ -81,13 +82,13 @@ Program responsibilities:
 
 ### `Interpretation`
 
-`Interpretation` is the primary LLM-authored shared knowledge layer.
+`Interpretation` is the primary LLM-authored shared insight layer.
 
 LLM may:
 
 - synthesize trends, opportunities, risks, and comparisons
 - summarize evidence into reusable shared pages
-- propose semantic relations between interpretations
+- propose optional semantic relations between interpretations
 - create candidate new insight families or hypotheses
 
 Program responsibilities:
@@ -98,6 +99,7 @@ Program responsibilities:
 - schema and status validation
 - confidence and freshness calculation
 - promotion from proposal to published interpretation
+- keeping the shared layer lightweight enough that Personal remains the primary working surface
 
 ### `Personal`
 
@@ -152,6 +154,9 @@ Program responsibilities:
 - dependency edge writes
 - impact analysis
 - stale propagation
+
+Graph is a support surface, not the primary knowledge model.
+The default posture should be sparse and practical rather than dense and ontology-first.
 
 ## Retrieval Modes
 
