@@ -27,6 +27,7 @@ The intended first external consumers are service-to-service clients such as Job
 - resource-specific profile sync and Personal query endpoints
 - resource-specific interpretation build and operator status endpoints
 - resource-specific command submit/status endpoints for sync/admin workflows
+- consumer-shaped external read model endpoints for Jobs-Wiki projection reads
 
 ### Recommended but Not Yet Fixed
 
@@ -84,6 +85,11 @@ External clients must not:
 - bypass Domain Pack validation for canonical writes
 - treat shared rendered views as writable resources
 - rely on Personal writes to mutate or promote shared upper-layer state
+
+Migration acceptance criterion:
+
+- external clients should treat direct DB access as a temporary migration path only
+- the target boundary is HTTP read + HTTP write + HTTP personal + HTTP command
 
 ## Proposed Base Path and Versioning
 
@@ -187,6 +193,10 @@ The first HTTP baseline intentionally exposes generic runtime endpoints before t
 | `/api/v1/snapshot-status` | `GET` | `get_snapshot_status` | inspect current snapshot state | implemented |
 | `/api/v1/cache-status/{record_id}` | `GET` | `get_cache_status` | inspect one saved Personal output status | implemented |
 | `/api/v1/explanations/{layer}/{record_id}` | `GET` | `explain_result` | inspect result explainability | implemented |
+| `/api/v1/workspace-summary` | `GET` | repository-backed read model | fetch one consumer-shaped workspace summary projection | implemented |
+| `/api/v1/opportunities` | `GET` | repository-backed read model | list consumer-shaped recruiting opportunities | implemented |
+| `/api/v1/opportunities/{opportunity_id}` | `GET` | repository-backed read model | fetch one consumer-shaped recruiting opportunity detail | implemented |
+| `/api/v1/calendar` | `GET` | repository-backed read model | fetch one consumer-shaped recruiting calendar projection | implemented |
 
 ## Planned Resource-Specific Endpoint Set
 

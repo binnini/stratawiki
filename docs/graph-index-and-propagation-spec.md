@@ -11,6 +11,14 @@ It complements the higher-level architecture, data model, and consistency docume
 - personal query retrieval flow
 - fact-to-personal propagation
 
+## Spec vs Actual
+
+- spec
+  - graph is a multi-role operational structure for retrieval, dependency routing, and propagation
+- actual
+  - the current live runtime is still stronger on dependency/operator lookup than on fully materialized graph artifacts
+  - external consumers such as Jobs-Wiki should treat user-facing graph as a projection vocabulary, not as a promise of a dedicated canonical graph store
+
 ## Graph Position
 
 Graph should not be treated as a visualization artifact only.

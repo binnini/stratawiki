@@ -10,6 +10,13 @@ from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from wiki_mcp.auth import resolve_bearer_token, resolve_http_auth_token
+from wiki_mcp.http_read_models import (
+    build_workspace_summary_payload,
+    get_calendar_payload,
+    get_opportunity_detail_payload,
+    list_opportunities_payload,
+    parse_opportunity_cursor,
+)
 from wiki_mcp.runtime_protocol import (
     RUNTIME_PROTOCOL_VERSION,
     list_tools_payload,
@@ -243,6 +250,78 @@ def dispatch_http_request(
         try:
             return _success_response(request_id, show_tool_payload(server, tool_name))
         except KeyError as exc:
+            return _tool_error_response(request_id, exc)
+
+    if normalized_path == "/api/v1/workspace-summary":
+        if normalized_method != "GET":
+            return _method_not_allowed(request_id, allowed="GET")
+        try:
+            return _success_response(
+                request_id,
+                build_workspace_summary_payload(
+                    bootstrap=_http_read_bootstrap(server),
+                    domain=_required_query_value(query, "domain"),
+                    scope=_single_query_value(query, "scope") or "shared",
+                    profile_id=_single_query_value(query, "profileId"),
+                ),
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
+    if normalized_path == "/api/v1/opportunities":
+        if normalized_method != "GET":
+            return _method_not_allowed(request_id, allowed="GET")
+        try:
+            return _success_response(
+                request_id,
+                list_opportunities_payload(
+                    bootstrap=_http_read_bootstrap(server),
+                    domain=_required_query_value(query, "domain"),
+                    scope=_single_query_value(query, "scope") or "shared",
+                    status=_single_query_value(query, "status"),
+                    closing_within_days=_optional_positive_query_int(query, "closingWithinDays"),
+                    cursor_offset=parse_opportunity_cursor(_single_query_value(query, "cursor")) or 0,
+                    limit=_optional_positive_query_int(query, "limit"),
+                ),
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
+    if normalized_path.startswith("/api/v1/opportunities/"):
+        if normalized_method != "GET":
+            return _method_not_allowed(request_id, allowed="GET")
+        try:
+            opportunity_id = _single_path_part(
+                normalized_path.removeprefix("/api/v1/opportunities/"),
+                label="opportunity path",
+            )
+            return _success_response(
+                request_id,
+                get_opportunity_detail_payload(
+                    bootstrap=_http_read_bootstrap(server),
+                    domain=_required_query_value(query, "domain"),
+                    scope=_single_query_value(query, "scope") or "shared",
+                    opportunity_id=opportunity_id,
+                ),
+            )
+        except Exception as exc:
+            return _tool_error_response(request_id, exc)
+
+    if normalized_path == "/api/v1/calendar":
+        if normalized_method != "GET":
+            return _method_not_allowed(request_id, allowed="GET")
+        try:
+            return _success_response(
+                request_id,
+                get_calendar_payload(
+                    bootstrap=_http_read_bootstrap(server),
+                    domain=_required_query_value(query, "domain"),
+                    scope=_single_query_value(query, "scope") or "shared",
+                    from_date=_single_query_value(query, "from"),
+                    to_date=_single_query_value(query, "to"),
+                ),
+            )
+        except Exception as exc:
             return _tool_error_response(request_id, exc)
 
     if normalized_path == "/api/v1/domain-proposals/validate":
@@ -591,6 +670,13 @@ def _dispatch_tool_post(
         return _call_tool(server, request_id=request_id, tool_name=tool_name, arguments=payload)
     except Exception as exc:
         return _tool_error_response(request_id, exc)
+
+
+def _http_read_bootstrap(server: StrataWikiServer) -> Any:
+    bootstrap = getattr(server, "bootstrap", None)
+    if bootstrap is None:
+        raise ValueError("HTTP read models require a configured bootstrap context.")
+    return bootstrap
 
 def _dispatch_personal_document_request(
     server: StrataWikiServer,
@@ -1159,6 +1245,19 @@ def _required_query_value(query: Mapping[str, list[str]], key: str) -> str:
     if value is None:
         raise ValueError(f"Query parameter {key!r} is required.")
     return value
+
+
+def _optional_positive_query_int(query: Mapping[str, list[str]], key: str) -> int | None:
+    value = _single_query_value(query, key)
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"Query parameter {key!r} must be a positive integer.") from exc
+    if parsed <= 0:
+        raise ValueError(f"Query parameter {key!r} must be a positive integer.")
+    return parsed
 
 
 def _required_string(payload: Mapping[str, object], key: str) -> str:

@@ -53,6 +53,53 @@ class InMemoryFactRepository:
         ]
         return matches[:limit]
 
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any],
+        entity_type: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        matches: list[dict[str, Any]] = []
+        for record in self.records.values():
+            if record["domain"] != domain:
+                continue
+            if entity_type is not None and record.get("entity_type") != entity_type:
+                continue
+            if statuses and record.get("status") not in statuses:
+                continue
+            matches.append(dict(record))
+        matches.sort(
+            key=lambda record: (str(record.get("updated_at") or ""), str(record.get("id") or "")),
+            reverse=True,
+        )
+        return matches[:limit]
+
+    def list_relations(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, Any],
+        relation_types: list[str] | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        matches = [
+            dict(relation)
+            for relation in self.relations
+            if relation.get("domain") == domain
+            and (not relation_types or relation.get("relation_type") in relation_types)
+        ]
+        matches.sort(
+            key=lambda relation: (
+                str(relation.get("relation_type") or ""),
+                str(relation.get("from_canonical_key") or ""),
+                str(relation.get("to_canonical_key") or ""),
+            ),
+        )
+        return matches[:limit]
+
     def write_facts(
         self,
         records: list[dict[str, Any]],
@@ -381,6 +428,7 @@ class InMemorySnapshotRepository:
 
     def publish_snapshot(self, layer: str, domain: str, snapshot_ref: dict[str, Any]) -> str:
         snapshot_id = snapshot_ref.get("interpretation_snapshot_id") or snapshot_ref["fact_snapshot_id"]
+        timestamp = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         self.status_by_layer[layer] = {
             "layer": layer,
             "domain": domain,
@@ -392,7 +440,8 @@ class InMemorySnapshotRepository:
                 else {}
             ),
             **({"profile_version": snapshot_ref["profile_version"]} if "profile_version" in snapshot_ref else {}),
-            "published_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "updated_at": timestamp,
+            "published_at": timestamp,
         }
         return str(snapshot_id)
 
@@ -456,6 +505,19 @@ class InMemoryOutboxRepository:
 
     def get_event(self, event_id: str) -> dict[str, Any]:
         return dict(self._get_event(event_id))
+
+    def has_pending_events_for_aggregate(
+        self,
+        *,
+        aggregate_layer: str,
+        aggregate_id: str,
+    ) -> bool:
+        return any(
+            event.get("aggregate_layer") == aggregate_layer
+            and event.get("aggregate_id") == aggregate_id
+            and event.get("status") in {"pending", "claimed"}
+            for event in self.events
+        )
 
     def claim_pending(
         self,

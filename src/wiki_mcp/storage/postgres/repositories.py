@@ -189,6 +189,102 @@ class PostgresFactRepository(PostgresRepositoryBase):
             )
             return [self._row_to_fact_record(row) for row in cursor.fetchall()]
 
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        entity_type: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 200,
+    ) -> list[FactRecord]:
+        if limit <= 0:
+            return []
+
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        filters = ["domain = %s", scope_sql]
+        params: list[Any] = [domain, *scope_params]
+
+        if entity_type is not None:
+            filters.append("entity_type = %s")
+            params.append(entity_type)
+        if statuses:
+            filters.append("status = ANY(%s)")
+            params.append(statuses)
+        params.append(limit)
+
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    id,
+                    layer,
+                    domain,
+                    entity_type,
+                    canonical_key,
+                    scope,
+                    fact_snapshot_id,
+                    tenant_id,
+                    user_id,
+                    status,
+                    version,
+                    created_at,
+                    updated_at,
+                    schema_version,
+                    attributes_json,
+                    provenance_json
+                FROM fact.record_envelopes
+                WHERE {" AND ".join(filters)}
+                ORDER BY updated_at DESC, id ASC
+                LIMIT %s
+                """,
+                params,
+            )
+            return [self._row_to_fact_record(row) for row in cursor.fetchall()]
+
+    def list_relations(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        relation_types: list[str] | None = None,
+        limit: int = 500,
+    ) -> list[FactRelation]:
+        if limit <= 0:
+            return []
+
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        filters = ["domain = %s", scope_sql]
+        params: list[Any] = [domain, *scope_params]
+
+        if relation_types:
+            filters.append("relation_type = ANY(%s)")
+            params.append(relation_types)
+        params.append(limit)
+
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    domain,
+                    relation_type,
+                    from_canonical_key,
+                    to_canonical_key,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    schema_version,
+                    provenance_json,
+                    attributes_json
+                FROM fact.relation_envelopes
+                WHERE {" AND ".join(filters)}
+                ORDER BY relation_type ASC, from_canonical_key ASC, to_canonical_key ASC
+                LIMIT %s
+                """,
+                params,
+            )
+            return [self._row_to_fact_relation(row) for row in cursor.fetchall()]
+
     def write_facts(
         self,
         records: list[FactRecord],
@@ -467,6 +563,25 @@ class PostgresFactRepository(PostgresRepositoryBase):
             **({"updated_at": str(data["updated_at"])} if data.get("updated_at") else {}),
             "schema_version": data["schema_version"],
             "provenance": self._load_json(data["provenance_json"]),
+        }
+
+    def _row_to_fact_relation(self, row: Any) -> FactRelation:
+        data = self._row_to_dict(row)
+        return {
+            "domain": data["domain"],
+            "relation_type": data["relation_type"],
+            "from_canonical_key": data["from_canonical_key"],
+            "to_canonical_key": data["to_canonical_key"],
+            "scope": data["scope"],
+            **({"tenant_id": data["tenant_id"]} if data.get("tenant_id") else {}),
+            **({"user_id": data["user_id"]} if data.get("user_id") else {}),
+            "schema_version": data["schema_version"],
+            "provenance": self._load_json(data["provenance_json"]),
+            **(
+                {"attributes": self._load_json(data["attributes_json"])}
+                if data.get("attributes_json")
+                else {}
+            ),
         }
 
     def _validate_fact_record(
@@ -1933,6 +2048,7 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
                     p.fact_snapshot_id,
                     p.interpretation_snapshot_id,
                     p.profile_version,
+                    p.updated_at,
                     pub.published_at
                 FROM ops.snapshot_pointer p
                 LEFT JOIN ops.snapshot_publication pub
@@ -1977,6 +2093,7 @@ class PostgresSnapshotRepository(PostgresRepositoryBase):
                 else {}
             ),
             **({"profile_version": data["profile_version"]} if data.get("profile_version") else {}),
+            **({"updated_at": str(data["updated_at"])} if data.get("updated_at") else {}),
             **({"published_at": str(data["published_at"])} if data.get("published_at") else {}),
         }
 
@@ -2008,6 +2125,30 @@ class PostgresOutboxRepository(PostgresRepositoryBase):
         if row is None:
             raise KeyError(f"Unknown outbox event: {event_id}")
         return self._row_to_outbox_event_record(row)
+
+    def has_pending_events_for_aggregate(
+        self,
+        *,
+        aggregate_layer: str,
+        aggregate_id: str,
+    ) -> bool:
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM ops.outbox_event
+                    WHERE aggregate_layer = %s
+                        AND aggregate_id = %s
+                        AND status IN ('pending', 'claimed')
+                ) AS has_pending
+                """,
+                (aggregate_layer, aggregate_id),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return False
+        return bool(self._row_to_dict(row).get("has_pending"))
 
     def append_events(self, events: list[OutboxEvent]) -> list[str]:
         stored_ids: list[str] = []

@@ -47,6 +47,27 @@ class FactRepository(Protocol):
     ) -> list[FactRecord]:
         """Search Fact records as bounded retrieval candidates."""
 
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        entity_type: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 200,
+    ) -> list[FactRecord]:
+        """List Fact records for exact entity-type and lifecycle filters."""
+
+    def list_relations(
+        self,
+        *,
+        domain: str,
+        scope_ref: ScopeRef,
+        relation_types: list[str] | None = None,
+        limit: int = 500,
+    ) -> list[FactRelation]:
+        """List Fact relations for exact relation-type filters."""
+
     def write_facts(
         self,
         records: list[FactRecord],
@@ -241,6 +262,14 @@ class OutboxRepository(Protocol):
 
     def get_event(self, event_id: str) -> OutboxEventRecord:
         """Return one stored outbox event for operator visibility."""
+
+    def has_pending_events_for_aggregate(
+        self,
+        *,
+        aggregate_layer: str,
+        aggregate_id: str,
+    ) -> bool:
+        """Return whether pending or claimed outbox events exist for one aggregate."""
 
     def claim_pending(
         self,

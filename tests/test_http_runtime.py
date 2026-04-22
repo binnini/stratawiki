@@ -230,6 +230,271 @@ class _FakePersonalAssetRepository:
         return stored
 
 
+class _FakeFactRepository:
+    def __init__(self) -> None:
+        self.records: list[dict[str, object]] = [
+            {
+                "id": "fact:job_posting:159436",
+                "layer": "fact",
+                "domain": "recruiting",
+                "entity_type": "job_posting",
+                "canonical_key": "job_posting:159436",
+                "attributes": {
+                    "title": "2026년 제1회 공무직 신입사원 채용(버스운전원 등)",
+                    "summary": "상세 모집요강 참조",
+                    "opens_at": "20260413",
+                    "closes_at": "20260424",
+                    "source_url": "https://example.test/postings/159436",
+                    "location_text": "인천",
+                    "employment_type": "정규직",
+                    "requirements_text": "운전 경력 우대",
+                    "selection_process_text": "서류전형 -> 면접전형",
+                },
+                "scope": "shared",
+                "fact_snapshot_id": "fact_snap:recruiting:test",
+                "status": "active",
+                "version": 1,
+                "updated_at": "2026-04-19T00:36:15.801Z",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+            {
+                "id": "fact:job_posting:159423",
+                "layer": "fact",
+                "domain": "recruiting",
+                "entity_type": "job_posting",
+                "canonical_key": "job_posting:159423",
+                "attributes": {
+                    "title": "2026년 상반기 신입직원 채용",
+                    "summary": "사무행정 外",
+                    "opens_at": "20260420",
+                    "closes_at": "20260427",
+                    "source_url": "https://example.test/postings/159423",
+                    "location_text": "울산 남구",
+                    "employment_type": "채용형 인턴",
+                    "requirements_text": "정보기술(IT), 통계",
+                    "selection_process_text": "서류전형 -> 필기전형 -> 면접전형",
+                },
+                "scope": "shared",
+                "fact_snapshot_id": "fact_snap:recruiting:test",
+                "status": "active",
+                "version": 1,
+                "updated_at": "2026-04-19T00:36:15.801Z",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+            {
+                "id": "fact:company:E000000320",
+                "layer": "fact",
+                "domain": "recruiting",
+                "entity_type": "company",
+                "canonical_key": "company:E000000320",
+                "attributes": {
+                    "name": "인천교통공사",
+                    "summary": "종합교통 공기업",
+                    "description": "도시철도와 버스 운영",
+                    "homepage_url": "http://www.ictr.or.kr",
+                    "main_business": "도시철도 건설,운영",
+                },
+                "scope": "shared",
+                "fact_snapshot_id": "fact_snap:recruiting:test",
+                "status": "active",
+                "version": 1,
+                "updated_at": "2026-04-19T00:36:15.801Z",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+            {
+                "id": "fact:company:E000001197",
+                "layer": "fact",
+                "domain": "recruiting",
+                "entity_type": "company",
+                "canonical_key": "company:E000001197",
+                "attributes": {
+                    "name": "울산항만공사",
+                    "summary": "공공 항만 운영기관",
+                    "description": "울산항 개발과 운영",
+                },
+                "scope": "shared",
+                "fact_snapshot_id": "fact_snap:recruiting:test",
+                "status": "active",
+                "version": 1,
+                "updated_at": "2026-04-19T00:36:15.801Z",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+            {
+                "id": "fact:role:542002",
+                "layer": "fact",
+                "domain": "recruiting",
+                "entity_type": "role",
+                "canonical_key": "role:542002",
+                "attributes": {
+                    "display_name": "버스 운전원",
+                },
+                "scope": "shared",
+                "fact_snapshot_id": "fact_snap:recruiting:test",
+                "status": "active",
+                "version": 1,
+                "updated_at": "2026-04-19T00:36:15.801Z",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+            {
+                "id": "fact:role:017",
+                "layer": "fact",
+                "domain": "recruiting",
+                "entity_type": "role",
+                "canonical_key": "role:017",
+                "attributes": {
+                    "display_name": "경영지원 사무",
+                },
+                "scope": "shared",
+                "fact_snapshot_id": "fact_snap:recruiting:test",
+                "status": "active",
+                "version": 1,
+                "updated_at": "2026-04-19T00:36:15.801Z",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+            {
+                "id": "fact:role:10",
+                "layer": "fact",
+                "domain": "recruiting",
+                "entity_type": "role",
+                "canonical_key": "role:10",
+                "attributes": {
+                    "display_name": "정보기술",
+                },
+                "scope": "shared",
+                "fact_snapshot_id": "fact_snap:recruiting:test",
+                "status": "active",
+                "version": 1,
+                "updated_at": "2026-04-19T00:36:15.801Z",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+        ]
+        self.relations: list[dict[str, object]] = [
+            {
+                "domain": "recruiting",
+                "relation_type": "posted_by",
+                "from_canonical_key": "job_posting:159436",
+                "to_canonical_key": "company:E000000320",
+                "scope": "shared",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+            {
+                "domain": "recruiting",
+                "relation_type": "posted_by",
+                "from_canonical_key": "job_posting:159423",
+                "to_canonical_key": "company:E000001197",
+                "scope": "shared",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+            {
+                "domain": "recruiting",
+                "relation_type": "for_role",
+                "from_canonical_key": "job_posting:159436",
+                "to_canonical_key": "role:542002",
+                "scope": "shared",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+            {
+                "domain": "recruiting",
+                "relation_type": "for_role",
+                "from_canonical_key": "job_posting:159423",
+                "to_canonical_key": "role:017",
+                "scope": "shared",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+            {
+                "domain": "recruiting",
+                "relation_type": "for_role",
+                "from_canonical_key": "job_posting:159423",
+                "to_canonical_key": "role:10",
+                "scope": "shared",
+                "schema_version": "v1",
+                "provenance": {},
+            },
+        ]
+
+    def list_records(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, object],
+        entity_type: str | None = None,
+        statuses: list[str] | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, object]]:
+        matches = [
+            dict(record)
+            for record in self.records
+            if record["domain"] == domain
+            and record["scope"] == scope_ref["scope"]
+            and (entity_type is None or record["entity_type"] == entity_type)
+            and (not statuses or record["status"] in statuses)
+        ]
+        return matches[:limit]
+
+    def list_relations(
+        self,
+        *,
+        domain: str,
+        scope_ref: dict[str, object],
+        relation_types: list[str] | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, object]]:
+        matches = [
+            dict(relation)
+            for relation in self.relations
+            if relation["domain"] == domain
+            and relation["scope"] == scope_ref["scope"]
+            and (not relation_types or relation["relation_type"] in relation_types)
+        ]
+        return matches[:limit]
+
+
+class _FakeSnapshotRepository:
+    def get_snapshot_status(self, *, layer: str | None = None, domain: str) -> dict[str, object] | None:
+        if domain != "recruiting":
+            return None
+        status = {
+            "layer": "fact",
+            "domain": domain,
+            "current_snapshot_id": "fact_snap:recruiting:test",
+            "fact_snapshot_id": "fact_snap:recruiting:test",
+            "updated_at": "2026-04-19T00:36:15.801Z",
+            "published_at": "2026-04-19T00:36:20.000Z",
+        }
+        if layer is None:
+            return {
+                "domain": domain,
+                "layers": {
+                    "fact": status,
+                },
+            }
+        return status if layer == "fact" else None
+
+
+class _FakeOutboxRepository:
+    def __init__(self, has_pending: bool = False) -> None:
+        self.has_pending = has_pending
+
+    def has_pending_events_for_aggregate(
+        self,
+        *,
+        aggregate_layer: str,
+        aggregate_id: str,
+    ) -> bool:
+        return aggregate_layer == "fact" and aggregate_id == "fact_snap:recruiting:test" and self.has_pending
+
+
 class FakeHttpServer:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
@@ -242,7 +507,10 @@ class FakeHttpServer:
             personal_asset_registration_service=PersonalAssetRegistrationService(
                 asset_repository=_FakePersonalAssetRepository(self),
                 profile_context_repository=_FakeProfileContextRepository(self),
-            )
+            ),
+            fact_repository=_FakeFactRepository(),
+            snapshot_repository=_FakeSnapshotRepository(),
+            outbox_repository=_FakeOutboxRepository(),
         )
         self._tools = [
             ToolDefinition(
@@ -1949,6 +2217,74 @@ def test_http_runtime_registers_personal_asset_and_normalizes_errors() -> None:
 
     assert missing_scope.status_code == 404
     assert missing_scope.payload["error"]["code"] == "not_found"
+
+
+def test_http_runtime_serves_consumer_shaped_read_endpoints() -> None:
+    fake_server = FakeHttpServer()
+
+    summary = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/workspace-summary?domain=recruiting&scope=shared&profileId=profile_demo",
+        headers={},
+        body=b"",
+    )
+    opportunities = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/opportunities?domain=recruiting&scope=shared&limit=1",
+        headers={},
+        body=b"",
+    )
+    opportunity_id = str(opportunities.payload["result"]["items"][0]["opportunityId"])
+    detail = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path=f"/api/v1/opportunities/{opportunity_id}?domain=recruiting&scope=shared",
+        headers={},
+        body=b"",
+    )
+    calendar = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/calendar?domain=recruiting&scope=shared&from=2026-04-24&to=2026-04-30",
+        headers={},
+        body=b"",
+    )
+
+    assert summary.status_code == 200
+    assert summary.payload["result"]["profileSnapshot"]["targetRole"] == "Profile profile_demo pending context hydration"
+    assert summary.payload["result"]["recommendedOpportunities"][0]["companyName"] == "인천교통공사"
+
+    assert opportunities.status_code == 200
+    assert len(opportunities.payload["result"]["items"]) == 1
+    assert opportunities.payload["result"]["nextCursor"] == "cursor_001"
+    assert opportunities.payload["result"]["sync"]["visibility"] == "applied"
+
+    assert detail.status_code == 200
+    assert detail.payload["result"]["source"]["provider"] == "worknet"
+    assert detail.payload["result"]["company"]["name"] == "인천교통공사"
+    assert detail.payload["result"]["roles"][0]["label"] == "버스 운전원"
+
+    assert calendar.status_code == 200
+    assert len(calendar.payload["result"]["items"]) == 2
+    assert calendar.payload["result"]["items"][0]["companyName"] == "인천교통공사"
+
+
+def test_http_runtime_marks_read_projection_pending_when_outbox_exists() -> None:
+    fake_server = FakeHttpServer()
+    fake_server.bootstrap.outbox_repository = _FakeOutboxRepository(has_pending=True)
+
+    response = dispatch_http_request(
+        fake_server,
+        method="GET",
+        path="/api/v1/workspace-summary?domain=recruiting&scope=shared",
+        headers={},
+        body=b"",
+    )
+
+    assert response.status_code == 200
+    assert response.payload["result"]["sync"]["visibility"] == "pending"
 
 
 def test_http_runtime_maps_internal_errors_and_method_mismatch() -> None:
