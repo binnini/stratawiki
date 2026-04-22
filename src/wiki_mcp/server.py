@@ -101,16 +101,19 @@ def _tool_definitions() -> list[ToolDefinition]:
             group="interpretation",
             status="mvp",
             description=(
-                "Build and publish one interpretation snapshot on the happy path, "
-                "or queue the build for worker execution."
+                "Build and optionally publish shared interpretations for one subject, "
+                "optionally across multiple families, or queue the build for worker execution."
             ),
             entrypoint="server.call_tool",
             input_schema={
                 "type": "object",
-                "required": ["domain", "partition", "fact_ids"],
+                "required": ["domain", "fact_ids"],
                 "properties": {
                     "domain": {"type": "string"},
+                    "subject": {"type": "object"},
                     "partition": {"type": "object"},
+                    "family": {"type": "string"},
+                    "kind": {"type": "string"},
                     "fact_ids": {"type": "array"},
                     "model_profile": {"type": "string"},
                     "publish": {"type": "boolean"},
@@ -144,7 +147,10 @@ def _tool_definitions() -> list[ToolDefinition]:
                 "required": ["domain"],
                 "properties": {
                     "domain": {"type": "string"},
+                    "subject": {"type": "object"},
                     "partition": {"type": "object"},
+                    "family": {"type": "string"},
+                    "kind": {"type": "string"},
                     "status": {"type": "string"},
                     "limit": {"type": "integer"},
                 },
@@ -169,14 +175,17 @@ def _tool_definitions() -> list[ToolDefinition]:
             name="publish_interpretation_partition",
             group="interpretation",
             status="mvp",
-            description="Publish validated interpretation proposals for one family partition.",
+            description="Publish validated interpretation proposals for one subject selection.",
             entrypoint="server.call_tool",
             input_schema={
                 "type": "object",
-                "required": ["domain", "partition"],
+                "required": ["domain"],
                 "properties": {
                     "domain": {"type": "string"},
+                    "subject": {"type": "object"},
                     "partition": {"type": "object"},
+                    "family": {"type": "string"},
+                    "kind": {"type": "string"},
                     "source_state": {"type": "string"},
                 },
             },
@@ -814,11 +823,7 @@ class StrataWikiServer:
 
     def _parse_interpretation_build_request(self, arguments: dict[str, object]) -> dict[str, object]:
         domain = self._required_string(arguments, "domain")
-        partition = arguments.get("partition")
-        if not isinstance(partition, dict):
-            raise ValueError("build_interpretation_snapshot requires a partition object.")
-        family = self._normalize_family(self._required_string(partition, "family"))
-        subject_id = self._required_string(partition, "segment", fallback_key="subject_id")
+        selection = self._required_interpretation_partition(arguments)
         fact_ids = arguments.get("fact_ids")
         if not isinstance(fact_ids, list) or not fact_ids:
             raise ValueError("build_interpretation_snapshot requires a non-empty fact_ids list.")
@@ -835,10 +840,23 @@ class StrataWikiServer:
         publish = bool(arguments.get("publish", True))
         return {
             "domain": domain,
-            "partition": {
-                "family": family,
-                "segment": subject_id,
+            "selection": {
+                **({"family": selection["family"]} if selection.get("family") else {}),
+                **({"kind": selection["kind"]} if selection.get("kind") else {}),
+                "subject_type": selection["subject_type"],
+                "subject_id": selection["subject_id"],
+                **({"subject_label": selection["subject_label"]} if selection.get("subject_label") else {}),
             },
+            **(
+                {
+                    "partition": {
+                        "family": selection["family"],
+                        "segment": selection["subject_id"],
+                    }
+                }
+                if selection.get("family")
+                else {}
+            ),
             "fact_ids": [fact["id"] for fact in facts],
             "fact_snapshot": fact_snapshot,
             "model_profile": model_profile,
@@ -847,11 +865,16 @@ class StrataWikiServer:
 
     def _run_interpretation_snapshot_build(self, request: dict[str, object]) -> dict[str, object]:
         domain = str(request["domain"])
-        partition = request["partition"]
-        if not isinstance(partition, dict):
-            raise ValueError("Interpretation build request is missing a partition object.")
-        family = self._normalize_family(str(partition["family"]))
-        subject_id = str(partition["segment"])
+        selection = request["selection"]
+        if not isinstance(selection, dict):
+            raise ValueError("Interpretation build request is missing a subject selection object.")
+        family = (
+            self._normalize_family(str(selection["family"]))
+            if selection.get("family")
+            else None
+        )
+        subject_type = str(selection.get("subject_type") or "subject")
+        subject_id = str(selection["subject_id"])
         fact_ids = request["fact_ids"]
         if not isinstance(fact_ids, list) or not fact_ids:
             raise ValueError("Interpretation build request requires fact_ids.")
@@ -861,28 +884,47 @@ class StrataWikiServer:
         fact_snapshot = str(request["fact_snapshot"])
         model_profile = str(request.get("model_profile") or "balanced_default")
         publish = bool(request.get("publish", True))
-        builder = self.bootstrap.interpretation_family_registry.get(family)
-        if builder is None and family != "market_trend":
-            raise ValueError(f"No interpretation builder is registered for family {family!r}.")
-        if builder is not None and hasattr(builder, "model_profile"):
-            setattr(builder, "model_profile", model_profile)
+        if family is not None:
+            builder = self.bootstrap.interpretation_family_registry.get(family)
+            if builder is None:
+                raise ValueError(f"No interpretation builder is registered for family {family!r}.")
+            if hasattr(builder, "model_profile"):
+                setattr(builder, "model_profile", model_profile)
+        else:
+            for builder in self.bootstrap.interpretation_family_registry.list_builders():
+                if hasattr(builder, "model_profile"):
+                    setattr(builder, "model_profile", model_profile)
         context = InterpretationProposalContext(
             domain=domain,
             family=family,
-            subject_type="market_segment",
+            subject_type=subject_type,
             subject_id=subject_id,
             scope_ref={"scope": "shared"},
             fact_snapshot_id=fact_snapshot,
             schema_version="interpretation.v2",
             facts=facts,
             provenance={
-                "generated_by": {"kind": "llm", "prompt_version": "interp.market_trend.v1"},
+                "generated_by": {
+                    "kind": "llm",
+                    "prompt_version": (
+                        f"interp.{family}.v1" if family is not None else "interp.subject_centered.v1"
+                    ),
+                },
                 "generated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            },
+            subject={
+                "type": subject_type,
+                "id": subject_id,
+                **(
+                    {"label": str(selection["subject_label"])}
+                    if selection.get("subject_label")
+                    else {}
+                ),
             },
         )
         proposals = self.bootstrap.interpretation_proposal_service.create_proposals(context)
         if not proposals:
-            raise ValueError("No interpretation proposals were generated for the supplied partition.")
+            raise ValueError("No interpretation proposals were generated for the supplied subject.")
         interpretation_snapshot = ""
         records_superseded = 0
         stale_personal_ids: list[str] = []
@@ -919,14 +961,15 @@ class StrataWikiServer:
         self,
         request: dict[str, object],
     ) -> dict[str, object]:
-        partition = request["partition"]
-        if not isinstance(partition, dict):
-            raise ValueError("Interpretation build request is missing partition metadata.")
-        segment = str(partition["segment"])
+        selection = request["selection"]
+        if not isinstance(selection, dict):
+            raise ValueError("Interpretation build request is missing subject selection metadata.")
+        subject_id = str(selection["subject_id"])
+        family = str(selection.get("family") or "all")
         return {
             "event_type": "interpretation_snapshot_build_requested",
             "aggregate_layer": "interpretation",
-            "aggregate_id": f"{request['domain']}:{partition['family']}:{segment}",
+            "aggregate_id": f"{request['domain']}:{family}:{subject_id}",
             "payload": {
                 **request,
                 "scope": "shared",
@@ -946,7 +989,7 @@ class StrataWikiServer:
 
     def _list_interpretation_proposals(self, arguments: dict[str, object]) -> dict[str, object]:
         domain = self._required_string(arguments, "domain")
-        partition = self._optional_interpretation_partition(arguments)
+        selection = self._optional_interpretation_partition(arguments)
         status_filter = arguments.get("status")
         statuses = (
             [self._interpretation_status(status_filter, field="status")]
@@ -961,8 +1004,10 @@ class StrataWikiServer:
         records = self.bootstrap.interpretation_repository.list_records(
             domain=domain,
             scope_ref={"scope": "shared"},
-            family=partition["family"] if partition is not None else None,
-            subject_id=partition["subject_id"] if partition is not None else None,
+            family=selection["family"] if selection is not None and selection.get("family") else None,
+            kind=selection["kind"] if selection is not None and selection.get("kind") else None,
+            subject_type=selection["subject_type"] if selection is not None else None,
+            subject_id=selection["subject_id"] if selection is not None else None,
             statuses=statuses,
             limit=self._optional_limit(arguments, default=50),
         )
@@ -990,7 +1035,7 @@ class StrataWikiServer:
 
     def _publish_interpretation_partition(self, arguments: dict[str, object]) -> dict[str, object]:
         domain = self._required_string(arguments, "domain")
-        partition = self._required_interpretation_partition(arguments)
+        selection = self._required_interpretation_partition(arguments)
         source_state = self._interpretation_status(
             arguments.get("source_state", INTERPRETATION_STATUS_VALIDATED),
             field="source_state",
@@ -998,16 +1043,19 @@ class StrataWikiServer:
         candidates = self.bootstrap.interpretation_repository.list_records(
             domain=domain,
             scope_ref={"scope": "shared"},
-            family=partition["family"],
-            subject_id=partition["subject_id"],
+            family=selection.get("family"),
+            kind=selection.get("kind"),
+            subject_type=selection["subject_type"],
+            subject_id=selection["subject_id"],
             statuses=[source_state],
             limit=50,
         )
         if not candidates:
             raise KeyError(
                 "No interpretation proposals matched "
-                f"domain={domain!r}, family={partition['family']!r}, "
-                f"subject_id={partition['subject_id']!r}, source_state={source_state!r}."
+                f"domain={domain!r}, family={selection.get('family')!r}, "
+                f"kind={selection.get('kind')!r}, subject_type={selection['subject_type']!r}, "
+                f"subject_id={selection['subject_id']!r}, source_state={source_state!r}."
             )
 
         published_proposal_ids: list[str] = []
@@ -1751,6 +1799,8 @@ class StrataWikiServer:
             domain=domain,
             scope_ref={"scope": "shared"},
             family=str(record.get("family") or ""),
+            kind=str(record.get("kind") or ""),
+            subject_type=str(record.get("subject_type") or ""),
             subject_id=str(record.get("subject_id") or ""),
             statuses=[INTERPRETATION_STATUS_PUBLISHED],
             limit=20,
@@ -1953,7 +2003,7 @@ class StrataWikiServer:
     ) -> dict[str, str]:
         partition = self._optional_interpretation_partition(arguments)
         if partition is None:
-            raise ValueError("Missing required interpretation partition.")
+            raise ValueError("Missing required interpretation subject selection.")
         return partition
 
     def _optional_interpretation_partition(
@@ -1961,17 +2011,72 @@ class StrataWikiServer:
         arguments: dict[str, object],
     ) -> dict[str, str] | None:
         partition = arguments.get("partition")
-        if partition is None:
+        subject = arguments.get("subject")
+        selection = arguments.get("selection")
+        if partition is None and subject is None and selection is None:
             return None
-        if not isinstance(partition, dict):
+        if partition is not None and not isinstance(partition, dict):
             raise ValueError("partition must be an object when provided.")
+        if subject is not None and not isinstance(subject, dict):
+            raise ValueError("subject must be an object when provided.")
+        if selection is not None and not isinstance(selection, dict):
+            raise ValueError("selection must be an object when provided.")
+
+        partition_mapping = partition if isinstance(partition, dict) else {}
+        subject_mapping = subject if isinstance(subject, dict) else {}
+        selection_mapping = selection if isinstance(selection, dict) else {}
+        family = (
+            self._normalize_family(self._required_string(partition_mapping, "family"))
+            if "family" in partition_mapping and partition_mapping.get("family") is not None
+            else (
+                self._normalize_family(str(selection_mapping["family"]))
+                if isinstance(selection_mapping.get("family"), str)
+                and str(selection_mapping.get("family")).strip()
+                else (
+                self._normalize_family(str(arguments["family"]))
+                if isinstance(arguments.get("family"), str) and str(arguments.get("family")).strip()
+                else None
+                )
+            )
+        )
+        kind = None
+        raw_kind = partition_mapping.get("kind", selection_mapping.get("kind", arguments.get("kind")))
+        if isinstance(raw_kind, str) and raw_kind.strip():
+            kind = raw_kind.strip()
+
+        subject_id = None
+        for mapping in (selection_mapping, subject_mapping, partition_mapping):
+            raw_subject_id = mapping.get("id") or mapping.get("subject_id") or mapping.get("segment")
+            if isinstance(raw_subject_id, str) and raw_subject_id.strip():
+                subject_id = raw_subject_id.strip()
+                break
+        if subject_id is None:
+            raise ValueError("Interpretation subject selection requires subject.id or partition.segment.")
+
+        subject_type = "market_segment" if partition_mapping else "subject"
+        raw_subject_type = (
+            selection_mapping.get("subject_type")
+            or subject_mapping.get("type")
+            or partition_mapping.get("subject_type")
+        )
+        if isinstance(raw_subject_type, str) and raw_subject_type.strip():
+            subject_type = raw_subject_type.strip()
+
+        subject_label = None
+        raw_subject_label = (
+            selection_mapping.get("subject_label")
+            or subject_mapping.get("label")
+            or partition_mapping.get("subject_label")
+        )
+        if isinstance(raw_subject_label, str) and raw_subject_label.strip():
+            subject_label = raw_subject_label.strip()
+
         return {
-            "family": self._normalize_family(self._required_string(partition, "family")),
-            "subject_id": self._required_string(
-                partition,
-                "segment",
-                fallback_key="subject_id",
-            ),
+            **({"family": family} if family is not None else {}),
+            **({"kind": kind} if kind is not None else {}),
+            "subject_type": subject_type,
+            "subject_id": subject_id,
+            **({"subject_label": subject_label} if subject_label is not None else {}),
         }
 
     def _shared_current_snapshots(

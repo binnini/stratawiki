@@ -40,3 +40,6 @@ class InterpretationFamilyRegistry:
 
     def get(self, family: str) -> InterpretationFamilyBuilder | None:
         return self._builders_by_family.get(family)
+
+    def list_builders(self) -> list[InterpretationFamilyBuilder]:
+        return list(self._builders)

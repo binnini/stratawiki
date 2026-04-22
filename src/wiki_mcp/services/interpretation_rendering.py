@@ -9,6 +9,8 @@ from wiki_mcp.schemas import (
     RenderedArtifact,
     RenderedPage,
     ScopeRef,
+    interpretation_payload,
+    interpretation_support_links,
 )
 from wiki_mcp.services.interfaces.repositories import (
     InterpretationRepository,
@@ -19,7 +21,7 @@ from wiki_mcp.services.interfaces.repositories import (
 class InterpretationRenderingService:
     """Render readable shared pages from published canonical interpretation records."""
 
-    market_trend_template_version = "market_trend.shared.v1"
+    generic_template_version = "interpretation.shared.v2"
     rendered_page_marker = "stratawiki:rendered_page"
 
     def __init__(
@@ -90,9 +92,7 @@ class InterpretationRenderingService:
             return None
 
         page_family = self._page_family(record)
-        if page_family != "market_trend":
-            return None
-
+        page_kind = self._page_kind(record)
         page_key = self._page_key(record)
         title = self._page_title(record)
         snapshot_ref = {
@@ -107,10 +107,15 @@ class InterpretationRenderingService:
             "page_family": page_family,
             "page_key": page_key,
             "interpretation_ids": [record["id"]],
-            "render_template_version": self.market_trend_template_version,
+            "render_template_version": self.generic_template_version,
+            **({"page_kind": page_kind} if page_kind != page_family else {}),
         }
-        body_markdown = self._render_market_trend_body(record, metadata)
-        path = f"wiki/shared/interpretations/{page_family}/{self._slug(page_key)}.md"
+        body_markdown = self._render_shared_body(record, metadata)
+        path_parts = ["wiki/shared/interpretations", page_family]
+        if page_kind != page_family:
+            path_parts.append(page_kind)
+        path_parts.append(f"{self._slug(page_key)}.md")
+        path = "/".join(path_parts)
         page: RenderedPage = {
             "domain": record["domain"],
             "layer": "interpretation",
@@ -155,21 +160,27 @@ class InterpretationRenderingService:
             + "\n"
         )
 
-    def _render_market_trend_body(
+    def _render_shared_body(
         self,
         record: InterpretationRecord,
         metadata: dict[str, object],
     ) -> str:
-        summary = str(record.get("summary") or record.get("claim") or record["id"])
-        claim = str(record.get("claim") or summary)
+        payload = interpretation_payload(record)
+        summary = str(payload.get("summary") or record.get("summary") or record.get("claim") or record["id"])
+        claim = str(payload.get("claim") or record.get("claim") or summary)
+        body = payload.get("body")
+        body = dict(body) if isinstance(body, dict) else {}
         interpretation_snapshot = str(record.get("interpretation_snapshot_id") or "not_available")
         fact_snapshot = record["fact_snapshot_id"]
-        evidence_lines = self._render_evidence_lines(record)
+        support_lines = self._render_support_lines(record)
+        body_lines = self._render_payload_body(body)
         return "\n".join(
             [
                 f"# {self._page_title(record)}",
                 "",
-                f"Segment: `{record['subject_id']}`",
+                f"Subject: `{record['subject_id']}`",
+                "Family / Kind: "
+                f"`{metadata['page_family']}` / `{metadata.get('page_kind', metadata['page_family'])}`",
                 f"Interpretation IDs: `{', '.join(metadata['interpretation_ids'])}`",
                 f"Interpretation Snapshot: `{interpretation_snapshot}`",
                 f"Fact Snapshot: `{fact_snapshot}`",
@@ -181,30 +192,49 @@ class InterpretationRenderingService:
                 "## Claim",
                 claim,
                 "",
-                "## Evidence",
-                *evidence_lines,
+                "## Payload",
+                *body_lines,
+                "",
+                "## Support",
+                *support_lines,
             ]
         )
 
-    def _render_evidence_lines(self, record: InterpretationRecord) -> list[str]:
-        evidence = record.get("evidence")
-        if not isinstance(evidence, list) or not evidence:
+    def _render_support_lines(self, record: InterpretationRecord) -> list[str]:
+        support_links = interpretation_support_links(record)
+        if not support_links:
             return ["- none"]
 
         lines: list[str] = []
-        for item in evidence:
+        for item in support_links:
             if not isinstance(item, dict):
                 continue
-            fact_id = str(item.get("fact_id") or "unknown")
+            target_layer = str(item.get("target_layer") or "support")
+            target_id = str(item.get("target_id") or "unknown")
             weight = item.get("weight")
             role = item.get("role")
-            fragments = [fact_id]
+            fragments = [f"{target_layer}:{target_id}"]
             if isinstance(role, str) and role:
                 fragments.append(f"role={role}")
             if isinstance(weight, (int, float)):
                 fragments.append(f"weight={weight}")
             lines.append("- " + " ".join(fragments))
         return lines or ["- none"]
+
+    def _render_payload_body(self, body: dict[str, object]) -> list[str]:
+        if not body:
+            return ["- none"]
+
+        lines: list[str] = []
+        for key, value in body.items():
+            if isinstance(value, list):
+                rendered = ", ".join(str(item) for item in value) if value else "none"
+            elif isinstance(value, dict):
+                rendered = json.dumps(value, ensure_ascii=True, sort_keys=True)
+            else:
+                rendered = str(value)
+            lines.append(f"- {key}: {rendered}")
+        return lines
 
     def _page_family(self, record: InterpretationRecord) -> str:
         render_hints = record.get("render_hints")
@@ -213,6 +243,17 @@ class InterpretationRenderingService:
             if isinstance(page_family, str) and page_family.strip():
                 return page_family.strip()
         return str(record.get("family") or "interpretation")
+
+    def _page_kind(self, record: InterpretationRecord) -> str:
+        render_hints = record.get("render_hints")
+        if isinstance(render_hints, dict):
+            page_kind = render_hints.get("page_kind")
+            if isinstance(page_kind, str) and page_kind.strip():
+                return page_kind.strip()
+        kind = record.get("kind")
+        if isinstance(kind, str) and kind.strip():
+            return kind.strip()
+        return "default"
 
     def _page_key(self, record: InterpretationRecord) -> str:
         render_hints = record.get("render_hints")
@@ -223,10 +264,12 @@ class InterpretationRenderingService:
         return str(record.get("subject_id") or record["id"])
 
     def _page_title(self, record: InterpretationRecord) -> str:
-        title = record.get("title")
+        payload = interpretation_payload(record)
+        title = payload.get("title") or record.get("title")
         if isinstance(title, str) and title.strip():
             return title.strip()
-        return f"Market trend: {record['subject_id']}"
+        kind = self._page_kind(record)
+        return f"{kind}: {record['subject_id']}"
 
     def _slug(self, value: str) -> str:
         slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")

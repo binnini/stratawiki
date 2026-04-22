@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from wiki_mcp.schemas.interpretation_record import materialize_interpretation_record
 from wiki_mcp.schemas.domain_pack_review import DomainPackApprovalAuditRecord
 from wiki_mcp.services.personal_assets import PersonalAssetConflictError
 
@@ -163,7 +164,11 @@ class InMemoryInterpretationRepository:
     records: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def get_by_ids(self, ids: list[str], scope_ref: dict[str, Any]) -> list[dict[str, Any]]:
-        return [dict(self.records[record_id]) for record_id in ids if record_id in self.records]
+        return [
+            materialize_interpretation_record(self.records[record_id])
+            for record_id in ids
+            if record_id in self.records
+        ]
 
     def list_records(
         self,
@@ -191,7 +196,7 @@ class InMemoryInterpretationRepository:
                 continue
             if statuses and record.get("status") not in statuses:
                 continue
-            matches.append(dict(record))
+            matches.append(materialize_interpretation_record(record))
         return matches[:limit]
 
     def search_for_retrieval(
@@ -204,7 +209,7 @@ class InMemoryInterpretationRepository:
         limit: int,
     ) -> list[dict[str, Any]]:
         matches = [
-            dict(record)
+            materialize_interpretation_record(record)
             for record in self.records.values()
             if record["domain"] == domain
             and record.get("status") in {"published", "stale"}
@@ -224,7 +229,7 @@ class InMemoryInterpretationRepository:
 
     def save_records(self, records: list[dict[str, Any]], snapshot_ref: dict[str, Any]) -> list[str]:
         for record in records:
-            persisted = dict(record)
+            persisted = materialize_interpretation_record(record)
             self.records[persisted["id"]] = persisted
         return [record["id"] for record in records]
 

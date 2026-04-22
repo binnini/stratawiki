@@ -22,6 +22,8 @@ REQUIRED_BOOTSTRAP_RELATIONS = (
     "fact.record_envelopes",
     "fact.relation_envelopes",
     "interp.record",
+    "interp.payload",
+    "interp.support_link",
     "personal.record",
     "personal.profile_context",
     "ops.snapshot_pointer",

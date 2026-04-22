@@ -13,6 +13,7 @@ from wiki_mcp.schemas import (
     InterpretationRecord,
     OutboxEvent,
     ScopeRef,
+    materialize_interpretation_record,
 )
 from wiki_mcp.services.interfaces.repositories import (
     InterpretationPublicationRepository,
@@ -76,7 +77,7 @@ class InterpretationPublicationService:
                 ],
             }
 
-        record = dict(current[0])
+        record = materialize_interpretation_record(current[0])
         if record["status"] != INTERPRETATION_STATUS_VALIDATED:
             return {
                 "ok": False,
@@ -116,7 +117,7 @@ class InterpretationPublicationService:
         for prior in prior_records:
             if prior["id"] == record["id"]:
                 continue
-            next_prior = dict(prior)
+            next_prior = materialize_interpretation_record(prior)
             next_prior["status"] = INTERPRETATION_STATUS_SUPERSEDED
             records_to_save.append(next_prior)  # type: ignore[arg-type]
             superseded_ids.append(prior["id"])
@@ -214,7 +215,7 @@ class InterpretationPublicationService:
                             "field": "claim",
                             "message": (
                                 "A published interpretation with the same normalized claim already "
-                                "exists in this family partition."
+                                "exists in this subject/family/kind publication slot."
                             ),
                         }
                     ],
@@ -233,7 +234,7 @@ class InterpretationPublicationService:
                             "field": "claim",
                             "message": (
                                 "A near-duplicate published interpretation already exists in this "
-                                "family partition. Leave the alternative validated until it is "
+                                "subject/family/kind publication slot. Leave the alternative validated until it is "
                                 "explicitly reviewed."
                             ),
                         }
@@ -302,7 +303,10 @@ class InterpretationPublicationService:
     def _new_interpretation_snapshot_id(self, record: InterpretationRecord) -> str:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
         family = str(record.get("family") or "family")
+        kind = str(record.get("kind") or "kind")
         subject_id = str(record.get("subject_id") or "subject")
-        return (
-            f"interp_snap:{record['domain']}:{family}:{subject_id}:{timestamp}:{uuid4().hex[:8]}"
-        )
+        snapshot_parts = ["interp_snap", record["domain"], family]
+        if kind != family:
+            snapshot_parts.append(kind)
+        snapshot_parts.extend([subject_id, timestamp, uuid4().hex[:8]])
+        return ":".join(snapshot_parts)

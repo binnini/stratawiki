@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS interp.record (
     kind TEXT NOT NULL,
     subject_type TEXT NOT NULL,
     subject_id TEXT NOT NULL,
+    subject_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     scope TEXT NOT NULL CHECK (scope IN ('shared', 'tenant', 'user')),
     tenant_id TEXT,
     user_id TEXT,
@@ -109,6 +110,63 @@ CREATE INDEX IF NOT EXISTS interp_record_partition_idx
         tenant_id,
         user_id,
         updated_at DESC
+    );
+
+CREATE UNIQUE INDEX IF NOT EXISTS interp_record_published_uniqueness_idx
+    ON interp.record (
+        domain,
+        subject_type,
+        subject_id,
+        family,
+        kind,
+        scope,
+        COALESCE(tenant_id, ''),
+        COALESCE(user_id, '')
+    )
+    WHERE status = 'published';
+
+CREATE TABLE IF NOT EXISTS interp.payload (
+    record_id TEXT PRIMARY KEY REFERENCES interp.record(id) ON DELETE CASCADE,
+    title TEXT,
+    claim TEXT,
+    summary TEXT,
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS interp.support_link (
+    id BIGSERIAL PRIMARY KEY,
+    record_id TEXT NOT NULL REFERENCES interp.record(id) ON DELETE CASCADE,
+    domain TEXT NOT NULL,
+    scope TEXT NOT NULL CHECK (scope IN ('shared', 'tenant', 'user')),
+    tenant_id TEXT,
+    user_id TEXT,
+    link_kind TEXT NOT NULL,
+    target_layer TEXT NOT NULL,
+    target_id TEXT,
+    role TEXT,
+    weight DOUBLE PRECISION,
+    support_ref_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    attributes_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS interp_payload_updated_idx
+    ON interp.payload (updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS interp_support_link_record_idx
+    ON interp.support_link (record_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS interp_support_link_target_idx
+    ON interp.support_link (
+        domain,
+        target_layer,
+        COALESCE(target_id, ''),
+        scope,
+        COALESCE(tenant_id, ''),
+        COALESCE(user_id, '')
     );
 
 CREATE TABLE IF NOT EXISTS personal.record (

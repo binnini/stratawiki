@@ -12,6 +12,8 @@ from wiki_mcp.schemas import (
     InterpretationValidationError,
     InterpretationValidationResult,
     ScopeRef,
+    interpretation_support_links,
+    materialize_interpretation_record,
 )
 from wiki_mcp.services.interpretation_families import (
     InterpretationFamilyRegistry,
@@ -115,9 +117,11 @@ class InterpretationProposalService:
         normalized = dict(proposal)
         normalized["layer"] = "interpretation"
         normalized["domain"] = context.domain
-        normalized["family"] = str(normalized.get("family") or context.family)
+        normalized["family"] = str(normalized.get("family") or context.family or "")
         normalized["subject_type"] = str(normalized.get("subject_type") or context.subject_type)
         normalized["subject_id"] = str(normalized.get("subject_id") or context.subject_id)
+        if "subject" not in normalized and isinstance(context.subject, Mapping):
+            normalized["subject"] = dict(context.subject)
         normalized["scope_ref"] = dict(context.scope_ref)
         normalized["schema_version"] = str(
             normalized.get("schema_version") or context.schema_version
@@ -142,7 +146,7 @@ class InterpretationProposalService:
             generated_at = context.provenance.get("generated_at")
             if isinstance(generated_at, str) and generated_at.strip():
                 normalized["computed_at"] = generated_at
-        return normalized  # type: ignore[return-value]
+        return materialize_interpretation_record(normalized)
 
     def _validate_transition(
         self,
@@ -171,6 +175,7 @@ class InterpretationProposalService:
         *,
         scope_ref: ScopeRef,
     ) -> list[InterpretationValidationError]:
+        materialized = materialize_interpretation_record(record)
         errors: list[InterpretationValidationError] = []
         required_string_fields = (
             "id",
@@ -186,7 +191,7 @@ class InterpretationProposalService:
             "summary",
         )
         for field in required_string_fields:
-            value = record.get(field)
+            value = materialized.get(field)
             if not isinstance(value, str) or not value.strip():
                 errors.append(
                     self._error(
@@ -196,7 +201,15 @@ class InterpretationProposalService:
                     )
                 )
 
-        if not isinstance(record.get("body"), Mapping):
+        if not isinstance(materialized.get("payload"), Mapping):
+            errors.append(
+                self._error(
+                    code="invalid_payload",
+                    field="payload",
+                    message="payload must be a mapping before validation.",
+                )
+            )
+        if not isinstance(materialized.get("body"), Mapping):
             errors.append(
                 self._error(
                     code="invalid_body",
@@ -204,7 +217,7 @@ class InterpretationProposalService:
                     message="body must be a mapping before validation.",
                 )
             )
-        if not isinstance(record.get("render_hints"), Mapping):
+        if not isinstance(materialized.get("render_hints"), Mapping):
             errors.append(
                 self._error(
                     code="invalid_render_hints",
@@ -212,7 +225,7 @@ class InterpretationProposalService:
                     message="render_hints must be a mapping before validation.",
                 )
             )
-        if not isinstance(record.get("scope_ref"), Mapping):
+        if not isinstance(materialized.get("scope_ref"), Mapping):
             errors.append(
                 self._error(
                     code="invalid_scope_ref",
@@ -220,7 +233,7 @@ class InterpretationProposalService:
                     message="scope_ref must be present before validation.",
                 )
             )
-        if not isinstance(record.get("provenance"), Mapping) or not record["provenance"]:
+        if not isinstance(materialized.get("provenance"), Mapping) or not materialized["provenance"]:
             errors.append(
                 self._error(
                     code="missing_provenance",
@@ -229,7 +242,7 @@ class InterpretationProposalService:
                 )
             )
 
-        confidence = record.get("confidence")
+        confidence = materialized.get("confidence")
         if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
             errors.append(
                 self._error(
@@ -239,35 +252,52 @@ class InterpretationProposalService:
                 )
             )
 
-        evidence = record.get("evidence")
-        if not isinstance(evidence, list) or not evidence:
+        support_links = interpretation_support_links(materialized)
+        if not support_links:
             errors.append(
                 self._error(
-                    code="evidence_required",
-                    field="evidence",
-                    message="At least one evidence item is required before validation.",
+                    code="support_links_required",
+                    field="support_links",
+                    message="At least one support link is required before validation.",
                 )
             )
             return errors
 
         fact_ids: list[str] = []
-        for index, item in enumerate(evidence):
+        for index, item in enumerate(support_links):
             if not isinstance(item, Mapping):
                 errors.append(
                     self._error(
-                        code="invalid_evidence_item",
-                        field=f"evidence[{index}]",
-                        message="Each evidence item must be a mapping.",
+                        code="invalid_support_link",
+                        field=f"support_links[{index}]",
+                        message="Each support link must be a mapping.",
                     )
                 )
                 continue
-            fact_id = item.get("fact_id")
+            if item.get("target_layer") == "relation":
+                support_ref = item.get("support_ref")
+                if not isinstance(support_ref, Mapping) or not support_ref:
+                    errors.append(
+                        self._error(
+                            code="invalid_relation_support_ref",
+                            field=f"support_links[{index}].support_ref",
+                            message="Relation support links must include support_ref metadata.",
+                        )
+                    )
+                continue
+            fact_id = item.get("target_id")
+            if not isinstance(fact_id, str) or not fact_id.strip():
+                support_ref = item.get("support_ref")
+                if isinstance(support_ref, Mapping):
+                    raw_fact_id = support_ref.get("fact_id")
+                    if isinstance(raw_fact_id, str) and raw_fact_id.strip():
+                        fact_id = raw_fact_id.strip()
             if not isinstance(fact_id, str) or not fact_id.strip():
                 errors.append(
                     self._error(
                         code="missing_fact_id",
-                        field=f"evidence[{index}].fact_id",
-                        message="Each evidence item must include a non-empty fact_id.",
+                        field=f"support_links[{index}].target_id",
+                        message="Fact support links must include a non-empty target_id.",
                     )
                 )
                 continue

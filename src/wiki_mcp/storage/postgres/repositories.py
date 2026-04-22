@@ -9,7 +9,12 @@ from wiki_mcp.schemas.dependency_edge import DependencyEdge
 from wiki_mcp.schemas.fact_record import FactRecord
 from wiki_mcp.schemas.fact_relation import FactRelation
 from wiki_mcp.schemas.fact_write_result import FactWriteResult
-from wiki_mcp.schemas.interpretation_record import InterpretationRecord
+from wiki_mcp.schemas.interpretation_record import (
+    InterpretationRecord,
+    interpretation_payload,
+    interpretation_support_links,
+    materialize_interpretation_record,
+)
 from wiki_mcp.schemas.metadata_validation import (
     ensure_interpretation_status,
     ensure_non_empty_string,
@@ -67,7 +72,7 @@ class PostgresFactRepository(PostgresRepositoryBase):
         if not canonical_keys:
             return []
 
-        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref, table_alias="r")
         with managed_cursor(self.connection) as cursor:
             cursor.execute(
                 f"""
@@ -801,40 +806,12 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             return []
 
         scope_sql, scope_params = self._scope_filter_sql(scope_ref)
-        with managed_cursor(self.connection) as cursor:
-            cursor.execute(
-                f"""
-                SELECT
-                    id,
-                    domain,
-                    family,
-                    kind,
-                    subject_type,
-                    subject_id,
-                    scope,
-                    tenant_id,
-                    user_id,
-                    schema_version,
-                    status,
-                    confidence,
-                    fact_snapshot_id,
-                    interpretation_snapshot_id,
-                    computed_at,
-                    expires_at,
-                    title,
-                    claim,
-                    summary,
-                    body_json,
-                    evidence_json,
-                    relations_json,
-                    provenance_json,
-                    render_hints_json
-                FROM interp.record
-                WHERE id = ANY(%s) AND {scope_sql}
-                """,
-                [ids, *scope_params],
-            )
-            return [self._row_to_interpretation_record(row) for row in cursor.fetchall()]
+        rows = self._fetch_interpretation_rows(
+            where_sql=f"id = ANY(%s) AND {scope_sql}",
+            params=[ids, *scope_params],
+        )
+        by_id = {record["id"]: record for record in rows}
+        return [by_id[record_id] for record_id in ids if record_id in by_id]
 
     def list_records(
         self,
@@ -851,64 +828,34 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         if limit <= 0:
             return []
 
-        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
-        where_clauses = [f"domain = %s", scope_sql]
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref, table_alias="r")
+        where_clauses = [f"r.domain = %s", scope_sql]
         params: list[Any] = [domain, *scope_params]
 
         if family is not None:
-            where_clauses.append("family = %s")
+            where_clauses.append("r.family = %s")
             params.append(family)
         if kind is not None:
-            where_clauses.append("kind = %s")
+            where_clauses.append("r.kind = %s")
             params.append(kind)
         if subject_type is not None:
-            where_clauses.append("subject_type = %s")
+            where_clauses.append("r.subject_type = %s")
             params.append(subject_type)
         if subject_id is not None:
-            where_clauses.append("subject_id = %s")
+            where_clauses.append("r.subject_id = %s")
             params.append(subject_id)
         if statuses:
-            where_clauses.append("status = ANY(%s)")
+            where_clauses.append("r.status = ANY(%s)")
             params.append(statuses)
 
         params.append(limit)
 
-        with managed_cursor(self.connection) as cursor:
-            cursor.execute(
-                f"""
-                SELECT
-                    id,
-                    domain,
-                    family,
-                    kind,
-                    subject_type,
-                    subject_id,
-                    scope,
-                    tenant_id,
-                    user_id,
-                    schema_version,
-                    status,
-                    confidence,
-                    fact_snapshot_id,
-                    interpretation_snapshot_id,
-                    computed_at,
-                    expires_at,
-                    title,
-                    claim,
-                    summary,
-                    body_json,
-                    evidence_json,
-                    relations_json,
-                    provenance_json,
-                    render_hints_json
-                FROM interp.record
-                WHERE {" AND ".join(where_clauses)}
-                ORDER BY updated_at DESC, id ASC
-                LIMIT %s
-                """,
-                params,
-            )
-            return [self._row_to_interpretation_record(row) for row in cursor.fetchall()]
+        return self._fetch_interpretation_rows(
+            where_sql=" AND ".join(where_clauses),
+            params=params,
+            order_by="r.updated_at DESC, r.id ASC",
+            limit=limit,
+        )
 
     def search_for_retrieval(
         self,
@@ -922,64 +869,35 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         if limit <= 0 or (not query_text and not query_tokens):
             return []
 
-        scope_sql, scope_params = self._scope_filter_sql(scope_ref)
+        scope_sql, scope_params = self._scope_filter_sql(scope_ref, table_alias="r")
         search_expr = _normalized_text_sql(
-            "id",
-            "family",
-            "kind",
-            "subject_type",
-            "subject_id",
-            "title",
-            "claim",
-            "summary",
-            "body_json->>'thesis'",
-            "body_json->>'headline'",
+            "r.id",
+            "r.family",
+            "r.kind",
+            "r.subject_type",
+            "r.subject_id",
+            "COALESCE(p.title, r.title)",
+            "COALESCE(p.claim, r.claim)",
+            "COALESCE(p.summary, r.summary)",
+            "COALESCE(p.payload_json->>'thesis', r.body_json->>'thesis')",
+            "COALESCE(p.payload_json->>'headline', r.body_json->>'headline')",
         )
         vector_sql = _fts_vector_sql(search_expr=search_expr)
         query_sql, query_params = _fts_query_sql(
             query_text=query_text,
             query_tokens=query_tokens,
         )
-        with managed_cursor(self.connection) as cursor:
-            cursor.execute(
-                f"""
-                SELECT
-                    id,
-                    domain,
-                    family,
-                    kind,
-                    subject_type,
-                    subject_id,
-                    scope,
-                    tenant_id,
-                    user_id,
-                    schema_version,
-                    status,
-                    confidence,
-                    fact_snapshot_id,
-                    interpretation_snapshot_id,
-                    computed_at,
-                    expires_at,
-                    title,
-                    claim,
-                    summary,
-                    body_json,
-                    evidence_json,
-                    relations_json,
-                    provenance_json,
-                    render_hints_json
-                FROM interp.record
-                WHERE
-                    domain = %s
-                    AND {scope_sql}
-                    AND status IN ('published', 'stale')
-                    AND {vector_sql} @@ {query_sql}
-                ORDER BY ts_rank_cd({vector_sql}, {query_sql}) DESC, updated_at DESC, id ASC
-                LIMIT %s
-                """,
-                [domain, *scope_params, *query_params, *query_params, limit],
-            )
-            return [self._row_to_interpretation_record(row) for row in cursor.fetchall()]
+        return self._fetch_interpretation_rows(
+            where_sql=(
+                "r.domain = %s "
+                f"AND {scope_sql} "
+                "AND r.status IN ('published', 'stale') "
+                f"AND {vector_sql} @@ {query_sql}"
+            ),
+            params=[domain, *scope_params, *query_params, *query_params],
+            order_by=f"ts_rank_cd({vector_sql}, {query_sql}) DESC, r.updated_at DESC, r.id ASC",
+            limit=limit,
+        )
 
     def save_records(
         self,
@@ -993,104 +911,158 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         stored_ids: list[str] = []
         with managed_cursor(self.connection) as cursor:
             for record in records:
-                self._validate_interpretation_record(record, snapshot_ref=validated_snapshot_ref)
-                scope_ref = record["scope_ref"]
-                cursor.execute(
-                    """
-                    INSERT INTO interp.record (
-                        id,
-                        domain,
-                        family,
-                        kind,
-                        subject_type,
-                        subject_id,
-                        scope,
-                        tenant_id,
-                        user_id,
-                        schema_version,
-                        status,
-                        confidence,
-                        computed_at,
-                        expires_at,
-                        title,
-                        claim,
-                        summary,
-                        body_json,
-                        evidence_json,
-                        relations_json,
-                        provenance_json,
-                        render_hints_json,
-                        fact_snapshot_id,
-                        interpretation_snapshot_id
-                    ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
-                        %s::jsonb, %s, %s
-                    )
-                    ON CONFLICT (id) DO UPDATE SET
-                        family = EXCLUDED.family,
-                        kind = EXCLUDED.kind,
-                        subject_type = EXCLUDED.subject_type,
-                        subject_id = EXCLUDED.subject_id,
-                        scope = EXCLUDED.scope,
-                        tenant_id = EXCLUDED.tenant_id,
-                        user_id = EXCLUDED.user_id,
-                        schema_version = EXCLUDED.schema_version,
-                        status = EXCLUDED.status,
-                        confidence = EXCLUDED.confidence,
-                        computed_at = EXCLUDED.computed_at,
-                        expires_at = EXCLUDED.expires_at,
-                        title = EXCLUDED.title,
-                        claim = EXCLUDED.claim,
-                        summary = EXCLUDED.summary,
-                        body_json = EXCLUDED.body_json,
-                        evidence_json = EXCLUDED.evidence_json,
-                        relations_json = EXCLUDED.relations_json,
-                        provenance_json = EXCLUDED.provenance_json,
-                        render_hints_json = EXCLUDED.render_hints_json,
-                        fact_snapshot_id = EXCLUDED.fact_snapshot_id,
-                        interpretation_snapshot_id = EXCLUDED.interpretation_snapshot_id,
-                        updated_at = NOW()
-                    """,
-                    (
-                        record["id"],
-                        record["domain"],
-                        record["family"],
-                        record["kind"],
-                        record["subject_type"],
-                        record["subject_id"],
-                        scope_ref["scope"],
-                        scope_ref.get("tenant_id"),
-                        scope_ref.get("user_id"),
-                        record["schema_version"],
-                        record["status"],
-                        record["confidence"],
-                        record["computed_at"],
-                        record["expires_at"],
-                        record.get("title"),
-                        record.get("claim"),
-                        record.get("summary"),
-                        self._json(record["body"]),
-                        self._json(record.get("evidence", [])),
-                        self._json(record.get("relations", [])),
-                        self._json(record["provenance"]),
-                        self._json(record["render_hints"]),
-                        validated_snapshot_ref["fact_snapshot_id"],
-                        record.get("interpretation_snapshot_id"),
-                    ),
+                self._save_interpretation_record_with_cursor(
+                    cursor=cursor,
+                    record=record,
+                    snapshot_ref=validated_snapshot_ref,
                 )
                 stored_ids.append(record["id"])
         return stored_ids
 
-    def _row_to_interpretation_record(self, row: Any) -> InterpretationRecord:
+    def _fetch_interpretation_rows(
+        self,
+        *,
+        where_sql: str,
+        params: list[Any],
+        order_by: str = "r.updated_at DESC, r.id ASC",
+        limit: int | None = None,
+    ) -> list[InterpretationRecord]:
+        limit_sql = ""
+        final_params = list(params)
+        if limit is not None:
+            limit_sql = " LIMIT %s"
+            final_params.append(limit)
+
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                f"""
+                SELECT
+                    r.id,
+                    r.domain,
+                    r.family,
+                    r.kind,
+                    r.subject_type,
+                    r.subject_id,
+                    r.subject_json,
+                    r.scope,
+                    r.tenant_id,
+                    r.user_id,
+                    r.schema_version,
+                    r.status,
+                    r.confidence,
+                    r.fact_snapshot_id,
+                    r.interpretation_snapshot_id,
+                    r.computed_at,
+                    r.expires_at,
+                    r.title AS legacy_title,
+                    r.claim AS legacy_claim,
+                    r.summary AS legacy_summary,
+                    p.title AS payload_title,
+                    p.claim AS payload_claim,
+                    p.summary AS payload_summary,
+                    p.payload_json,
+                    r.body_json,
+                    r.evidence_json,
+                    r.relations_json,
+                    r.provenance_json,
+                    r.render_hints_json
+                FROM interp.record AS r
+                LEFT JOIN interp.payload AS p
+                    ON p.record_id = r.id
+                WHERE {where_sql}
+                ORDER BY {order_by}{limit_sql}
+                """,
+                final_params,
+            )
+            raw_rows = cursor.fetchall()
+
+        if not raw_rows:
+            return []
+
+        record_ids = [str(self._row_to_dict(row)["id"]) for row in raw_rows]
+        support_links_by_id = self._load_support_links(record_ids)
+        return [
+            self._row_to_interpretation_record(
+                row,
+                support_links=support_links_by_id.get(str(self._row_to_dict(row)["id"]), []),
+            )
+            for row in raw_rows
+        ]
+
+    def _load_support_links(
+        self,
+        record_ids: list[str],
+    ) -> dict[str, list[dict[str, Any]]]:
+        if not record_ids:
+            return {}
+
+        grouped: dict[str, list[dict[str, Any]]] = {record_id: [] for record_id in record_ids}
+        with managed_cursor(self.connection) as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    record_id,
+                    link_kind,
+                    target_layer,
+                    target_id,
+                    role,
+                    weight,
+                    support_ref_json,
+                    attributes_json
+                FROM interp.support_link
+                WHERE record_id = ANY(%s)
+                ORDER BY record_id ASC, id ASC
+                """,
+                [record_ids],
+            )
+            for row in cursor.fetchall():
+                data = self._row_to_dict(row)
+                if "record_id" not in data:
+                    continue
+                grouped.setdefault(str(data["record_id"]), []).append(
+                    {
+                        "link_kind": data["link_kind"],
+                        "target_layer": data["target_layer"],
+                        **({"target_id": data["target_id"]} if data.get("target_id") else {}),
+                        **({"role": data["role"]} if data.get("role") else {}),
+                        **(
+                            {"weight": float(data["weight"])}
+                            if data.get("weight") is not None
+                            else {}
+                        ),
+                        "support_ref": self._load_json(data["support_ref_json"]),
+                        "attributes": self._load_json(data["attributes_json"]),
+                    }
+                )
+        return grouped
+
+    def _row_to_interpretation_record(
+        self,
+        row: Any,
+        *,
+        support_links: list[dict[str, Any]],
+    ) -> InterpretationRecord:
         data = self._row_to_dict(row)
-        return {
+        payload = self._load_json(data.get("payload_json"))
+        title = data.get("payload_title") or data.get("legacy_title")
+        claim = data.get("payload_claim") or data.get("legacy_claim")
+        summary = data.get("payload_summary") or data.get("legacy_summary")
+        if title:
+            payload["title"] = title
+        if claim:
+            payload["claim"] = claim
+        if summary:
+            payload["summary"] = summary
+
+        subject_payload = self._load_json(data.get("subject_json"))
+        record = {
             "id": data["id"],
             "domain": data["domain"],
             **({"family": data["family"]} if data.get("family") else {}),
             "kind": data["kind"],
             "subject_type": data["subject_type"],
             "subject_id": data["subject_id"],
+            **({"subject": subject_payload} if subject_payload else {}),
             "scope_ref": {
                 "scope": data["scope"],
                 **({"tenant_id": data["tenant_id"]} if data.get("tenant_id") else {}),
@@ -1107,9 +1079,7 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             ),
             "computed_at": str(data["computed_at"]),
             "expires_at": str(data["expires_at"]) if data.get("expires_at") else None,
-            **({"title": data["title"]} if data.get("title") else {}),
-            **({"claim": data["claim"]} if data.get("claim") else {}),
-            **({"summary": data["summary"]} if data.get("summary") else {}),
+            "payload": payload,
             "body": self._load_json(data["body_json"]),
             **(
                 {"evidence": self._load_json_list(data["evidence_json"])}
@@ -1121,9 +1091,181 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
                 if data.get("relations_json") is not None
                 else {}
             ),
+            "support_links": support_links,
             "provenance": self._load_json(data["provenance_json"]),
             "render_hints": self._load_json(data["render_hints_json"]),
         }
+        return materialize_interpretation_record(record)
+
+    def _save_interpretation_record_with_cursor(
+        self,
+        *,
+        cursor: Any,
+        record: InterpretationRecord,
+        snapshot_ref: SnapshotRef,
+    ) -> None:
+        materialized = materialize_interpretation_record(record)
+        self._validate_interpretation_record(materialized, snapshot_ref=snapshot_ref)
+        scope_ref = materialized["scope_ref"]
+        payload = interpretation_payload(materialized)
+        support_links = interpretation_support_links(materialized)
+        payload_json = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"title", "claim", "summary"}
+        }
+        subject_json = self._subject_json(materialized)
+
+        cursor.execute(
+            """
+            INSERT INTO interp.record (
+                id,
+                domain,
+                family,
+                kind,
+                subject_type,
+                subject_id,
+                subject_json,
+                scope,
+                tenant_id,
+                user_id,
+                schema_version,
+                status,
+                confidence,
+                computed_at,
+                expires_at,
+                title,
+                claim,
+                summary,
+                body_json,
+                evidence_json,
+                relations_json,
+                provenance_json,
+                render_hints_json,
+                fact_snapshot_id,
+                interpretation_snapshot_id
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
+                %s::jsonb, %s, %s
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                family = EXCLUDED.family,
+                kind = EXCLUDED.kind,
+                subject_type = EXCLUDED.subject_type,
+                subject_id = EXCLUDED.subject_id,
+                subject_json = EXCLUDED.subject_json,
+                scope = EXCLUDED.scope,
+                tenant_id = EXCLUDED.tenant_id,
+                user_id = EXCLUDED.user_id,
+                schema_version = EXCLUDED.schema_version,
+                status = EXCLUDED.status,
+                confidence = EXCLUDED.confidence,
+                computed_at = EXCLUDED.computed_at,
+                expires_at = EXCLUDED.expires_at,
+                title = EXCLUDED.title,
+                claim = EXCLUDED.claim,
+                summary = EXCLUDED.summary,
+                body_json = EXCLUDED.body_json,
+                evidence_json = EXCLUDED.evidence_json,
+                relations_json = EXCLUDED.relations_json,
+                provenance_json = EXCLUDED.provenance_json,
+                render_hints_json = EXCLUDED.render_hints_json,
+                fact_snapshot_id = EXCLUDED.fact_snapshot_id,
+                interpretation_snapshot_id = EXCLUDED.interpretation_snapshot_id,
+                updated_at = NOW()
+            """,
+            (
+                materialized["id"],
+                materialized["domain"],
+                materialized["family"],
+                materialized["kind"],
+                materialized["subject_type"],
+                materialized["subject_id"],
+                self._json(subject_json),
+                scope_ref["scope"],
+                scope_ref.get("tenant_id"),
+                scope_ref.get("user_id"),
+                materialized["schema_version"],
+                materialized["status"],
+                materialized["confidence"],
+                materialized["computed_at"],
+                materialized["expires_at"],
+                materialized.get("title"),
+                materialized.get("claim"),
+                materialized.get("summary"),
+                self._json(materialized["body"]),
+                self._json(materialized.get("evidence", [])),
+                self._json(materialized.get("relations", [])),
+                self._json(materialized["provenance"]),
+                self._json(materialized["render_hints"]),
+                snapshot_ref["fact_snapshot_id"],
+                materialized.get("interpretation_snapshot_id"),
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO interp.payload (
+                record_id,
+                title,
+                claim,
+                summary,
+                payload_json
+            ) VALUES (%s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (record_id) DO UPDATE SET
+                title = EXCLUDED.title,
+                claim = EXCLUDED.claim,
+                summary = EXCLUDED.summary,
+                payload_json = EXCLUDED.payload_json,
+                updated_at = NOW()
+            """,
+            (
+                materialized["id"],
+                materialized.get("title"),
+                materialized.get("claim"),
+                materialized.get("summary"),
+                self._json(payload_json),
+            ),
+        )
+        cursor.execute(
+            "DELETE FROM interp.support_link WHERE record_id = %s",
+            (materialized["id"],),
+        )
+        for item in support_links:
+            cursor.execute(
+                """
+                INSERT INTO interp.support_link (
+                    record_id,
+                    domain,
+                    scope,
+                    tenant_id,
+                    user_id,
+                    link_kind,
+                    target_layer,
+                    target_id,
+                    role,
+                    weight,
+                    support_ref_json,
+                    attributes_json
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb
+                )
+                """,
+                (
+                    materialized["id"],
+                    materialized["domain"],
+                    scope_ref["scope"],
+                    scope_ref.get("tenant_id"),
+                    scope_ref.get("user_id"),
+                    item["link_kind"],
+                    item["target_layer"],
+                    item.get("target_id"),
+                    item.get("role"),
+                    item.get("weight"),
+                    self._json(item.get("support_ref", {})),
+                    self._json(item.get("attributes", {})),
+                ),
+            )
 
     def _validate_interpretation_record(
         self,
@@ -1131,64 +1273,82 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
         *,
         snapshot_ref: SnapshotRef,
     ) -> None:
-        ensure_non_empty_string(record.get("id"), label="InterpretationRecord.id")
-        ensure_non_empty_string(record.get("domain"), label="InterpretationRecord.domain")
-        ensure_non_empty_string(record.get("family"), label="InterpretationRecord.family")
-        ensure_non_empty_string(record.get("kind"), label="InterpretationRecord.kind")
+        materialized = materialize_interpretation_record(record)
+        ensure_non_empty_string(materialized.get("id"), label="InterpretationRecord.id")
+        ensure_non_empty_string(materialized.get("domain"), label="InterpretationRecord.domain")
+        ensure_non_empty_string(materialized.get("family"), label="InterpretationRecord.family")
+        ensure_non_empty_string(materialized.get("kind"), label="InterpretationRecord.kind")
         ensure_non_empty_string(
-            record.get("subject_type"),
+            materialized.get("subject_type"),
             label="InterpretationRecord.subject_type",
         )
-        ensure_non_empty_string(record.get("subject_id"), label="InterpretationRecord.subject_id")
+        ensure_non_empty_string(materialized.get("subject_id"), label="InterpretationRecord.subject_id")
         ensure_non_empty_string(
-            record.get("schema_version"),
+            materialized.get("schema_version"),
             label="InterpretationRecord.schema_version",
         )
-        ensure_scope_ref(record.get("scope_ref"), label=f"InterpretationRecord {record['id']}.scope_ref")
+        ensure_scope_ref(
+            materialized.get("scope_ref"),
+            label=f"InterpretationRecord {materialized['id']}.scope_ref",
+        )
         ensure_interpretation_status(
-            record.get("status"),
-            label=f"InterpretationRecord {record['id']}.status",
+            materialized.get("status"),
+            label=f"InterpretationRecord {materialized['id']}.status",
         )
         ensure_non_empty_string(
-            record["computed_at"],
-            label=f"InterpretationRecord {record['id']}.computed_at",
+            materialized["computed_at"],
+            label=f"InterpretationRecord {materialized['id']}.computed_at",
         )
-        if record["expires_at"] is not None:
+        if materialized["expires_at"] is not None:
             ensure_non_empty_string(
-                record["expires_at"],
-                label=f"InterpretationRecord {record['id']}.expires_at",
+                materialized["expires_at"],
+                label=f"InterpretationRecord {materialized['id']}.expires_at",
             )
         ensure_provenance(
-            record.get("provenance"),
-            label=f"InterpretationRecord {record['id']}.provenance",
+            materialized.get("provenance"),
+            label=f"InterpretationRecord {materialized['id']}.provenance",
         )
-        if "layer" in record and record["layer"] != "interpretation":
+        if "layer" in materialized and materialized["layer"] != "interpretation":
             raise ValueError(
                 "InterpretationRecord "
-                f"{record['id']} layer must be 'interpretation', got {record['layer']!r}."
+                f"{materialized['id']} layer must be 'interpretation', "
+                f"got {materialized['layer']!r}."
             )
-        if record["fact_snapshot_id"] != snapshot_ref["fact_snapshot_id"]:
+        if materialized["fact_snapshot_id"] != snapshot_ref["fact_snapshot_id"]:
             raise ValueError(
-                f"InterpretationRecord {record['id']} fact_snapshot_id does not match the save snapshot."
+                "InterpretationRecord "
+                f"{materialized['id']} fact_snapshot_id does not match the save snapshot."
             )
-        if record.get("interpretation_snapshot_id") is not None:
+        if materialized.get("interpretation_snapshot_id") is not None:
             ensure_non_empty_string(
-                record["interpretation_snapshot_id"],
-                label=f"InterpretationRecord {record['id']}.interpretation_snapshot_id",
+                materialized["interpretation_snapshot_id"],
+                label=(
+                    f"InterpretationRecord {materialized['id']}.interpretation_snapshot_id"
+                ),
             )
-        if not isinstance(record.get("body"), dict):
-            raise ValueError(f"InterpretationRecord {record['id']}.body must be a mapping.")
-        if not isinstance(record.get("render_hints"), dict):
+        if not isinstance(materialized.get("payload"), dict):
             raise ValueError(
-                f"InterpretationRecord {record['id']}.render_hints must be a mapping."
+                f"InterpretationRecord {materialized['id']}.payload must be a mapping."
             )
-        if "evidence" in record and not isinstance(record["evidence"], list):
+        if not isinstance(materialized.get("body"), dict):
             raise ValueError(
-                f"InterpretationRecord {record['id']}.evidence must be a list when present."
+                f"InterpretationRecord {materialized['id']}.body must be a mapping."
             )
-        if "relations" in record and not isinstance(record["relations"], list):
+        if not isinstance(materialized.get("render_hints"), dict):
             raise ValueError(
-                f"InterpretationRecord {record['id']}.relations must be a list when present."
+                f"InterpretationRecord {materialized['id']}.render_hints must be a mapping."
+            )
+        if "support_links" in materialized and not isinstance(materialized["support_links"], list):
+            raise ValueError(
+                f"InterpretationRecord {materialized['id']}.support_links must be a list when present."
+            )
+        if "evidence" in materialized and not isinstance(materialized["evidence"], list):
+            raise ValueError(
+                f"InterpretationRecord {materialized['id']}.evidence must be a list when present."
+            )
+        if "relations" in materialized and not isinstance(materialized["relations"], list):
+            raise ValueError(
+                f"InterpretationRecord {materialized['id']}.relations must be a list when present."
             )
 
     def _load_json(self, value: Any) -> dict[str, Any]:
@@ -1205,6 +1365,19 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             return []
         loaded = json.loads(value)
         return loaded if isinstance(loaded, list) else []
+
+    def _subject_json(self, record: InterpretationRecord) -> dict[str, Any]:
+        subject = record.get("subject")
+        if isinstance(subject, dict) and subject:
+            return dict(subject)
+        subject_json = {
+            "type": record["subject_type"],
+            "id": record["subject_id"],
+        }
+        label = record.get("subject_label")
+        if isinstance(label, str) and label.strip():
+            subject_json["label"] = label.strip()
+        return subject_json
 
 
 class PostgresInterpretationPublicationRepository(PostgresInterpretationRepository):
@@ -1256,91 +1429,10 @@ class PostgresInterpretationPublicationRepository(PostgresInterpretationReposito
     ) -> list[str]:
         stored_ids: list[str] = []
         for record in records:
-            self._validate_interpretation_record(record, snapshot_ref=snapshot_ref)
-            scope_ref = record["scope_ref"]
-            cursor.execute(
-                """
-                INSERT INTO interp.record (
-                    id,
-                    domain,
-                    family,
-                    kind,
-                    subject_type,
-                    subject_id,
-                    scope,
-                    tenant_id,
-                    user_id,
-                    schema_version,
-                    status,
-                    confidence,
-                    computed_at,
-                    expires_at,
-                    title,
-                    claim,
-                    summary,
-                    body_json,
-                    evidence_json,
-                    relations_json,
-                    provenance_json,
-                    render_hints_json,
-                    fact_snapshot_id,
-                    interpretation_snapshot_id
-                ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb,
-                    %s::jsonb, %s, %s
-                )
-                ON CONFLICT (id) DO UPDATE SET
-                    family = EXCLUDED.family,
-                    kind = EXCLUDED.kind,
-                    subject_type = EXCLUDED.subject_type,
-                    subject_id = EXCLUDED.subject_id,
-                    scope = EXCLUDED.scope,
-                    tenant_id = EXCLUDED.tenant_id,
-                    user_id = EXCLUDED.user_id,
-                    schema_version = EXCLUDED.schema_version,
-                    status = EXCLUDED.status,
-                    confidence = EXCLUDED.confidence,
-                    computed_at = EXCLUDED.computed_at,
-                    expires_at = EXCLUDED.expires_at,
-                    title = EXCLUDED.title,
-                    claim = EXCLUDED.claim,
-                    summary = EXCLUDED.summary,
-                    body_json = EXCLUDED.body_json,
-                    evidence_json = EXCLUDED.evidence_json,
-                    relations_json = EXCLUDED.relations_json,
-                    provenance_json = EXCLUDED.provenance_json,
-                    render_hints_json = EXCLUDED.render_hints_json,
-                    fact_snapshot_id = EXCLUDED.fact_snapshot_id,
-                    interpretation_snapshot_id = EXCLUDED.interpretation_snapshot_id,
-                    updated_at = NOW()
-                """,
-                (
-                    record["id"],
-                    record["domain"],
-                    record["family"],
-                    record["kind"],
-                    record["subject_type"],
-                    record["subject_id"],
-                    scope_ref["scope"],
-                    scope_ref.get("tenant_id"),
-                    scope_ref.get("user_id"),
-                    record["schema_version"],
-                    record["status"],
-                    record["confidence"],
-                    record["computed_at"],
-                    record["expires_at"],
-                    record.get("title"),
-                    record.get("claim"),
-                    record.get("summary"),
-                    self._json(record["body"]),
-                    self._json(record.get("evidence", [])),
-                    self._json(record.get("relations", [])),
-                    self._json(record["provenance"]),
-                    self._json(record["render_hints"]),
-                    snapshot_ref["fact_snapshot_id"],
-                    record.get("interpretation_snapshot_id"),
-                ),
+            self._save_interpretation_record_with_cursor(
+                cursor=cursor,
+                record=record,
+                snapshot_ref=snapshot_ref,
             )
             stored_ids.append(record["id"])
         return stored_ids

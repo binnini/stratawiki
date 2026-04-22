@@ -37,7 +37,7 @@ class MarketTrendInterpretationBuilder:
         self,
         context: InterpretationProposalContext,
     ) -> dict[str, object] | None:
-        if context.family != self.family or not context.facts:
+        if context.family not in {None, self.family} or not context.facts:
             return None
 
         computed_at = self._resolve_computed_at(context)
@@ -46,6 +46,7 @@ class MarketTrendInterpretationBuilder:
         )
         output = llm_output["output"]
         body = self._build_body(output, context)
+        kind = str(output.get("kind") or "market_trend")
         title = self._resolve_required_text(
             output.get("title"),
             fallback_values=[
@@ -74,21 +75,30 @@ class MarketTrendInterpretationBuilder:
                 body.get("headline"),
             ],
         )
-        evidence = self._build_evidence(context)
-        confidence = self._compute_confidence(evidence_count=len(evidence))
+        support_links = self._build_support_links(context)
+        confidence = self._compute_confidence(evidence_count=len(support_links))
+        payload = {
+            "title": title,
+            "claim": claim,
+            "summary": summary,
+            "body": body,
+        }
 
         return {
             "id": self._new_record_id(context),
             "family": self.family,
-            "kind": str(output.get("kind") or "market_trend"),
+            "kind": kind,
+            **({"subject": dict(context.subject)} if isinstance(context.subject, dict) else {}),
             "title": title,
             "claim": claim,
             "summary": summary,
+            "payload": payload,
             "confidence": confidence,
             "computed_at": computed_at,
             "expires_at": self._compute_expires_at(computed_at),
             "body": body,
-            "evidence": evidence,
+            "evidence": self._legacy_evidence_from_support_links(support_links),
+            "support_links": support_links,
             "provenance": {
                 **dict(context.provenance),
                 "generated_by": {
@@ -99,6 +109,7 @@ class MarketTrendInterpretationBuilder:
             },
             "render_hints": {
                 "page_family": self.family,
+                **({"page_kind": kind} if kind != self.family else {}),
                 "page_key": context.subject_id,
                 "priority": "high" if confidence >= 0.8 else "medium",
             },
@@ -183,7 +194,7 @@ class MarketTrendInterpretationBuilder:
             "interpretation_market_trend",
             "user",
             domain=context.domain,
-            family=context.family,
+            family=context.family or self.family,
             subject_type=context.subject_type,
             subject_id=context.subject_id,
             facts_block="\n".join(fact_lines),
@@ -222,19 +233,44 @@ class MarketTrendInterpretationBuilder:
             "counterpoints": self._string_list(raw_body.get("counterpoints")) or fallback_body["counterpoints"],
         }
 
-    def _build_evidence(
+    def _build_support_links(
         self,
         context: InterpretationProposalContext,
     ) -> list[dict[str, object]]:
         capped_facts = context.facts[:5]
         weight = round(1 / len(capped_facts), 2)
-        evidence: list[dict[str, object]] = []
+        support_links: list[dict[str, object]] = []
         for index, fact in enumerate(capped_facts):
-            evidence.append(
+            support_links.append(
                 {
-                    "fact_id": fact["id"],
+                    "link_kind": "fact_support",
+                    "target_layer": "fact",
+                    "target_id": fact["id"],
                     "weight": weight,
                     "role": "primary" if index == 0 else "supporting",
+                    "support_ref": {
+                        "fact_id": fact["id"],
+                        "canonical_key": fact["canonical_key"],
+                        "entity_type": fact["entity_type"],
+                    },
+                }
+            )
+        return support_links
+
+    def _legacy_evidence_from_support_links(
+        self,
+        support_links: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        evidence: list[dict[str, object]] = []
+        for item in support_links:
+            target_id = item.get("target_id")
+            if not isinstance(target_id, str) or not target_id.strip():
+                continue
+            evidence.append(
+                {
+                    "fact_id": target_id,
+                    **({"weight": item["weight"]} if isinstance(item.get("weight"), (int, float)) else {}),
+                    **({"role": item["role"]} if isinstance(item.get("role"), str) else {}),
                 }
             )
         return evidence

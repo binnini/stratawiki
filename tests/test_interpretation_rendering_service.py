@@ -65,7 +65,7 @@ def test_render_shared_market_trend_page_writes_readable_published_artifact(
         "page_family": "market_trend",
         "page_key": "backend-japan-midlevel",
         "interpretation_ids": ["interp:published:1"],
-        "render_template_version": "market_trend.shared.v1",
+        "render_template_version": "interpretation.shared.v2",
     }
     assert "Interpretation Snapshot: `interp_snap:seed`" in page["body_markdown"]
     assert "Interpretation IDs: `interp:published:1`" in page["body_markdown"]
@@ -103,7 +103,7 @@ def test_render_shared_market_trend_page_writes_readable_published_artifact(
                 "page_family": "market_trend",
                 "page_key": "backend-japan-midlevel",
                 "interpretation_ids": ["interp:published:1"],
-                "render_template_version": "market_trend.shared.v1",
+                "render_template_version": "interpretation.shared.v2",
             },
         }
     ]

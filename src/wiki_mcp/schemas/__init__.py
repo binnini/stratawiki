@@ -69,7 +69,12 @@ from wiki_mcp.schemas.interpretation_lifecycle import (
     INTERPRETATION_STATUS_VALIDATED,
     InterpretationLifecycleStatus,
 )
-from wiki_mcp.schemas.interpretation_record import InterpretationRecord
+from wiki_mcp.schemas.interpretation_record import (
+    InterpretationRecord,
+    interpretation_payload,
+    interpretation_support_links,
+    materialize_interpretation_record,
+)
 from wiki_mcp.schemas.interpretation_validation_result import (
     InterpretationValidationError,
     InterpretationValidationResult,
@@ -161,6 +166,9 @@ __all__ = [
     "InterpretationValidationError",
     "InterpretationValidationResult",
     "InterpretationLifecycleStatus",
+    "interpretation_payload",
+    "interpretation_support_links",
+    "materialize_interpretation_record",
     "InterpretationSnapshotBuildRequestedPayload",
     "InterpretationSnapshotPublishedPayload",
     "OutboxEvent",

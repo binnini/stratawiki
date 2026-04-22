@@ -13,7 +13,7 @@ class InterpretationProposalContext:
     """Input context for family-scoped interpretation proposal generation."""
 
     domain: str
-    family: str
+    family: str | None
     subject_type: str
     subject_id: str
     scope_ref: ScopeRef
@@ -21,6 +21,7 @@ class InterpretationProposalContext:
     schema_version: str
     facts: list[FactRecord]
     provenance: dict[str, object]
+    subject: dict[str, str] | None = None
 
 
 class InterpretationFamilyBuilder(Protocol):

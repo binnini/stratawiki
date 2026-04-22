@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from wiki_mcp.schemas.profile_context import ProfileContext
+from wiki_mcp.schemas.interpretation_record import interpretation_payload, interpretation_support_links
 from wiki_mcp.schemas.retrieval_fact_summary import RetrievalFactSummary
 from wiki_mcp.schemas.retrieval_interpretation_summary import (
     RetrievalInterpretationSummary,
@@ -477,12 +478,13 @@ class CuratedRetrievalService:
         self,
         record: dict[str, Any],
     ) -> RetrievalInterpretationSummary:
+        payload = interpretation_payload(record)
         summary = None
-        raw_summary = record.get("summary")
+        raw_summary = payload.get("summary") or record.get("summary")
         if isinstance(raw_summary, str) and raw_summary.strip():
             summary = raw_summary.strip()
         else:
-            body = record.get("body", {})
+            body = payload.get("body") or record.get("body", {})
             if isinstance(body, dict):
                 nested_summary = body.get("summary")
                 if isinstance(nested_summary, str) and nested_summary.strip():
@@ -501,8 +503,9 @@ class CuratedRetrievalService:
             result["fact_snapshot_id"] = record["fact_snapshot_id"]
         if record.get("interpretation_snapshot_id"):
             result["interpretation_snapshot_id"] = record["interpretation_snapshot_id"]
-        if record.get("title"):
-            result["title"] = record["title"]
+        title = payload.get("title") or record.get("title")
+        if isinstance(title, str) and title.strip():
+            result["title"] = title.strip()
         if summary:
             result["summary"] = summary
         return result
@@ -665,13 +668,17 @@ class CuratedRetrievalService:
     ) -> list[str]:
         scored_fact_ids: list[tuple[float, str]] = []
         for record in interpretation_records:
-            evidence = record.get("evidence")
-            if not isinstance(evidence, list):
-                continue
-            for item in evidence:
-                if not isinstance(item, dict):
+            support_links = interpretation_support_links(record)
+            for item in support_links:
+                if not isinstance(item, dict) or item.get("target_layer") != "fact":
                     continue
-                fact_id = item.get("fact_id")
+                fact_id = item.get("target_id")
+                if not isinstance(fact_id, str) or not fact_id.strip():
+                    support_ref = item.get("support_ref")
+                    if isinstance(support_ref, dict):
+                        raw_fact_id = support_ref.get("fact_id")
+                        if isinstance(raw_fact_id, str) and raw_fact_id.strip():
+                            fact_id = raw_fact_id.strip()
                 if not isinstance(fact_id, str) or not fact_id.strip():
                     continue
                 weight = item.get("weight")
