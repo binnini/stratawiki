@@ -467,21 +467,24 @@ Personal asset registration specializations fixed by `#50`:
 
 ## Jobs-Wiki Migration Expectations
 
-Jobs-Wiki should treat this contract as the target network boundary.
+Jobs-Wiki should treat this contract as the current primary network boundary for
+write, Personal, command, and default read flows.
 
-Until the HTTP baseline lands:
+During the remaining compatibility window:
 
-- keep using the `stratawiki-runtime` wrapper
-- keep using the current stdio and CLI contract
-- do not switch Jobs-Wiki production-like integration code to HTTP early
+- keep compatibility paths only where the migration still needs them
+- do not describe the `stratawiki-runtime` wrapper as the normal write/personal/command baseline
+- do not remove SQL read fallback or the remaining ask/evidence helper lookups early before parity and migration gates are satisfied
 
-After the HTTP baseline lands:
+Within the current HTTP baseline:
 
 1. authenticate with the runtime-owned service token
 2. validate proposal batches before ingest
 3. upsert profile context before Personal query
 4. prefer `save=false` for early migration until retry behavior is exercised
 5. use background interpretation builds only when the worker path is running and job polling is wired
+6. use dedicated Personal document and Personal asset endpoints for workspace authoring flows
+7. treat generic `/api/v1/tool-calls` as a narrow compatibility surface for the remaining read-helper calls, not as the primary consumer contract
 
 ## Open Questions
 

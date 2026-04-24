@@ -10,34 +10,36 @@ It is intentionally written from the external integration point of view.
 
 ### Already Fixed and Implemented
 
-- Jobs-Wiki can call StrataWiki through the dedicated runtime worktree at `/Users/yebin/workSpace/stratawiki-runtime`
-- Jobs-Wiki can call the wrapper at `/Users/yebin/workSpace/stratawiki-runtime/bin/stratawiki-jobswiki.sh`
+- Jobs-Wiki current cross-repo baseline is HTTP-first for write, Personal, and command flows
+- Jobs-Wiki default read path is now HTTP, with SQL read kept only as a deprecated compatibility fallback during migration
 - the preferred external write path is `validate_domain_proposal_batch` followed by `ingest_domain_proposal_batch`
 - profile provisioning and Personal query already exist through `upsert_profile_context` and `query_personal_knowledge`
 - interpretation builds can already run inline or through the worker-backed background path
+- Personal document CRUD, asset registration, raw-to-wiki generation, and wiki link flows already exist through dedicated resource-shaped REST endpoints
 - a checked-in HTTP deployment baseline now exists through `docker compose` with `server-http`, `worker`, and `http-smoke`
+- the wrapper/runtime worktree still exists as a compatibility/dev path, but it is no longer the primary integration baseline
 
 ### Recommended but Not Yet Fixed
 
 - a machine-readable REST contract
-- the final decision to remove or keep the wrapper as a long-term rollback path
-- Jobs-Wiki migration from generic tool-call bridge to fully resource-shaped Personal HTTP endpoints
+- the final removal timing for SQL read fallback and any remaining compatibility wrapper usage
+- migration of the remaining ask/evidence lookup helpers away from generic tool-calls where a stable resource contract is available
 
 ### Currently Unknown and Must Be Decided
 
 - the final HTTP base URL for shared environments
 - the final auth env var names for Jobs-Wiki
-- whether Jobs-Wiki will keep any local fallback wrapper path after HTTP reaches parity
+- the final removal sequence for the remaining compatibility seams
 
 ## Current Stable Path
 
-Right now the lowest-risk compatibility path remains:
+Right now the current baseline is:
 
 ```text
-Jobs-Wiki WAS
-  -> stratawiki-jobswiki.sh
-    -> python -m wiki_mcp.cli
-      -> StrataWiki runtime
+Jobs-Wiki
+  -> HTTP/REST for write, personal, command, and default read
+  -> optional SQL read fallback for rollback/compatibility only
+  -> optional wrapper/dev path outside the primary consumer contract
 ```
 
 The current REST state after `#41` through `#47` is:
@@ -49,13 +51,14 @@ The current REST state after `#41` through `#47` is:
 - bearer token auth baseline exists
 - a checked-in Docker Compose deployment path exists for `server-http` plus `worker`
 
-Jobs-Wiki can now target HTTP directly for shared-environment testing, while still keeping the wrapper path as a rollback option during the migration.
+Jobs-Wiki now targets HTTP directly as the primary cross-repo integration boundary.
 
 Important current reality:
 
 - Jobs-Wiki already uses HTTP mode in practice for ask and Personal document flows.
-- However, a large part of the Personal document family is still sent through generic `tool-calls` over HTTP rather than through dedicated resource-shaped Personal endpoints.
-- In other words, the current transport is HTTP-primary, but the consumer contract is still partly in the bridge phase.
+- Personal document CRUD, asset registration, raw-to-wiki generation, and wiki link flows already use dedicated resource-shaped Personal endpoints.
+- generic `/api/v1/tool-calls` remains mainly for ask upgrade and evidence lookup helpers such as `get_profile_context`, `get_personal_record`, `get_interpretation_record`, and `get_fact_record`.
+- the wrapper path should be understood as compatibility/dev support, not as the current stable consumer contract.
 
 ## Future Target Path
 
@@ -92,9 +95,9 @@ That baseline keeps Postgres, worker, and HTTP server on one machine while remov
 
 ## Migration Phases
 
-### Phase 0: Wrapper-Owned Integration
+### Phase 0: Historical Wrapper-Owned Integration
 
-Use the wrapper only.
+This is historical context, not the current baseline.
 
 Jobs-Wiki env:
 
@@ -106,13 +109,13 @@ Jobs-Wiki env:
 
 ### Phase 1: Dual Mode
 
-Keep the wrapper path available while adding HTTP code paths behind feature flags.
+Keep only the remaining compatibility seams while HTTP stays primary.
 
 Recommended Jobs-Wiki additions:
 
 | Env var | Owner | Required in dual mode | Purpose |
 | --- | --- | --- | --- |
-| `STRATAWIKI_BASE_URL` | Jobs-Wiki | yes for HTTP mode | HTTP read/write |
+| `STRATAWIKI_BASE_URL` | Jobs-Wiki | yes for current baseline | HTTP read/write |
 | `STRATAWIKI_API_TOKEN` | Jobs-Wiki | expected | HTTP auth |
 
 StrataWiki runtime side:
@@ -124,19 +127,20 @@ StrataWiki runtime side:
 Recommended first dual-mode target:
 
 - point `STRATAWIKI_BASE_URL` at the checked-in Compose HTTP baseline
-- keep wrapper calls available for rollback while HTTP requests are being exercised in staging or local shared environments
+- keep only the minimum rollback paths needed for read parity and local compatibility
 
 ### Phase 2: HTTP-Primary Integration
 
-Move primary calls to HTTP and keep the wrapper only as a temporary rollback path if needed.
+Treat HTTP as the stable cross-repo contract and remove the remaining compatibility seams in order.
 
-Recommended condition before removing the wrapper path:
+Recommended condition before removing the remaining compatibility seams:
 
 - all required HTTP endpoints are in place
 - auth is in place
 - the checked-in HTTP deployment baseline has passed `http-smoke`
 - idempotency and retry behavior are documented
 - Jobs-Wiki smoke tests pass against the networked runtime
+- SQL read parity is proven for supported Jobs-Wiki screens before removing the read fallback
 
 ## Recommended Call Sequences
 
@@ -171,8 +175,8 @@ For workspace-first document authoring:
 
 Current implementation note:
 
-- The sequence below is the target resource-shaped contract.
-- Jobs-Wiki current code may still reach parts of this flow through generic `tool-calls` while migration is in progress.
+- The sequence below is the current resource-shaped baseline for Personal document/asset/generation/link flows.
+- Jobs-Wiki still uses generic `tool-calls` only for a narrower read-helper band in the ask/evidence path while migration is in progress.
 
 Rules:
 
@@ -197,21 +201,22 @@ Rules:
 
 Jobs-Wiki should not do these things yet:
 
-- remove the `stratawiki-runtime` wrapper path
 - switch production-like traffic to HTTP before auth and idempotency are fixed
 - connect to the StrataWiki database directly
 - assume browser-style integration needs such as CORS are part of the first migration wave
 - assume the generic `/api/v1/tool-calls` bridge is the final long-term consumer contract
+- remove SQL read fallback before HTTP read parity is proven for the supported Jobs-Wiki screens
 
 ## Handoff Checklist for Jobs-Wiki
 
 - read `docs/http-rest-contract-spec.md`
-- keep the current wrapper path as the source of truth until HTTP reaches parity
-- prepare dual-mode config keys for wrapper and HTTP
+- treat HTTP as the current source of truth for cross-repo integration
+- keep compatibility paths only where the current migration still needs them
 - treat `DomainProposalBatch` as the only default external write contract
 - prefer the new HTTP proposal endpoints over the generic `/api/v1/tool-calls` bridge for write traffic
-- move Jobs-Wiki off the generic `/api/v1/tool-calls` bridge for Personal document and Personal asset flows once endpoint parity is complete
+- do not describe the wrapper as the normal write/personal/command baseline
+- keep generic `/api/v1/tool-calls` usage limited to the remaining ask/evidence lookup helpers
 - keep profile sync before Personal query
 - use the dedicated HTTP interpretation and status endpoints rather than the generic `/api/v1/tool-calls` bridge for these flows
-- use the Personal document and Personal asset endpoints for workspace authoring once implemented
+- use the Personal document and Personal asset endpoints for workspace authoring
 - keep binary upload transport separate from StrataWiki resource authority in the first wave
