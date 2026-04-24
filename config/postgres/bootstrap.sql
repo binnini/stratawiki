@@ -125,6 +125,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS interp_record_published_uniqueness_idx
     )
     WHERE status = 'published';
 
+ALTER TABLE interp.record
+    ADD COLUMN IF NOT EXISTS subject_json JSONB;
+
+UPDATE interp.record
+SET subject_json = COALESCE(subject_json, '{}'::jsonb)
+WHERE subject_json IS NULL;
+
 CREATE TABLE IF NOT EXISTS interp.payload (
     record_id TEXT PRIMARY KEY REFERENCES interp.record(id) ON DELETE CASCADE,
     title TEXT,
@@ -196,6 +203,102 @@ CREATE TABLE IF NOT EXISTS personal.record (
 
 CREATE INDEX IF NOT EXISTS personal_record_scope_updated_idx
     ON personal.record (domain, tenant_id, user_id, updated_at DESC);
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'personal'
+          AND table_name = 'record'
+          AND column_name = 'body_path'
+    ) THEN
+        ALTER TABLE personal.record
+            ALTER COLUMN body_path DROP NOT NULL;
+    END IF;
+END $$;
+
+ALTER TABLE personal.record
+    ADD COLUMN IF NOT EXISTS path TEXT;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'personal'
+          AND table_name = 'record'
+          AND column_name = 'body_path'
+    ) THEN
+        EXECUTE $stmt$
+            UPDATE personal.record
+            SET path = COALESCE(path, body_path)
+            WHERE path IS NULL
+        $stmt$;
+    ELSE
+        UPDATE personal.record
+        SET path = COALESCE(path, '')
+        WHERE path IS NULL;
+    END IF;
+END $$;
+
+ALTER TABLE personal.record
+    ADD COLUMN IF NOT EXISTS subspace TEXT;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'personal'
+          AND table_name = 'record'
+          AND column_name = 'body_path'
+    ) THEN
+        EXECUTE $stmt$
+            UPDATE personal.record
+            SET subspace = CASE
+                WHEN COALESCE(path, body_path, '') LIKE '%/wiki/%' OR COALESCE(path, body_path, '') LIKE '%/answers/%' THEN 'wiki'
+                ELSE 'raw'
+            END
+            WHERE subspace IS NULL OR subspace = ''
+        $stmt$;
+    ELSE
+        UPDATE personal.record
+        SET subspace = CASE
+            WHEN COALESCE(path, '') LIKE '%/wiki/%' OR COALESCE(path, '') LIKE '%/answers/%' THEN 'wiki'
+            ELSE 'raw'
+        END
+        WHERE subspace IS NULL OR subspace = '';
+    END IF;
+END $$;
+
+ALTER TABLE personal.record
+    ADD COLUMN IF NOT EXISTS content_hash TEXT;
+
+UPDATE personal.record
+SET content_hash = COALESCE(content_hash, '')
+WHERE content_hash IS NULL;
+
+ALTER TABLE personal.record
+    ADD COLUMN IF NOT EXISTS version INTEGER;
+
+UPDATE personal.record
+SET version = 1
+WHERE version IS NULL OR version <= 0;
+
+ALTER TABLE personal.record
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
+
+UPDATE personal.record
+SET created_at = COALESCE(created_at, updated_at, NOW())
+WHERE created_at IS NULL;
+
+ALTER TABLE personal.record
+    ADD COLUMN IF NOT EXISTS asset_refs_json JSONB;
+
+UPDATE personal.record
+SET asset_refs_json = COALESCE(asset_refs_json, '[]'::jsonb)
+WHERE asset_refs_json IS NULL;
 
 CREATE TABLE IF NOT EXISTS personal.asset (
     asset_id TEXT PRIMARY KEY,

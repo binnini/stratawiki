@@ -848,8 +848,6 @@ class PostgresInterpretationRepository(PostgresRepositoryBase):
             where_clauses.append("r.status = ANY(%s)")
             params.append(statuses)
 
-        params.append(limit)
-
         return self._fetch_interpretation_rows(
             where_sql=" AND ".join(where_clauses),
             params=params,
@@ -1827,7 +1825,7 @@ class PostgresPersonalRepository(PostgresRepositoryBase):
                     anchors_json,
                     provenance_json
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     title = EXCLUDED.title,
